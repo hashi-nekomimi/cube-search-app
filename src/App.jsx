@@ -1,5 +1,4 @@
-import React, { useRef, useState } from "react";
-
+import React, { useMemo, useRef, useState } from "react";
 
 // =========================
 // 基本設定
@@ -25,7 +24,7 @@ const FACE_COLOR_STYLE = {
   D: "#facc15",
   L: "#fb923c",
   B: "#3b82f6",
-  X: "#0f172a",
+  X: "#111827",
 };
 
 const FACE_LABEL = {
@@ -37,11 +36,6 @@ const FACE_LABEL = {
   B: "青",
   X: "dont care",
 };
-
-
-// =========================
-// ステッカー座標
-// =========================
 
 function keyOf(pos, normal) {
   return `${pos.join(",")}|${normal.join(",")}`;
@@ -78,7 +72,6 @@ function buildStickers() {
 }
 
 const { stickers: STICKERS, indexOf: INDEX_OF } = buildStickers();
-
 
 // =========================
 // 回転処理
@@ -133,7 +126,6 @@ function permPower(p, n) {
   for (let i = 0; i < n; i++) result = composePerm(result, p);
   return result;
 }
-
 
 // =========================
 // 回転記号
@@ -204,6 +196,9 @@ function orientationStates(state) {
 const SOLVED_ORIENTATIONS = orientationStates(SOLVED);
 const SOLVED_ORIENTATION_KEYS = new Set(SOLVED_ORIENTATIONS.map(stateKey));
 
+function isSolvedUpToRotation(state) {
+  return SOLVED_ORIENTATION_KEYS.has(stateKey(state));
+}
 
 // =========================
 // 手順パース
@@ -265,9 +260,7 @@ function moveToPerm(move) {
 
 function applyAlg(state, alg) {
   let current = state;
-  for (const move of parseAlg(alg)) {
-    current = applyPerm(current, moveToPerm(move));
-  }
+  for (const move of parseAlg(alg)) current = applyPerm(current, moveToPerm(move));
   return current;
 }
 
@@ -288,7 +281,6 @@ function makeSearchMoves(text) {
   return result;
 }
 
-
 // =========================
 // 手順操作
 // =========================
@@ -305,6 +297,31 @@ function inverseAlgList(moves) {
 
 function algToString(moves) {
   return moves.join(" ");
+}
+
+const PARALLEL_GROUP = {
+  U: "UD",
+  D: "UD",
+  R: "RL",
+  L: "RL",
+  F: "FB",
+  B: "FB",
+};
+
+const PARALLEL_GROUP_FACES = {
+  UD: ["U", "D"],
+  RL: ["R", "L"],
+  FB: ["F", "B"],
+};
+
+function parallelGroup(move) {
+  return PARALLEL_GROUP[move[0]] || null;
+}
+
+function isParallelPair(a, b) {
+  const ga = parallelGroup(a);
+  const gb = parallelGroup(b);
+  return ga !== null && ga === gb && a[0] !== b[0];
 }
 
 function moveToFacePower(move) {
@@ -340,31 +357,6 @@ function simplifySameFace(moves) {
   }
 
   return result;
-}
-
-const PARALLEL_GROUP = {
-  U: "UD",
-  D: "UD",
-  R: "RL",
-  L: "RL",
-  F: "FB",
-  B: "FB",
-};
-
-const PARALLEL_GROUP_FACES = {
-  UD: ["U", "D"],
-  RL: ["R", "L"],
-  FB: ["F", "B"],
-};
-
-function parallelGroup(move) {
-  return PARALLEL_GROUP[move[0]] || null;
-}
-
-function isParallelPair(a, b) {
-  const ga = parallelGroup(a);
-  const gb = parallelGroup(b);
-  return ga !== null && ga === gb && a[0] !== b[0];
 }
 
 function compressParallelRuns(moves) {
@@ -417,10 +409,7 @@ function symbolMoveCount(moves) {
 }
 
 function quarterTurnCount(moves) {
-  return cleanMoves(moves).reduce(
-    (acc, move) => acc + (move.endsWith("2") ? 2 : 1),
-    0
-  );
+  return cleanMoves(moves).reduce((acc, move) => acc + (move.endsWith("2") ? 2 : 1), 0);
 }
 
 function effectiveMoveCount(moves) {
@@ -448,7 +437,15 @@ function symbolDelta(path, move) {
   return 1;
 }
 
-function formatWithParallel(moves) {
+function effectiveDelta(path, move) {
+  if (!path.length) return 1;
+  const last = path[path.length - 1];
+  if (last[0] === move[0] && last === move) return 0;
+  if (isParallelPair(last, move)) return 0;
+  return 1;
+}
+
+function formatWithSimulUD(moves) {
   moves = cleanMoves(moves);
   const parts = [];
   let i = 0;
@@ -480,7 +477,6 @@ function canAddMove(path, move) {
   return true;
 }
 
-
 // =========================
 // 状態パターン
 // =========================
@@ -500,9 +496,7 @@ function stateToPattern(state) {
   for (let f = 0; f < FACE_ORDER.length; f++) {
     const face = FACE_ORDER[f];
     pattern[face] = [];
-    for (let i = 0; i < 9; i++) {
-      pattern[face].push(stickerFaceAt(state, f * 9 + i));
-    }
+    for (let i = 0; i < 9; i++) pattern[face].push(stickerFaceAt(state, f * 9 + i));
   }
   return pattern;
 }
@@ -513,19 +507,31 @@ function patternToArray(pattern) {
   return arr;
 }
 
+function arrayToPattern(arr) {
+  const pattern = {};
+  let k = 0;
+  for (const face of FACE_ORDER) {
+    pattern[face] = [];
+    for (let i = 0; i < 9; i++) pattern[face].push(arr[k++] || DONT_CARE);
+  }
+  return pattern;
+}
+
+function countPatternColors(pattern) {
+  const counts = { U: 0, R: 0, F: 0, D: 0, L: 0, B: 0, X: 0 };
+  for (const face of FACE_ORDER) {
+    for (const color of pattern[face]) counts[color]++;
+  }
+  return counts;
+}
+
 function validatePattern(pattern) {
-  const counts = { U: 0, R: 0, F: 0, D: 0, L: 0, B: 0 };
+  const counts = countPatternColors(pattern);
 
   for (const face of FACE_ORDER) {
     if (pattern[face][4] !== face) {
       throw new Error(`${face}面のセンターは${face}色固定にして。`);
     }
-    for (const color of pattern[face]) {
-      if (counts[color] !== undefined) counts[color]++;
-    }
-  }
-
-  for (const face of FACE_ORDER) {
     if (counts[face] > 9) {
       throw new Error(`${face}色が${counts[face]}枚ある。最大9枚まで。`);
     }
@@ -543,11 +549,12 @@ function matchesPattern(state, patternArr) {
 
 function matchesPatternUpToRotation(state, patternArr) {
   for (const perm of ORIENTATION_PERMS) {
-    if (matchesPattern(applyPerm(state, perm), patternArr)) return true;
+    if (matchesPattern(applyPerm(state, perm), patternArr)) {
+      return true;
+    }
   }
   return false;
 }
-
 
 // =========================
 // 探索
@@ -559,20 +566,119 @@ function buildMovePerms(moves) {
   return out;
 }
 
-function compareSolutions(a, b) {
-  const ka = [
-    effectiveMoveCount(a),
-    symbolMoveCount(a),
-    quarterTurnCount(a),
-    algToString(a),
-  ];
-  const kb = [
-    effectiveMoveCount(b),
-    symbolMoveCount(b),
-    quarterTurnCount(b),
-    algToString(b),
-  ];
+function sortSolutions(solutions) {
+  return solutions
+    .map(cleanMoves)
+    .sort((a, b) => {
+      const ka = [effectiveMoveCount(a), symbolMoveCount(a), quarterTurnCount(a), algToString(a)];
+      const kb = [effectiveMoveCount(b), symbolMoveCount(b), quarterTurnCount(b), algToString(b)];
+      for (let i = 0; i < ka.length; i++) {
+        if (ka[i] < kb[i]) return -1;
+        if (ka[i] > kb[i]) return 1;
+      }
+      return 0;
+    });
+}
 
+function expandOneSide({ front, seenSelf, seenOther, movePerms, moves, sideSymbolLimit, solutionSet, solutions, expandingFromStart, hardLimit }) {
+  const newFront = new Map();
+
+  for (const [, data] of front.entries()) {
+    const { state, path, symCost } = data;
+
+    for (const move of moves) {
+      if (!canAddMove(path, move)) continue;
+
+      const newSymCost = symCost + symbolDelta(path, move);
+      if (newSymCost > sideSymbolLimit) continue;
+
+      const newState = applyPerm(state, movePerms.get(move));
+      const key = stateKey(newState);
+      if (seenSelf.has(key)) continue;
+
+      const newPath = [...path, move];
+      const record = { state: newState, path: newPath, symCost: newSymCost };
+      seenSelf.set(key, record);
+      newFront.set(key, record);
+
+      if (seenOther.has(key)) {
+        const otherPath = seenOther.get(key).path;
+        const solution = cleanMoves(expandingFromStart ? [...newPath, ...inverseAlgList(otherPath)] : [...otherPath, ...inverseAlgList(newPath)]);
+
+        if (symbolMoveCount(solution) > hardLimit.maxSymbolDepth) continue;
+
+        const solutionKey = solution.join(" ");
+        if (solutionSet.has(solutionKey)) continue;
+
+        solutionSet.add(solutionKey);
+        solutions.push(solution);
+      }
+    }
+  }
+
+  return newFront;
+}
+
+function bidirectionalBfsCollect({ start, goal = SOLVED, moves, maxSymbolDepth = 16 }) {
+  const goalStates = goal === SOLVED ? SOLVED_ORIENTATIONS : orientationStates(goal);
+  const goalKeys = new Set(goalStates.map(stateKey));
+
+  if (goalKeys.has(stateKey(start))) return [[]];
+
+  const sideSymbolLimitA = Math.ceil(maxSymbolDepth / 2);
+  const sideSymbolLimitB = Math.floor(maxSymbolDepth / 2);
+
+  const movePerms = buildMovePerms(moves);
+  const startKey = stateKey(start);
+
+  let frontA = new Map([[startKey, { state: start, path: [], symCost: 0 }]]);
+  let frontB = new Map();
+
+  for (const goalState of goalStates) {
+    frontB.set(stateKey(goalState), { state: goalState, path: [], symCost: 0 });
+  }
+
+  const seenA = new Map(frontA);
+  const seenB = new Map(frontB);
+  const solutions = [];
+  const solutionSet = new Set();
+
+  while (frontA.size || frontB.size) {
+    if (frontA.size && (frontA.size <= frontB.size || !frontB.size)) {
+      frontA = expandOneSide({
+        front: frontA,
+        seenSelf: seenA,
+        seenOther: seenB,
+        movePerms,
+        moves,        sideSymbolLimit: sideSymbolLimitA,
+        solutionSet,
+        solutions,
+        expandingFromStart: true,
+        hardLimit: { maxSymbolDepth },
+      });
+    } else if (frontB.size) {
+      frontB = expandOneSide({
+        front: frontB,
+        seenSelf: seenB,
+        seenOther: seenA,
+        movePerms,
+        moves,        sideSymbolLimit: sideSymbolLimitB,
+        solutionSet,
+        solutions,
+        expandingFromStart: false,
+        hardLimit: { maxSymbolDepth },
+      });
+    }
+
+    if (!frontA.size && !frontB.size) break;
+  }
+
+  return solutions;
+}
+
+function compareSolutions(a, b) {
+  const ka = [effectiveMoveCount(a), symbolMoveCount(a), quarterTurnCount(a), algToString(a)];
+  const kb = [effectiveMoveCount(b), symbolMoveCount(b), quarterTurnCount(b), algToString(b)];
   for (let i = 0; i < ka.length; i++) {
     if (ka[i] < kb[i]) return -1;
     if (ka[i] > kb[i]) return 1;
@@ -583,7 +689,6 @@ function compareSolutions(a, b) {
 function insertSolutionSorted(list, solution, maxLen = Infinity) {
   const normalized = cleanMoves(solution);
   const key = algToString(normalized);
-
   if (list.some((x) => algToString(x) === key)) return list;
 
   const next = [...list];
@@ -599,7 +704,6 @@ function insertSolutionSorted(list, solution, maxLen = Infinity) {
 
   if (!inserted) next.push(normalized);
   if (next.length > maxLen) next.length = maxLen;
-
   return next;
 }
 
@@ -607,26 +711,12 @@ function yieldToBrowser() {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-async function expandOneSideAsync({
-  front,
-  seenSelf,
-  seenOther,
-  movePerms,
-  moves,
-  sideSymbolLimit,
-  solutionSet,
-  expandingFromStart,
-  maxSymbolDepth,
-  shouldStop,
-  onSolution,
-  yieldEvery = 1200,
-}) {
+async function expandOneSideAsync({ front, seenSelf, seenOther, movePerms, moves, sideSymbolLimit, solutionSet, expandingFromStart, hardLimit, shouldStop, onSolution }) {
   const newFront = new Map();
   let work = 0;
 
   for (const [, data] of front.entries()) {
     if (shouldStop()) break;
-
     const { state, path, symCost } = data;
 
     for (const move of moves) {
@@ -641,24 +731,15 @@ async function expandOneSideAsync({
       if (seenSelf.has(key)) continue;
 
       const newPath = [...path, move];
-      const record = {
-        state: newState,
-        path: newPath,
-        symCost: newSymCost,
-      };
-
+      const record = { state: newState, path: newPath, symCost: newSymCost };
       seenSelf.set(key, record);
       newFront.set(key, record);
 
       if (seenOther.has(key)) {
         const otherPath = seenOther.get(key).path;
-        const solution = cleanMoves(
-          expandingFromStart
-            ? [...newPath, ...inverseAlgList(otherPath)]
-            : [...otherPath, ...inverseAlgList(newPath)]
-        );
+        const solution = cleanMoves(expandingFromStart ? [...newPath, ...inverseAlgList(otherPath)] : [...otherPath, ...inverseAlgList(newPath)]);
 
-        if (symbolMoveCount(solution) > maxSymbolDepth) continue;
+        if (symbolMoveCount(solution) > hardLimit.maxSymbolDepth) continue;
 
         const solutionKey = algToString(solution);
         if (solutionSet.has(solutionKey)) continue;
@@ -668,21 +749,14 @@ async function expandOneSideAsync({
       }
 
       work++;
-      if (work % yieldEvery === 0) await yieldToBrowser();
+      if (work % 1200 === 0) await yieldToBrowser();
     }
   }
 
   return newFront;
 }
 
-async function bidirectionalBfsCollectAsync({
-  start,
-  goal = SOLVED,
-  moves,
-  maxSymbolDepth = 16,
-  shouldStop,
-  onSolution,
-}) {
+async function bidirectionalBfsCollectAsync({ start, goal = SOLVED, moves, maxSymbolDepth = 16, shouldStop, onSolution }) {
   const goalStates = goal === SOLVED ? SOLVED_ORIENTATIONS : orientationStates(goal);
   const goalKeys = new Set(goalStates.map(stateKey));
 
@@ -715,11 +789,10 @@ async function bidirectionalBfsCollectAsync({
         seenSelf: seenA,
         seenOther: seenB,
         movePerms,
-        moves,
-        sideSymbolLimit: sideSymbolLimitA,
+        moves,        sideSymbolLimit: sideSymbolLimitA,
         solutionSet,
         expandingFromStart: true,
-        maxSymbolDepth,
+        hardLimit: { maxSymbolDepth },
         shouldStop,
         onSolution,
       });
@@ -729,11 +802,10 @@ async function bidirectionalBfsCollectAsync({
         seenSelf: seenB,
         seenOther: seenA,
         movePerms,
-        moves,
-        sideSymbolLimit: sideSymbolLimitB,
+        moves,        sideSymbolLimit: sideSymbolLimitB,
         solutionSet,
         expandingFromStart: false,
-        maxSymbolDepth,
+        hardLimit: { maxSymbolDepth },
         shouldStop,
         onSolution,
       });
@@ -743,13 +815,7 @@ async function bidirectionalBfsCollectAsync({
   }
 }
 
-async function bfsPatternCollectAsync({
-  pattern,
-  moves,
-  maxSymbolDepth = 16,
-  shouldStop,
-  onSolution,
-}) {
+async function bfsPatternCollectAsync({ pattern, moves, maxSymbolDepth = 16, shouldStop, onSolution }) {
   validatePattern(pattern);
 
   const patternArr = patternToArray(pattern);
@@ -761,9 +827,7 @@ async function bfsPatternCollectAsync({
     return;
   }
 
-  let currentFront = new Map([
-    [stateKey(start), { state: start, path: [], symCost: 0 }],
-  ]);
+  let currentFront = new Map([[stateKey(start), { state: start, path: [], symCost: 0 }]]);
   const seen = new Map(currentFront);
   const solutionSet = new Set();
   let work = 0;
@@ -773,13 +837,11 @@ async function bfsPatternCollectAsync({
 
     for (const [, data] of currentFront.entries()) {
       if (shouldStop()) break;
-
       const { state, path, symCost } = data;
 
       for (const move of moves) {
         if (shouldStop()) break;
         if (!canAddMove(path, move)) continue;
-
         const newSymCost = symCost + symbolDelta(path, move);
         if (newSymCost > maxSymbolDepth) continue;
 
@@ -788,19 +850,13 @@ async function bfsPatternCollectAsync({
         if (seen.has(key)) continue;
 
         const newPath = [...path, move];
-        const record = {
-          state: newState,
-          path: newPath,
-          symCost: newSymCost,
-        };
-
+        const record = { state: newState, path: newPath, symCost: newSymCost };
         seen.set(key, record);
         newFront.set(key, record);
 
         if (matchesPatternUpToRotation(newState, patternArr)) {
           const solution = cleanMoves(newPath);
           const solutionKey = algToString(solution);
-
           if (!solutionSet.has(solutionKey)) {
             solutionSet.add(solutionKey);
             onSolution(solution);
@@ -817,20 +873,9 @@ async function bfsPatternCollectAsync({
   }
 }
 
-
 // =========================
-// UI
+// UI部品
 // =========================
-
-function DontCareIcon({ className = "" }) {
-  return (
-    <span
-      className={`inline-flex h-5 w-5 items-center justify-center rounded-sm bg-slate-900 text-[11px] font-bold text-white ${className}`}
-    >
-      ?
-    </span>
-  );
-}
 
 function Sticker({ color, onClick, locked = false }) {
   return (
@@ -840,9 +885,7 @@ function Sticker({ color, onClick, locked = false }) {
       disabled={locked}
       className={[
         "aspect-square w-full rounded-md border border-slate-300 transition duration-150",
-        locked
-          ? "cursor-not-allowed ring-2 ring-slate-500"
-          : "hover:scale-105 active:scale-95",
+        locked ? "cursor-not-allowed ring-2 ring-slate-500" : "hover:scale-105 active:scale-95",
       ].join(" ")}
       style={{ background: FACE_COLOR_STYLE[color] }}
       title={FACE_LABEL[color] || color}
@@ -872,7 +915,6 @@ function FaceGrid({ stickers, onStickerClick }) {
 function NetEditor({ pattern, setPattern, selectedColor }) {
   function setSticker(face, idx) {
     if (idx === 4) return;
-
     setPattern((prev) => {
       const next = {};
       for (const f of FACE_ORDER) next[f] = [...prev[f]];
@@ -916,35 +958,14 @@ function SolutionCard({ index, solution }) {
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md">
       <div className="mb-2 flex items-center justify-between gap-3">
         <div className="text-sm font-semibold text-slate-500">#{index}</div>
-        <button
-          onClick={copy}
-          className="rounded-xl border px-2 py-1 text-xs text-slate-600 transition hover:bg-slate-50 active:scale-95"
-        >
-          コピー
-        </button>
+        <button onClick={copy} className="rounded-xl border px-2 py-1 text-xs text-slate-600 transition hover:bg-slate-50 active:scale-95">コピー</button>
       </div>
-
-      <div className="break-words font-mono text-base font-semibold text-slate-900">
-        {alg || "(空)"}
-      </div>
-
-      <div className="mt-2 break-words font-mono text-sm text-slate-600">
-        {formatWithParallel(solution)}
-      </div>
-
+      <div className="break-words font-mono text-base font-semibold text-slate-900">{alg || "(空)"}</div>
+      <div className="mt-2 break-words font-mono text-sm text-slate-600">{formatWithSimulUD(solution)}</div>
       <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
-        <div className="rounded-xl bg-slate-100 p-2">
-          <div className="text-slate-500">同時回し</div>
-          <div className="text-lg font-bold">{effectiveMoveCount(solution)}</div>
-        </div>
-        <div className="rounded-xl bg-slate-100 p-2">
-          <div className="text-slate-500">記号手数</div>
-          <div className="text-lg font-bold">{symbolMoveCount(solution)}</div>
-        </div>
-        <div className="rounded-xl bg-slate-100 p-2">
-          <div className="text-slate-500">90度手数</div>
-          <div className="text-lg font-bold">{quarterTurnCount(solution)}</div>
-        </div>
+        <div className="rounded-xl bg-slate-100 p-2"><div className="text-slate-500">同時回し</div><div className="text-lg font-bold">{effectiveMoveCount(solution)}</div></div>
+        <div className="rounded-xl bg-slate-100 p-2"><div className="text-slate-500">記号手数</div><div className="text-lg font-bold">{symbolMoveCount(solution)}</div></div>
+        <div className="rounded-xl bg-slate-100 p-2"><div className="text-slate-500">90度手数</div><div className="text-lg font-bold">{quarterTurnCount(solution)}</div></div>
       </div>
     </div>
   );
@@ -961,9 +982,7 @@ function ThinkingCard({ foundCount }) {
         </div>
         <div>
           <div className="font-semibold text-slate-900">考え中…</div>
-          <div className="text-sm text-slate-600">
-            見つけた手順から順に表示中。今 {foundCount} 件見つかってる。
-          </div>
+          <div className="text-sm text-slate-600">見つけた手順から順に表示中。今 {foundCount} 件見つかってる。</div>
         </div>
       </div>
     </div>
@@ -971,305 +990,185 @@ function ThinkingCard({ foundCount }) {
 }
 
 function EmptyCard({ text }) {
-  return (
-    <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-500">
-      {text}
-    </div>
-  );
+  return <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-500">{text}</div>;
 }
 
-
-// =========================
-// メイン
-// =========================
-
 export default function App() {
-  const [targetAlg, setTargetAlg] = useState("");
+  const [inputMode, setInputMode] = useState("alg");
+  const [targetAlg, setTargetAlg] = useState("R' U R' U' y R' F' R2 U' R' U R' F R F y'");
   const [targetPattern, setTargetPattern] = useState(solvedPattern());
   const [selectedColor, setSelectedColor] = useState("F");
-
   const [searchMovesText, setSearchMovesText] = useState("R U D");
   const [maxSymbolDepth, setMaxSymbolDepth] = useState(16);
   const [limit, setLimit] = useState(5);
-
   const [solutions, setSolutions] = useState([]);
   const [error, setError] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
-  const [searchMode, setSearchMode] = useState(null);
-
   const searchSessionRef = useRef(0);
+
+  const searchMovesPreview = useMemo(() => {
+    try {
+      return makeSearchMoves(searchMovesText).join(" ");
+    } catch {
+      return "";
+    }
+  }, [searchMovesText]);
+
 
   function loadAlgToPattern() {
     try {
       const state = applyAlg(SOLVED, targetAlg);
       setTargetPattern(stateToPattern(state));
+      setInputMode("pattern");
       setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
   }
 
+  function resetAll() {
+    searchSessionRef.current += 1;
+    setInputMode("alg");
+    setTargetAlg("R' U R' U' y R' F' R2 U' R' U R' F R F y'");
+    setTargetPattern(solvedPattern());
+    setSelectedColor("F");
+    setSearchMovesText("R U D");
+    setMaxSymbolDepth(16);
+    setLimit(5);
+    setSolutions([]);
+    setError("");
+    setIsSearching(false);
+    setHasSearched(false);
+  }
+
   function stopSearch() {
     searchSessionRef.current += 1;
     setIsSearching(false);
-    setSearchMode(null);
   }
 
   async function runSearch(mode) {
     const currentSession = searchSessionRef.current + 1;
     searchSessionRef.current = currentSession;
-
+    setInputMode(mode);
     setError("");
     setSolutions([]);
     setHasSearched(true);
     setIsSearching(true);
-    setSearchMode(mode);
 
     try {
       const moves = makeSearchMoves(searchMovesText);
-      const maxResults = Math.max(1, Number(limit) || 1);
-
+      const maxResults = Number(limit);
       const shouldStop = () => searchSessionRef.current !== currentSession;
 
       const onSolution = (solution) => {
         if (shouldStop()) return;
-
         let reachedLimit = false;
-
         setSolutions((prev) => {
           const next = insertSolutionSorted(prev, solution, maxResults);
           if (next.length >= maxResults) reachedLimit = true;
           return next;
         });
-
-        if (reachedLimit) {
-          searchSessionRef.current += 1;
-          setIsSearching(false);
-          setSearchMode(null);
-        }
+        if (reachedLimit) searchSessionRef.current += 1;
       };
 
       if (mode === "alg") {
         const start = applyAlg(SOLVED, targetAlg);
-
         await bidirectionalBfsCollectAsync({
           start,
           goal: SOLVED,
-          moves,
-          maxSymbolDepth: Number(maxSymbolDepth),
+          moves,          maxSymbolDepth: Number(maxSymbolDepth),
           shouldStop,
           onSolution,
         });
       } else {
         await bfsPatternCollectAsync({
           pattern: targetPattern,
-          moves,
-          maxSymbolDepth: Number(maxSymbolDepth),
+          moves,          maxSymbolDepth: Number(maxSymbolDepth),
           shouldStop,
           onSolution,
         });
-      }
-
-      if (searchSessionRef.current === currentSession) {
-        setIsSearching(false);
-        setSearchMode(null);
       }
     } catch (e) {
       if (searchSessionRef.current === currentSession) {
         setSolutions([]);
         setError(e instanceof Error ? e.message : String(e));
-        setIsSearching(false);
-        setSearchMode(null);
       }
+    } finally {
+      setIsSearching(false);
     }
   }
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 text-slate-900 md:p-8">
       <div className="mx-auto max-w-6xl">
-        <div className="mb-6 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-slate-200 sm:p-6">
+        <div className="mb-6 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
           <div className="grid gap-4">
-            <label className="grid gap-2">
-              <textarea
-                value={targetAlg}
-                onChange={(e) => setTargetAlg(e.target.value)}
-                placeholder="スクランブルを入力..."
-                className="h-12 resize-none rounded-2xl border border-slate-300 bg-white px-3 py-3 font-mono text-sm leading-5 outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-slate-400"
-              />
-              <div className="flex flex-wrap justify-end gap-2">
-                <button
-                  onClick={loadAlgToPattern}
-                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm transition hover:bg-slate-50 active:scale-95"
-                >
-                  下の展開図に反映
-                </button>
+            <div className="grid gap-4">
+              <label className="grid gap-2">
+                <textarea
+                  value={targetAlg}
+                  onChange={(e) => setTargetAlg(e.target.value)}
+                  placeholder="スクランブルを入力..."
+                  className="h-12 resize-none rounded-2xl border border-slate-300 bg-white px-3 py-3 font-mono text-sm leading-5 outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-slate-400"
+                />
+                <div className="flex flex-wrap justify-end gap-2">
+                  <button onClick={loadAlgToPattern} className="rounded-xl border border-slate-300 px-3 py-2 text-sm transition hover:bg-slate-50 active:scale-95">下の展開図に反映</button>
+                  <button onClick={() => runSearch("alg")} disabled={isSearching} className={`rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition active:scale-95 ${isSearching ? "cursor-not-allowed bg-slate-500" : "bg-slate-900 hover:-translate-y-0.5 hover:bg-slate-800 hover:shadow-md"}`}>{isSearching ? "探索中…" : "手順から探索"}</button>
+                </div>
+              </label>
 
-                {isSearching && searchMode === "alg" ? (
-                  <button
-                    onClick={stopSearch}
-                    className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 shadow-sm transition hover:bg-rose-100 active:scale-95"
-                  >
-                    停止する
-                  </button>
-                ) : null}
-
-                <button
-                  onClick={() => runSearch("alg")}
-                  disabled={isSearching}
-                  className={[
-                    "rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition active:scale-95",
-                    isSearching
-                      ? "cursor-not-allowed bg-slate-500"
-                      : "bg-slate-900 hover:-translate-y-0.5 hover:bg-slate-800 hover:shadow-md",
-                  ].join(" ")}
-                >
-                  {isSearching && searchMode === "alg" ? "探索中…" : "手順から探索"}
-                </button>
-              </div>
-            </label>
-
-            <div className="overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
-              <div className="mb-4 flex flex-wrap gap-2">
-                {[...FACE_ORDER, DONT_CARE].map((face) => (
-                  <button
-                    key={face}
-                    onClick={() => setSelectedColor(face)}
-                    className={[
-                      "flex h-11 w-11 items-center justify-center rounded-2xl border transition active:scale-95",
-                      selectedColor === face
-                        ? "border-slate-900 bg-white shadow-md ring-2 ring-slate-400"
-                        : "border-slate-300 bg-white hover:bg-slate-50",
-                    ].join(" ")}
-                    title={FACE_LABEL[face]}
-                  >
-                    {face === DONT_CARE ? (
-                      <DontCareIcon className="h-6 w-6 text-[12px]" />
-                    ) : (
-                      <span
-                        className="inline-flex h-6 w-6 rounded border border-slate-400"
-                        style={{ background: FACE_COLOR_STYLE[face] }}
-                      />
-                    )}
-                  </button>
-                ))}
-              </div>
-
-              <NetEditor
-                pattern={targetPattern}
-                setPattern={setTargetPattern}
-                selectedColor={selectedColor}
-              />
-
-              <div className="mt-4 flex flex-wrap gap-2">
-                <button
-                  onClick={() => setTargetPattern(solvedPattern())}
-                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm transition hover:bg-slate-50 active:scale-95"
-                >
-                  solved
-                </button>
-
-                <button
-                  onClick={() =>
-                    setTargetPattern((prev) => {
-                      const next = {};
-                      for (const f of FACE_ORDER) {
-                        next[f] = prev[f].map((x, i) => (i === 4 ? f : DONT_CARE));
-                      }
-                      return next;
-                    })
-                  }
-                  className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm transition hover:bg-slate-50 active:scale-95"
-                >
-                  <span>センター以外</span>
-                  <DontCareIcon />
-                </button>
+              <div className="overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
+                <div className="mb-4 flex flex-wrap gap-2">
+                  {[...FACE_ORDER, DONT_CARE].map((face) => (
+                    <button key={face} onClick={() => setSelectedColor(face)} className={`flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-semibold transition active:scale-95 ${selectedColor === face ? "border-slate-900 bg-white shadow-md ring-2 ring-slate-400" : "border-slate-300 bg-white hover:bg-slate-50"}`}>
+                      <span className="inline-flex h-5 w-5 items-center justify-center rounded border border-slate-400 text-[10px] font-bold text-white" style={{ background: FACE_COLOR_STYLE[face] }}>{face === DONT_CARE ? "?" : ""}</span>
+                    </button>
+                  ))}
+                </div>
+                <NetEditor pattern={targetPattern} setPattern={setTargetPattern} selectedColor={selectedColor} />
               </div>
             </div>
-
-            <div className="flex flex-wrap justify-end gap-2">
-              {isSearching && searchMode === "pattern" ? (
-                <button
-                  onClick={stopSearch}
-                  className="rounded-2xl border border-rose-300 bg-rose-50 px-5 py-3 text-sm font-semibold text-rose-700 shadow-sm transition hover:bg-rose-100 active:scale-95"
-                >
-                  停止する
-                </button>
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-end">
+              {isSearching ? (
+                <button onClick={stopSearch} className="rounded-2xl border border-rose-300 bg-rose-50 px-5 py-3 text-sm font-semibold text-rose-700 shadow-sm transition hover:bg-rose-100 active:scale-95">停止する</button>
               ) : null}
-
-              <button
-                onClick={() => runSearch("pattern")}
-                disabled={isSearching}
-                className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95 disabled:opacity-60"
-              >
-                {isSearching && searchMode === "pattern" ? "探索中…" : "展開図から探索"}
-              </button>
+              <button onClick={() => runSearch("pattern")} disabled={isSearching} className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95 disabled:opacity-60">{isSearching ? "探索中…" : "展開図から探索"}</button>
             </div>
 
-            <div className="grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid items-start gap-4 sm:grid-cols-3">
               <label className="grid gap-1">
                 <span className="text-sm font-semibold">何gen？</span>
-                <input
-                  value={searchMovesText}
-                  onChange={(e) => setSearchMovesText(e.target.value)}
-                  className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400"
-                  placeholder="例: R U D / R U f / R U S / R U x"
-                />
+                <input value={searchMovesText} onChange={(e) => setSearchMovesText(e.target.value)} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" placeholder="例: R U D / R U f / R U S / R U x" />
               </label>
-
               <label className="grid gap-1">
                 <span className="text-sm font-semibold">手数上限</span>
-                <input
-                  type="number"
-                  value={maxSymbolDepth}
-                  onChange={(e) => setMaxSymbolDepth(Number(e.target.value))}
-                  className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400"
-                />
+                <input type="number" value={maxSymbolDepth} onChange={(e) => setMaxSymbolDepth(Number(e.target.value))} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" />
               </label>
-
               <label className="grid gap-1">
                 <span className="text-sm font-semibold">出力数</span>
-                <input
-                  type="number"
-                  value={limit}
-                  onChange={(e) => setLimit(Number(e.target.value))}
-                  className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400"
-                />
+                <input type="number" value={limit} onChange={(e) => setLimit(Number(e.target.value))} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" />
               </label>
             </div>
           </div>
         </div>
 
-        {error ? (
-          <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-            {error}
-          </div>
-        ) : null}
+        {error && <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
 
         <div className="mb-4">
           {isSearching ? <ThinkingCard foundCount={solutions.length} /> : null}
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          {solutions.map((solution, i) => (
-            <SolutionCard
-              key={`${i}-${algToString(solution)}`}
-              index={i + 1}
-              solution={solution}
-            />
-          ))}
+          {solutions.map((solution, i) => <SolutionCard key={`${i}-${algToString(solution)}`} index={i + 1} solution={solution} />)}
         </div>
 
         {!isSearching && !error && hasSearched && solutions.length === 0 ? (
-          <div className="mt-4">
-            <EmptyCard text="見つからんかった。" />
-          </div>
+          <div className="mt-4"><EmptyCard text="見つからんかった。" /></div>
         ) : null}
 
         {!hasSearched && !isSearching ? (
-          <div className="mt-4">
-            <EmptyCard text="条件を入れて探索してな。" />
-          </div>
+          <div className="mt-4"><EmptyCard text="条件を入れて探索してな。" /></div>
         ) : null}
       </div>
     </div>
