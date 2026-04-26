@@ -3,35 +3,12 @@ import React, { useEffect, useRef, useState } from "react";
 const FACE_ORDER = ["U", "R", "F", "D", "L", "B"];
 const DONT_CARE = "X";
 const SOLVED_STRING = FACE_ORDER.map((face) => face.repeat(9)).join("");
-
-const NORMAL = {
-  U: [0, 1, 0],
-  D: [0, -1, 0],
-  R: [1, 0, 0],
-  L: [-1, 0, 0],
-  F: [0, 0, 1],
-  B: [0, 0, -1],
-};
-
-const FACE_COLOR_STYLE = {
-  U: "#f8fafc",
-  R: "#ef4444",
-  F: "#22c55e",
-  D: "#facc15",
-  L: "#fb923c",
-  B: "#3b82f6",
-  X: "#111827",
-};
-
-const FACE_LABEL = {
-  U: "白",
-  R: "赤",
-  F: "緑",
-  D: "黄",
-  L: "橙",
-  B: "青",
-  X: "dont care",
-};
+const NORMAL = { U: [0, 1, 0], D: [0, -1, 0], R: [1, 0, 0], L: [-1, 0, 0], F: [0, 0, 1], B: [0, 0, -1] };
+const FACE_COLOR_STYLE = { U: "#f8fafc", R: "#ef4444", F: "#22c55e", D: "#facc15", L: "#fb923c", B: "#3b82f6", X: "#111827" };
+const FACE_LABEL = { U: "白", R: "赤", F: "緑", D: "黄", L: "橙", B: "青", X: "dont care" };
+const PARALLEL_GROUP = { U: "UD", D: "UD", R: "RL", L: "RL", F: "FB", B: "FB" };
+const PARALLEL_GROUP_FACES = { UD: ["U", "D"], RL: ["R", "L"], FB: ["F", "B"] };
+const TOKEN_RE = /([URFDLBMESxyzurfdlb](?:w)?)(2|')?/g;
 
 function keyOf(pos, normal) {
   return `${pos.join(",")}|${normal.join(",")}`;
@@ -52,7 +29,6 @@ function facePos(face, r, c) {
 function buildStickers() {
   const stickers = [];
   const indexOf = new Map();
-
   for (const face of FACE_ORDER) {
     for (let r = 0; r < 3; r += 1) {
       for (let c = 0; c < 3; c += 1) {
@@ -63,7 +39,6 @@ function buildStickers() {
       }
     }
   }
-
   return { stickers, indexOf };
 }
 
@@ -81,15 +56,11 @@ function makePerm(axis, layers, direction) {
   const layerSet = new Set(layers);
   const perm = Array.from({ length: 54 }, (_, i) => i);
   const axisIndex = { x: 0, y: 1, z: 2 }[axis];
-
   for (let i = 0; i < STICKERS.length; i += 1) {
     const [pos, normal] = STICKERS[i];
     if (!layerSet.has(pos[axisIndex])) continue;
-    const newPos = rot(pos, axis, direction);
-    const newNormal = rot(normal, axis, direction);
-    perm[INDEX_OF.get(keyOf(newPos, newNormal))] = i;
+    perm[INDEX_OF.get(keyOf(rot(pos, axis, direction), rot(normal, axis, direction)))] = i;
   }
-
   return perm;
 }
 
@@ -124,8 +95,6 @@ const BASE = {
   b: makePerm("z", [-1, 0], 1),
 };
 
-const TOKEN_RE = /([URFDLBMESxyzurfdlb](?:w)?)(2|')?/g;
-
 function normalizeAlgText(alg) {
   return String(alg)
     .replaceAll("’", "'")
@@ -139,32 +108,15 @@ function parseAlg(alg) {
   const moves = [];
   let pos = 0;
   TOKEN_RE.lastIndex = 0;
-
   for (;;) {
     const match = TOKEN_RE.exec(text);
     if (!match) break;
-    if (text.slice(pos, match.index).trim()) {
-      throw new Error(`入力に読み取れない部分があります: ${text.slice(pos, match.index)}`);
-    }
+    if (text.slice(pos, match.index).trim()) throw new Error(`入力に読み取れない部分があります: ${text.slice(pos, match.index)}`);
     moves.push(match[1] + (match[2] || ""));
     pos = TOKEN_RE.lastIndex;
   }
-
-  if (text.slice(pos).trim()) {
-    throw new Error(`入力に読み取れない部分があります: ${text.slice(pos)}`);
-  }
-
+  if (text.slice(pos).trim()) throw new Error(`入力に読み取れない部分があります: ${text.slice(pos)}`);
   return moves;
-}
-
-function makeSearchMoves(text) {
-  const faces = [];
-  for (const move of parseAlg(text)) {
-    const face = move[0];
-    if (!BASE[face]) throw new Error(`対応していない記号です: ${face}`);
-    if (!faces.includes(face)) faces.push(face);
-  }
-  return faces.flatMap((face) => [face, `${face}'`]);
 }
 
 function inverseMove(move) {
@@ -182,8 +134,44 @@ function algToString(moves) {
   return moves.join(" ");
 }
 
-const PARALLEL_GROUP = { U: "UD", D: "UD", R: "RL", L: "RL", F: "FB", B: "FB" };
-const PARALLEL_GROUP_FACES = { UD: ["U", "D"], RL: ["R", "L"], FB: ["F", "B"] };
+function makeSearchMoves(text) {
+  const faces = [];
+  for (const move of parseAlg(text)) {
+    const face = move[0];
+    if (!BASE[face]) throw new Error(`対応していない記号です: ${face}`);
+    if (!faces.includes(face)) faces.push(face);
+  }
+  return faces.flatMap((face) => [face, `${face}'`]);
+}
+
+function parseRequiredParts(text) {
+  return String(text || "")
+    .split(/\r?\n|,|、/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => cleanMoves(parseAlg(part)));
+}
+
+function listContainsSubsequence(list, part) {
+  if (!part.length) return true;
+  if (part.length > list.length) return false;
+  for (let i = 0; i <= list.length - part.length; i += 1) {
+    let ok = true;
+    for (let j = 0; j < part.length; j += 1) {
+      if (list[i + j] !== part[j]) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) return true;
+  }
+  return false;
+}
+
+function solutionMatchesRequiredParts(solution, requiredParts) {
+  const cleaned = cleanMoves(solution);
+  return requiredParts.every((part) => listContainsSubsequence(cleaned, part));
+}
 
 function parallelGroup(move) {
   return PARALLEL_GROUP[move[0]] || null;
@@ -228,7 +216,6 @@ function simplifySameFace(moves) {
 function compressParallelRuns(moves) {
   const result = [];
   let i = 0;
-
   while (i < moves.length) {
     const group = parallelGroup(moves[i]);
     if (!group) {
@@ -236,22 +223,18 @@ function compressParallelRuns(moves) {
       i += 1;
       continue;
     }
-
     const powers = {};
     for (const face of PARALLEL_GROUP_FACES[group]) powers[face] = 0;
-
     while (i < moves.length && parallelGroup(moves[i]) === group) {
       const [face, power] = moveToFacePower(moves[i]);
       powers[face] += power;
       i += 1;
     }
-
     for (const face of PARALLEL_GROUP_FACES[group]) {
       const move = facePowerToMove(face, powers[face]);
       if (move) result.push(move);
     }
   }
-
   return result;
 }
 
@@ -326,21 +309,15 @@ function patternToArray(pattern) {
 
 function countPatternColors(pattern) {
   const counts = { U: 0, R: 0, F: 0, D: 0, L: 0, B: 0, X: 0 };
-  for (const face of FACE_ORDER) {
-    for (const color of pattern[face]) counts[color] += 1;
-  }
+  for (const face of FACE_ORDER) for (const color of pattern[face]) counts[color] += 1;
   return counts;
 }
 
 function validatePattern(pattern) {
   const counts = countPatternColors(pattern);
   for (const face of FACE_ORDER) {
-    if (pattern[face][4] !== face) {
-      throw new Error(`${face}面の中央ステッカーは${face}色で固定してください。`);
-    }
-    if (counts[face] > 9) {
-      throw new Error(`${face}色が${counts[face]}枚あります。各色は9枚以内にしてください。`);
-    }
+    if (pattern[face][4] !== face) throw new Error(`${face}面の中央ステッカーは${face}色で固定してください。`);
+    if (counts[face] > 9) throw new Error(`${face}色が${counts[face]}枚あります。各色は9枚以内にしてください。`);
   }
 }
 
@@ -348,7 +325,6 @@ function insertSolutionSorted(list, solution, maxLen = Infinity) {
   const normalized = cleanMoves(solution);
   const key = algToString(normalized);
   if (list.some((x) => algToString(x) === key)) return list;
-
   const next = [...list, normalized].sort((a, b) => {
     const ka = [effectiveMoveCount(a), symbolMoveCount(a), quarterTurnCount(a), algToString(a)];
     const kb = [effectiveMoveCount(b), symbolMoveCount(b), quarterTurnCount(b), algToString(b)];
@@ -358,7 +334,6 @@ function insertSolutionSorted(list, solution, maxLen = Infinity) {
     }
     return 0;
   });
-
   if (next.length > maxLen) next.length = maxLen;
   return next;
 }
@@ -372,10 +347,9 @@ function workerMain() {
   const PARALLEL_GROUP = { U: "UD", D: "UD", R: "RL", L: "RL", F: "FB", B: "FB" };
   const PARALLEL_GROUP_FACES = { UD: ["U", "D"], RL: ["R", "L"], FB: ["F", "B"] };
   const TOKEN_RE = /([URFDLBMESxyzurfdlb](?:w)?)(2|')?/g;
+  let ALLOW_UNSAFE_CONTINUE = false;
 
-  function guardMemory(condition) {
-    if (!condition) throw new Error("探索が大きすぎたため中断しました。ここまでに見つかった結果は残しています。");
-  }
+  function guardMemory(condition) { if (!condition && !ALLOW_UNSAFE_CONTINUE) throw new Error("探索が大きすぎたため中断しました。"); }
   function keyOf(pos, normal) { return pos.join(",") + "|" + normal.join(","); }
   function facePos(face, r, c) {
     const map = { U: [c - 1, 1, r - 1], D: [c - 1, -1, 1 - r], F: [c - 1, 1 - r, 1], B: [1 - c, 1 - r, -1], R: [1, 1 - r, 1 - c], L: [-1, 1 - r, c - 1] };
@@ -384,15 +358,11 @@ function workerMain() {
   function buildStickers() {
     const stickers = [];
     const indexOf = new Map();
-    for (const face of FACE_ORDER) {
-      for (let r = 0; r < 3; r += 1) {
-        for (let c = 0; c < 3; c += 1) {
-          const pos = facePos(face, r, c);
-          const normal = NORMAL[face];
-          indexOf.set(keyOf(pos, normal), stickers.length);
-          stickers.push([pos, normal]);
-        }
-      }
+    for (const face of FACE_ORDER) for (let r = 0; r < 3; r += 1) for (let c = 0; c < 3; c += 1) {
+      const pos = facePos(face, r, c);
+      const normal = NORMAL[face];
+      indexOf.set(keyOf(pos, normal), stickers.length);
+      stickers.push([pos, normal]);
     }
     return { stickers, indexOf };
   }
@@ -416,9 +386,7 @@ function workerMain() {
       const pos = STICKERS[i][0];
       const normal = STICKERS[i][1];
       if (!layerSet.has(pos[axisIndex])) continue;
-      const newPos = rot(pos, axis, direction);
-      const newNormal = rot(normal, axis, direction);
-      perm[INDEX_OF.get(keyOf(newPos, newNormal))] = i;
+      perm[INDEX_OF.get(keyOf(rot(pos, axis, direction), rot(normal, axis, direction)))] = i;
     }
     return perm;
   }
@@ -433,11 +401,7 @@ function workerMain() {
     M: makePerm("x", [0], 1), E: makePerm("y", [0], 1), S: makePerm("z", [0], -1), x: makePerm("x", [-1, 0, 1], -1), y: makePerm("y", [-1, 0, 1], -1), z: makePerm("z", [-1, 0, 1], -1),
     u: makePerm("y", [0, 1], -1), d: makePerm("y", [-1, 0], 1), r: makePerm("x", [0, 1], -1), l: makePerm("x", [-1, 0], 1), f: makePerm("z", [0, 1], -1), b: makePerm("z", [-1, 0], 1),
   };
-  function applyPerm(state, perm) {
-    let next = "";
-    for (let i = 0; i < 54; i += 1) next += state[perm[i]];
-    return next;
-  }
+  function applyPerm(state, perm) { let next = ""; for (let i = 0; i < 54; i += 1) next += state[perm[i]]; return next; }
   function normalizeAlgText(alg) { return String(alg).replaceAll("’", "'").replaceAll("＇", "'").replace(/([URFDLB])w/g, function (_, face) { return face.toLowerCase(); }).replaceAll(",", " "); }
   function parseAlg(alg) {
     const text = normalizeAlgText(alg);
@@ -466,66 +430,25 @@ function workerMain() {
     MOVE_PERM_CACHE.set(move, perm);
     return perm;
   }
-  function applyAlg(state, alg) {
-    let current = state;
-    for (const move of parseAlg(alg)) current = applyPerm(current, moveToPerm(move));
-    return current;
-  }
+  function applyAlg(state, alg) { let current = state; for (const move of parseAlg(alg)) current = applyPerm(current, moveToPerm(move)); return current; }
   function makeSearchMoves(text) {
     const faces = [];
-    for (const move of parseAlg(text)) {
-      const face = move[0];
-      if (!BASE[face]) throw new Error("対応していない記号です: " + face);
-      if (!faces.includes(face)) faces.push(face);
-    }
+    for (const move of parseAlg(text)) { const face = move[0]; if (!BASE[face]) throw new Error("対応していない記号です: " + face); if (!faces.includes(face)) faces.push(face); }
     return faces.flatMap(function (face) { return [face, face + "'"]; });
   }
   function inverseMove(move) { const base = move[0]; if (move.endsWith("'")) return base; if (move.endsWith("2")) return move; return base + "'"; }
   function inverseAlgList(moves) { return moves.slice().reverse().map(inverseMove); }
   function algToString(moves) { return moves.join(" "); }
+  function parseRequiredParts(text) { return String(text || "").split(/\r?\n|,|、/).map(function (part) { return part.trim(); }).filter(Boolean).map(function (part) { return cleanMoves(parseAlg(part)); }); }
+  function listContainsSubsequence(list, part) { if (!part.length) return true; if (part.length > list.length) return false; for (let i = 0; i <= list.length - part.length; i += 1) { let ok = true; for (let j = 0; j < part.length; j += 1) { if (list[i + j] !== part[j]) { ok = false; break; } } if (ok) return true; } return false; }
+  function solutionMatchesRequiredParts(solution, requiredParts) { const cleaned = cleanMoves(solution); return requiredParts.every(function (part) { return listContainsSubsequence(cleaned, part); }); }
   function parallelGroup(move) { return PARALLEL_GROUP[move[0]] || null; }
   function isParallelPair(a, b) { const ga = parallelGroup(a); const gb = parallelGroup(b); return ga !== null && ga === gb && a[0] !== b[0]; }
   function moveToFacePower(move) { let power = 1; if (move.endsWith("2")) power = 2; else if (move.endsWith("'")) power = 3; return [move[0], power]; }
   function facePowerToMove(face, power) { const normalized = ((power % 4) + 4) % 4; if (normalized === 0) return null; if (normalized === 1) return face; if (normalized === 2) return face + "2"; return face + "'"; }
-  function simplifySameFace(moves) {
-    const result = [];
-    for (const move of moves) {
-      const fp = moveToFacePower(move);
-      const face = fp[0];
-      const power = fp[1];
-      if (result.length && result[result.length - 1][0] === face) {
-        const prevPower = moveToFacePower(result.pop())[1];
-        const newMove = facePowerToMove(face, prevPower + power);
-        if (newMove) result.push(newMove);
-      } else {
-        result.push(move);
-      }
-    }
-    return result;
-  }
-  function compressParallelRuns(moves) {
-    const result = [];
-    let i = 0;
-    while (i < moves.length) {
-      const group = parallelGroup(moves[i]);
-      if (!group) { result.push(moves[i]); i += 1; continue; }
-      const powers = {};
-      for (const face of PARALLEL_GROUP_FACES[group]) powers[face] = 0;
-      while (i < moves.length && parallelGroup(moves[i]) === group) { const fp = moveToFacePower(moves[i]); powers[fp[0]] += fp[1]; i += 1; }
-      for (const face of PARALLEL_GROUP_FACES[group]) { const move = facePowerToMove(face, powers[face]); if (move) result.push(move); }
-    }
-    return result;
-  }
-  function cleanMoves(moves) {
-    let current = moves.slice();
-    for (;;) {
-      const old = current.join(" ");
-      current = simplifySameFace(current);
-      current = compressParallelRuns(current);
-      current = simplifySameFace(current);
-      if (old === current.join(" ")) return current;
-    }
-  }
+  function simplifySameFace(moves) { const result = []; for (const move of moves) { const fp = moveToFacePower(move); const face = fp[0]; const power = fp[1]; if (result.length && result[result.length - 1][0] === face) { const prevPower = moveToFacePower(result.pop())[1]; const newMove = facePowerToMove(face, prevPower + power); if (newMove) result.push(newMove); } else result.push(move); } return result; }
+  function compressParallelRuns(moves) { const result = []; let i = 0; while (i < moves.length) { const group = parallelGroup(moves[i]); if (!group) { result.push(moves[i]); i += 1; continue; } const powers = {}; for (const face of PARALLEL_GROUP_FACES[group]) powers[face] = 0; while (i < moves.length && parallelGroup(moves[i]) === group) { const fp = moveToFacePower(moves[i]); powers[fp[0]] += fp[1]; i += 1; } for (const face of PARALLEL_GROUP_FACES[group]) { const move = facePowerToMove(face, powers[face]); if (move) result.push(move); } } return result; }
+  function cleanMoves(moves) { let current = moves.slice(); for (;;) { const old = current.join(" "); current = simplifySameFace(current); current = compressParallelRuns(current); current = simplifySameFace(current); if (old === current.join(" ")) return current; } }
   function symbolMoveCount(moves) { return cleanMoves(moves).length; }
   function symbolDelta(path, move) { if (!path.length) return 1; const last = path[path.length - 1]; if (last[0] === move[0] && last === move) return 0; return 1; }
   function canAddMove(path, move) {
@@ -589,11 +512,8 @@ function workerMain() {
     let frontB = [0];
     const solutionSet = new Set();
     while ((frontA.length || frontB.length) && !shouldStop()) {
-      if (frontA.length && (frontA.length <= frontB.length || !frontB.length)) {
-        frontA = expandOneSideWorker({ front: frontA, storeSelf: storeA, storeOther: storeB, movePerms, moves, sideSymbolLimit: sideSymbolLimitA, solutionSet, expandingFromStart: true, maxSymbolDepth, shouldStop, onSolution });
-      } else {
-        frontB = expandOneSideWorker({ front: frontB, storeSelf: storeB, storeOther: storeA, movePerms, moves, sideSymbolLimit: sideSymbolLimitB, solutionSet, expandingFromStart: false, maxSymbolDepth, shouldStop, onSolution });
-      }
+      if (frontA.length && (frontA.length <= frontB.length || !frontB.length)) frontA = expandOneSideWorker({ front: frontA, storeSelf: storeA, storeOther: storeB, movePerms, moves, sideSymbolLimit: sideSymbolLimitA, solutionSet, expandingFromStart: true, maxSymbolDepth, shouldStop, onSolution });
+      else frontB = expandOneSideWorker({ front: frontB, storeSelf: storeB, storeOther: storeA, movePerms, moves, sideSymbolLimit: sideSymbolLimitB, solutionSet, expandingFromStart: false, maxSymbolDepth, shouldStop, onSolution });
     }
   }
   function enumerateForwardStore(moves, movePerms, depthLimit, shouldStop) {
@@ -639,13 +559,7 @@ function workerMain() {
     const forwardStore = enumerateForwardStore(moves, movePerms, firstLimit, shouldStop);
     const solutionSet = new Set();
     const indexCache = new Map();
-    function getIndex(mask, positions) {
-      if (indexCache.has(mask)) return indexCache.get(mask);
-      const index = buildForwardIndex(forwardStore, positions);
-      indexCache.clear();
-      indexCache.set(mask, index);
-      return index;
-    }
+    function getIndex(mask, positions) { if (indexCache.has(mask)) return indexCache.get(mask); const index = buildForwardIndex(forwardStore, positions); indexCache.clear(); indexCache.set(mask, index); return index; }
     let front = [{ path: [], perm: Array.from({ length: 54 }, function (_, i) { return i; }), cost: 0 }];
     function emitMatches(secondPath, secondPerm) {
       const pulled = pullPatternBack(patternArr, secondPerm);
@@ -685,6 +599,8 @@ function workerMain() {
   }
   self.onmessage = function (event) {
     const data = event.data;
+    ALLOW_UNSAFE_CONTINUE = Boolean(data.allowUnsafe);
+    const requiredParts = parseRequiredParts(data.requiredPartsText || "");
     let foundCount = 0;
     let stopByLimit = false;
     const foundKeys = new Set();
@@ -693,6 +609,7 @@ function workerMain() {
     const onSolution = function (solution) {
       if (shouldStop()) return;
       const normalized = cleanMoves(solution);
+      if (!solutionMatchesRequiredParts(normalized, requiredParts)) return;
       const key = algToString(normalized);
       if (foundKeys.has(key)) return;
       foundKeys.add(key);
@@ -717,45 +634,6 @@ function workerMain() {
   };
 }
 
-const SEARCH_WORKER_URLS = new WeakMap();
-
-function createSearchWorker() {
-  const source = `(${workerMain.toString()})();`;
-  const blob = new Blob([source], { type: "text/javascript" });
-  const url = URL.createObjectURL(blob);
-  const worker = new Worker(url);
-  SEARCH_WORKER_URLS.set(worker, url);
-  return worker;
-}
-
-function terminateWorker(worker) {
-  if (!worker) return;
-  worker.terminate();
-  const url = SEARCH_WORKER_URLS.get(worker);
-  if (url) URL.revokeObjectURL(url);
-  SEARCH_WORKER_URLS.delete(worker);
-}
-
-function runInternalTests() {
-  const tests = [
-    () => algToString(parseAlg("R U R'")) === "R U R'",
-    () => algToString(cleanMoves(["R", "R"])) === "R2",
-    () => algToString(cleanMoves(["R", "R", "R"])) === "R'",
-    () => algToString(inverseAlgList(["R", "U'"])) === "U R'",
-    () => makeSearchMoves("R U D").join(" ") === "R R' U U' D D'",
-    () => formatWithSimulUD(["U", "D"]) === "( U D )",
-    () => typeof workerMain === "function",
-    () => typeof createSearchWorker === "function",
-    () => applyPermToString(SOLVED_STRING, BASE.R).length === 54,
-    () => typeof SEARCH_WORKER_URLS === "object",
-  ];
-
-  const failed = tests.findIndex((test) => !test());
-  if (failed !== -1) console.warn(`Internal test failed: ${failed + 1}`);
-}
-
-runInternalTests();
-
 function Sticker({ color, onClick, locked = false }) {
   return (
     <button type="button" onClick={onClick} disabled={locked} className={["aspect-square w-full rounded-md border border-slate-300 transition duration-150", locked ? "cursor-not-allowed ring-2 ring-slate-500" : "hover:scale-105 active:scale-95"].join(" ")} style={{ background: FACE_COLOR_STYLE[color] }} title={FACE_LABEL[color] || color}>
@@ -778,7 +656,6 @@ function NetEditor({ pattern, setPattern, selectedColor }) {
       return next;
     });
   }
-
   const spacer = <div />;
   return (
     <div className="mx-auto grid w-full max-w-[520px] grid-cols-4 gap-1.5 py-2 sm:gap-3">
@@ -832,23 +709,23 @@ function NumberInput({ label, value, onChange, min = 1, max = 99 }) {
     if (!Number.isFinite(numeric)) return;
     onChange(Math.min(max, Math.max(min, Math.trunc(numeric))));
   }
-
   return (
     <label className="grid gap-1"><span className="text-sm font-normal">{label}</span><input type="number" inputMode="numeric" pattern="[0-9]*" min={min} max={max} step="1" value={value} onChange={(e) => setClamped(e.target.value)} onBlur={() => { if (value === "") onChange(min); }} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 text-center text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" /></label>
   );
 }
 
 const TEXT = {
-  ja: { title: "手順探索", darkMode: "ダークモード", showMoveCounts: "手数を表示", netInput: "入力方式", language: "言語", shareUrl: "URL共有", saved: "保存済み", history: "履歴", favorite: "保存", clear: "削除", copied: "コピーしました", inputPlaceholder: "既存の手順を入力…", searchFromAlg: "手順から探索", searchFromNet: "展開図から探索", algMode: "手順", netMode: "展開図", generator: "生成系", depthLimit: "手数上限", resultLimit: "表示件数", copy: "コピー", simultaneous: "同時回し", symbolMoves: "記号手数", quarterTurns: "90度手数", thinkingTitle: "探索中…", thinkingBody: (n) => `見つかった手順から順に表示しています。現在 ${n} 件。`, noResults: "条件に一致する手順が見つかりませんでした。", searchFinished: "探索が完了しました。これ以上は見つかりませんでした。", initialHelp: "条件を入力して、探索を開始してください。" },
-  en: { title: "Algorithm Search", darkMode: "Dark mode", showMoveCounts: "Show move counts", netInput: "Input mode", language: "Language", shareUrl: "Share URL", saved: "Saved", history: "History", favorite: "Save", clear: "Clear", copied: "Copied", inputPlaceholder: "Enter an existing solution…", searchFromAlg: "Search from algorithm", searchFromNet: "Search from net", algMode: "Algorithm", netMode: "Net", generator: "Generator", depthLimit: "Move limit", resultLimit: "Results", copy: "Copy", simultaneous: "Simul moves", symbolMoves: "Move count", quarterTurns: "Quarter turns", thinkingTitle: "Searching…", thinkingBody: (n) => `Showing results as they are found. ${n} found so far.`, noResults: "No matching algorithms found.", searchFinished: "Search complete. No more results were found.", initialHelp: "Enter conditions and start searching." },
-  ur: { title: "طریقہ تلاش", darkMode: "ڈارک موڈ", showMoveCounts: "چالوں کی گنتی دکھائیں", netInput: "طریقۂ اندراج", language: "زبان", shareUrl: "URL شیئر کریں", saved: "محفوظ", history: "تاریخچہ", favorite: "محفوظ کریں", clear: "حذف", copied: "کاپی ہو گیا", inputPlaceholder: "موجودہ حل کا طریقہ درج کریں…", searchFromAlg: "طریقے سے تلاش", searchFromNet: "نیٹ سے تلاش", algMode: "طریقہ", netMode: "نیٹ", generator: "جنریٹر", depthLimit: "چالوں کی حد", resultLimit: "نتائج", copy: "کاپی", simultaneous: "ساتھ چالیں", symbolMoves: "چالوں کی گنتی", quarterTurns: "کوارٹر ٹرنز", thinkingTitle: "تلاش جاری…", thinkingBody: (n) => `ملنے والے طریقے فوراً دکھائے جا رہے ہیں۔ اب تک ${n} ملے۔`, noResults: "شرائط سے ملتا ہوا کوئی طریقہ نہیں ملا۔", searchFinished: "تلاش مکمل ہو گئی۔ مزید نتائج نہیں ملے۔", initialHelp: "شرائط درج کریں اور تلاش شروع کریں۔" },
-  ko: { title: "수순 탐색", darkMode: "다크 모드", showMoveCounts: "수순 수 표시", netInput: "입력 방식", language: "언어", shareUrl: "URL 공유", saved: "저장됨", history: "기록", favorite: "저장", clear: "삭제", copied: "복사했습니다", inputPlaceholder: "기존 해법을 입력…", searchFromAlg: "알고리즘으로 탐색", searchFromNet: "전개도에서 탐색", algMode: "알고리즘", netMode: "전개도", generator: "생성계", depthLimit: "수순 제한", resultLimit: "표시 개수", copy: "복사", simultaneous: "동시 회전", symbolMoves: "기호 수", quarterTurns: "90도 회전 수", thinkingTitle: "탐색 중…", thinkingBody: (n) => `찾은 수순을 순서대로 표시하고 있습니다. 현재 ${n}개.`, noResults: "조건에 맞는 수순을 찾지 못했습니다.", searchFinished: "탐색이 완료되었습니다. 더 이상 결과가 없습니다.", initialHelp: "조건을 입력하고 탐색을 시작하세요." },
-  hi: { title: "एल्गोरिदम खोज", darkMode: "डार्क मोड", showMoveCounts: "चालों की संख्या दिखाएँ", netInput: "इनपुट मोड", language: "भाषा", shareUrl: "URL साझा करें", saved: "सहेजे गए", history: "इतिहास", favorite: "सहेजें", clear: "हटाएँ", copied: "कॉपी हुआ", inputPlaceholder: "मौजूदा समाधान दर्ज करें…", searchFromAlg: "एल्गोरिदम से खोजें", searchFromNet: "नेट से खोजें", algMode: "एल्गोरिदम", netMode: "नेट", generator: "जनरेटर", depthLimit: "चाल सीमा", resultLimit: "परिणाम संख्या", copy: "कॉपी", simultaneous: "साथ-साथ चालें", symbolMoves: "चालों की संख्या", quarterTurns: "90° चालें", thinkingTitle: "खोज जारी…", thinkingBody: (n) => `मिले हुए तरीके क्रम से दिखाए जा रहे हैं। अभी तक ${n} मिले।`, noResults: "शर्तों से मिलता कोई तरीका नहीं मिला।", searchFinished: "खोज पूरी हुई। और परिणाम नहीं मिले।", initialHelp: "शर्तें दर्ज करें और खोज शुरू करें।" },
-  ar: { title: "البحث عن الخوارزميات", darkMode: "الوضع الداكن", showMoveCounts: "إظهار عدد الحركات", netInput: "طريقة الإدخال", language: "اللغة", shareUrl: "مشاركة الرابط", saved: "محفوظ", history: "السجل", favorite: "حفظ", clear: "حذف", copied: "تم النسخ", inputPlaceholder: "أدخل الحل الموجود…", searchFromAlg: "البحث من الخوارزمية", searchFromNet: "البحث من المخطط", algMode: "الخوارزمية", netMode: "المخطط", generator: "المولد", depthLimit: "حد الحركات", resultLimit: "عدد النتائج", copy: "نسخ", simultaneous: "حركات متزامنة", symbolMoves: "عدد الحركات", quarterTurns: "دورات 90°", thinkingTitle: "جارٍ البحث…", thinkingBody: (n) => `يتم عرض النتائج فور العثور عليها. تم العثور على ${n} حتى الآن.`, noResults: "لم يتم العثور على خوارزميات مطابقة.", searchFinished: "اكتمل البحث. لم يتم العثور على نتائج أخرى.", initialHelp: "أدخل الشروط وابدأ البحث." },
+  ja: { title: "手順探索", darkMode: "ダークモード", showMoveCounts: "手数を表示", netInput: "入力方式", language: "言語", shareUrl: "URL共有", saved: "保存済み", history: "履歴", favorite: "保存", clear: "削除", copied: "コピーしました", unsafeContinue: "上限なしで続ける", inputPlaceholder: "既存の手順を入力…", searchFromAlg: "手順から探索", searchFromNet: "展開図から探索", algMode: "手順", netMode: "展開図", generator: "生成系", requiredParts: "必須パーツ", requiredPartsPlaceholder: "例: R U R' U'", depthLimit: "手数上限", resultLimit: "表示件数", copy: "コピー", simultaneous: "同時回し", symbolMoves: "記号手数", quarterTurns: "90度手数", thinkingTitle: "探索中…", thinkingBody: (n) => `見つかった手順から順に表示しています。現在 ${n} 件。`, noResults: "条件に一致する手順が見つかりませんでした。", searchFinished: "探索が完了しました。これ以上は見つかりませんでした。", initialHelp: "条件を入力して、探索を開始してください。" },
+  en: { title: "Algorithm Search", darkMode: "Dark mode", showMoveCounts: "Show move counts", netInput: "Input mode", language: "Language", shareUrl: "Share URL", saved: "Saved", history: "History", favorite: "Save", clear: "Clear", copied: "Copied", unsafeContinue: "Continue without limit", inputPlaceholder: "Enter an existing solution…", searchFromAlg: "Search from algorithm", searchFromNet: "Search from net", algMode: "Algorithm", netMode: "Net", generator: "Generator", requiredParts: "Required parts", requiredPartsPlaceholder: "e.g. R U R' U'", depthLimit: "Move limit", resultLimit: "Results", copy: "Copy", simultaneous: "Simul moves", symbolMoves: "Move count", quarterTurns: "Quarter turns", thinkingTitle: "Searching…", thinkingBody: (n) => `Showing results as they are found. ${n} found so far.`, noResults: "No matching algorithms found.", searchFinished: "Search complete. No more results were found.", initialHelp: "Enter conditions and start searching." },
+  ur: { title: "طریقہ تلاش", darkMode: "ڈارک موڈ", showMoveCounts: "چالوں کی گنتی دکھائیں", netInput: "طریقۂ اندراج", language: "زبان", shareUrl: "URL شیئر کریں", saved: "محفوظ", history: "تاریخچہ", favorite: "محفوظ کریں", clear: "حذف", copied: "کاپی ہو گیا", unsafeContinue: "حد کے بغیر جاری رکھیں", inputPlaceholder: "موجودہ حل کا طریقہ درج کریں…", searchFromAlg: "طریقے سے تلاش", searchFromNet: "نیٹ سے تلاش", algMode: "طریقہ", netMode: "نیٹ", generator: "جنریٹر", requiredParts: "لازمی حصہ", requiredPartsPlaceholder: "مثال: R U R' U'", depthLimit: "چالوں کی حد", resultLimit: "نتائج", copy: "کاپی", simultaneous: "ساتھ چالیں", symbolMoves: "چالوں کی گنتی", quarterTurns: "کوارٹر ٹرنز", thinkingTitle: "تلاش جاری…", thinkingBody: (n) => `ملنے والے طریقے فوراً دکھائے جا رہے ہیں۔ اب تک ${n} ملے۔`, noResults: "شرائط سے ملتا ہوا کوئی طریقہ نہیں ملا۔", searchFinished: "تلاش مکمل ہو گئی۔ مزید نتائج نہیں ملے۔", initialHelp: "شرائط درج کریں اور تلاش شروع کریں۔" },
+  ko: { title: "수순 탐색", darkMode: "다크 모드", showMoveCounts: "수순 수 표시", netInput: "입력 방식", language: "언어", shareUrl: "URL 공유", saved: "저장됨", history: "기록", favorite: "저장", clear: "삭제", copied: "복사했습니다", unsafeContinue: "제한 없이 계속", inputPlaceholder: "기존 해법을 입력…", searchFromAlg: "알고리즘으로 탐색", searchFromNet: "전개도에서 탐색", algMode: "알고리즘", netMode: "전개도", generator: "생성계", requiredParts: "필수 파트", requiredPartsPlaceholder: "예: R U R' U'", depthLimit: "수순 제한", resultLimit: "표시 개수", copy: "복사", simultaneous: "동시 회전", symbolMoves: "기호 수", quarterTurns: "90도 회전 수", thinkingTitle: "탐색 중…", thinkingBody: (n) => `찾은 수순을 순서대로 표시하고 있습니다. 현재 ${n}개.`, noResults: "조건에 맞는 수순을 찾지 못했습니다.", searchFinished: "탐색이 완료되었습니다. 더 이상 결과가 없습니다.", initialHelp: "조건을 입력하고 탐색을 시작하세요." },
+  hi: { title: "एल्गोरिदम खोज", darkMode: "डार्क मोड", showMoveCounts: "चालों की संख्या दिखाएँ", netInput: "इनपुट मोड", language: "भाषा", shareUrl: "URL साझा करें", saved: "सहेजे गए", history: "इतिहास", favorite: "सहेजें", clear: "हटाएँ", copied: "कॉपी हुआ", unsafeContinue: "सीमा के बिना जारी रखें", inputPlaceholder: "मौजूदा समाधान दर्ज करें…", searchFromAlg: "एल्गोरिदम से खोजें", searchFromNet: "नेट से खोजें", algMode: "एल्गोरिदम", netMode: "नेट", generator: "जनरेटर", requiredParts: "ज़रूरी भाग", requiredPartsPlaceholder: "उदाहरण: R U R' U'", depthLimit: "चाल सीमा", resultLimit: "परिणाम संख्या", copy: "कॉपी", simultaneous: "साथ-साथ चालें", symbolMoves: "चालों की संख्या", quarterTurns: "90° चालें", thinkingTitle: "खोज जारी…", thinkingBody: (n) => `मिले हुए तरीके क्रम से दिखाए जा रहे हैं। अभी तक ${n} मिले।`, noResults: "शर्तों से मिलता कोई तरीका नहीं मिला।", searchFinished: "खोज पूरी हुई। और परिणाम नहीं मिले।", initialHelp: "शर्तें दर्ज करें और खोज शुरू करें।" },
+  ar: { title: "البحث عن الخوارزميات", darkMode: "الوضع الداكن", showMoveCounts: "إظهار عدد الحركات", netInput: "طريقة الإدخال", language: "اللغة", shareUrl: "مشاركة الرابط", saved: "محفوظ", history: "السجل", favorite: "حفظ", clear: "حذف", copied: "تم النسخ", unsafeContinue: "المتابعة بلا حد", inputPlaceholder: "أدخل الحل الموجود…", searchFromAlg: "البحث من الخوارزمية", searchFromNet: "البحث من المخطط", algMode: "الخوارزمية", netMode: "المخطط", generator: "المولد", requiredParts: "جزء إلزامي", requiredPartsPlaceholder: "مثال: R U R' U'", depthLimit: "حد الحركات", resultLimit: "عدد النتائج", copy: "نسخ", simultaneous: "حركات متزامنة", symbolMoves: "عدد الحركات", quarterTurns: "دورات 90°", thinkingTitle: "جارٍ البحث…", thinkingBody: (n) => `يتم عرض النتائج فور العثور عليها. تم العثور على ${n} حتى الآن.`, noResults: "لم يتم العثور على خوارزميات مطابقة.", searchFinished: "اكتمل البحث. لم يتم العثور على نتائج أخرى.", initialHelp: "أدخل الشروط وابدأ البحث." },
 };
 
 const LANGUAGE_LABEL = { ja: "日本語", en: "English", ur: "اردو", ko: "한국어", hi: "हिन्दी", ar: "العربية" };
 const PRESET_GENS = ["R U", "R U F", "R U D", "R U L", "R U f"];
+const REQUIRED_PART_PRESETS = ["R U R' U'", "U R U' R'", "R' F R F'", "F R' F' R"];
 const STORAGE_KEYS = { favorites: "cube-search-favorites-v1", history: "cube-search-history-v1" };
 
 function encodeShareState(obj) {
@@ -880,6 +757,24 @@ function writeStorageList(key, value) {
   } catch (_) {}
 }
 
+function runInternalTests() {
+  const tests = [
+    () => algToString(parseAlg("R U R'")) === "R U R'",
+    () => algToString(cleanMoves(["R", "R"])) === "R2",
+    () => algToString(cleanMoves(["R", "R", "R"])) === "R'",
+    () => algToString(inverseAlgList(["R", "U'"])) === "U R'",
+    () => makeSearchMoves("R U D").join(" ") === "R R' U U' D D'",
+    () => formatWithSimulUD(["U", "D"]) === "( U D )",
+    () => applyPermToString(SOLVED_STRING, BASE.R).length === 54,
+    () => parseRequiredParts("R U R' U'\nR' F R F'").length === 2,
+    () => solutionMatchesRequiredParts(parseAlg("R U R' U' F"), parseRequiredParts("R U R' U'")),
+  ];
+  const failed = tests.findIndex((test) => !test());
+  if (failed !== -1) console.warn(`Internal test failed: ${failed + 1}`);
+}
+
+runInternalTests();
+
 export default function App() {
   const workerUrlRef = useRef(new WeakMap());
   const [isDark, setIsDark] = useState(false);
@@ -897,7 +792,8 @@ export default function App() {
   const [targetAlg, setTargetAlg] = useState("R' U R' U' y R' F' R2 U' R' U R' F R F y'");
   const [targetPattern, setTargetPattern] = useState(solvedPattern());
   const [selectedColor, setSelectedColor] = useState("F");
-  const [searchMovesText, setSearchMovesText] = useState("R U D");
+  const [searchMovesText, setSearchMovesText] = useState("R U f");
+  const [requiredPartsText, setRequiredPartsText] = useState("U R U' R'");
   const [maxSymbolDepth, setMaxSymbolDepth] = useState(16);
   const [limit, setLimit] = useState(5);
   const [solutions, setSolutions] = useState([]);
@@ -905,8 +801,10 @@ export default function App() {
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [searchExhausted, setSearchExhausted] = useState(false);
+  const [canContinueUnsafe, setCanContinueUnsafe] = useState(false);
   const searchSessionRef = useRef(0);
   const workerRef = useRef(null);
+  const lastSearchModeRef = useRef("alg");
 
   function createSearchWorker() {
     const source = `(${workerMain.toString()})();`;
@@ -938,6 +836,7 @@ export default function App() {
       if (data.targetPattern) setTargetPattern(data.targetPattern);
       if (typeof data.selectedColor === "string") setSelectedColor(data.selectedColor);
       if (typeof data.searchMovesText === "string") setSearchMovesText(data.searchMovesText);
+      if (typeof data.requiredPartsText === "string") setRequiredPartsText(data.requiredPartsText);
       if (Number.isFinite(data.maxSymbolDepth)) setMaxSymbolDepth(data.maxSymbolDepth);
       if (Number.isFinite(data.limit)) setLimit(data.limit);
       if (typeof data.isDark === "boolean") setIsDark(data.isDark);
@@ -948,7 +847,7 @@ export default function App() {
   }, []);
 
   function currentShareState() {
-    return { targetAlg, targetPattern, selectedColor, showNetInput, searchMovesText, maxSymbolDepth, limit, isDark, showMoveCounts, language };
+    return { targetAlg, targetPattern, selectedColor, showNetInput, searchMovesText, requiredPartsText, maxSymbolDepth, limit, isDark, showMoveCounts, language };
   }
 
   async function shareUrl() {
@@ -959,9 +858,9 @@ export default function App() {
   }
 
   function saveHistoryItem(mode) {
-    const item = { id: Date.now(), mode, targetAlg, targetPattern, searchMovesText, maxSymbolDepth, limit };
-    const itemKey = JSON.stringify({ mode, targetAlg, targetPattern, searchMovesText, maxSymbolDepth, limit });
-    const next = [item, ...history.filter((x) => JSON.stringify({ mode: x.mode, targetAlg: x.targetAlg, targetPattern: x.targetPattern, searchMovesText: x.searchMovesText, maxSymbolDepth: x.maxSymbolDepth, limit: x.limit }) !== itemKey)].slice(0, 12);
+    const item = { id: Date.now(), mode, targetAlg, targetPattern, searchMovesText, requiredPartsText, maxSymbolDepth, limit };
+    const itemKey = JSON.stringify({ mode, targetAlg, targetPattern, searchMovesText, requiredPartsText, maxSymbolDepth, limit });
+    const next = [item, ...history.filter((x) => JSON.stringify({ mode: x.mode, targetAlg: x.targetAlg, targetPattern: x.targetPattern, searchMovesText: x.searchMovesText, requiredPartsText: x.requiredPartsText || "", maxSymbolDepth: x.maxSymbolDepth, limit: x.limit }) !== itemKey)].slice(0, 12);
     setHistory(next);
     writeStorageList(STORAGE_KEYS.history, next);
   }
@@ -970,6 +869,7 @@ export default function App() {
     if (item.targetAlg !== undefined) setTargetAlg(item.targetAlg);
     if (item.targetPattern) setTargetPattern(item.targetPattern);
     if (item.searchMovesText !== undefined) setSearchMovesText(item.searchMovesText);
+    if (item.requiredPartsText !== undefined) setRequiredPartsText(item.requiredPartsText || "");
     if (item.maxSymbolDepth !== undefined) setMaxSymbolDepth(item.maxSymbolDepth);
     if (item.limit !== undefined) setLimit(item.limit);
     setShowNetInput(item.mode === "pattern");
@@ -988,11 +888,13 @@ export default function App() {
     try { await navigator.clipboard.writeText(text); setShareMessage(t.copied); } catch (_) {}
   }
 
-  async function runSearch(mode) {
+  async function runSearch(mode, options = {}) {
     const currentSession = searchSessionRef.current + 1;
+    lastSearchModeRef.current = mode;
     searchSessionRef.current = currentSession;
     if (workerRef.current) { terminateSearchWorker(workerRef.current); workerRef.current = null; }
     setError("");
+    setCanContinueUnsafe(false);
     setHasSearched(true);
     setIsSearching(true);
     setSearchExhausted(false);
@@ -1013,6 +915,7 @@ export default function App() {
       }
       if (data.type === "error") {
         setError(data.message);
+        setCanContinueUnsafe(String(data.message || "").includes("探索が大きすぎ"));
         setIsSearching(false);
         terminateSearchWorker(worker);
         if (workerRef.current === worker) workerRef.current = null;
@@ -1030,12 +933,13 @@ export default function App() {
     worker.onerror = (event) => {
       if (searchSessionRef.current !== currentSession) return;
       setError(event.message || "Worker error");
+      setCanContinueUnsafe(String(event.message || "").includes("探索が大きすぎ"));
       setIsSearching(false);
       terminateSearchWorker(worker);
       if (workerRef.current === worker) workerRef.current = null;
     };
 
-    worker.postMessage({ mode, targetAlg, targetPattern, searchMovesText, maxSymbolDepth: Number(maxSymbolDepth), limit: Math.max(1, Number(limit) || 1) });
+    worker.postMessage({ mode, targetAlg, targetPattern, searchMovesText, requiredPartsText, maxSymbolDepth: Number(maxSymbolDepth), limit: Math.max(1, Number(limit) || 1), allowUnsafe: Boolean(options.allowUnsafe) });
   }
 
   return (
@@ -1088,9 +992,10 @@ export default function App() {
         <h1 className="mb-6 text-center text-4xl font-normal tracking-tight text-slate-900 sm:text-5xl">{t.title}</h1>
         <div className="light-panel mb-6 rounded-3xl p-6 shadow-sm ring-1 ring-slate-200"><div className="grid gap-4">
           {!showNetInput ? <div className="light-inner rounded-3xl border border-slate-200 p-4 shadow-sm"><textarea value={targetAlg} onChange={(e) => setTargetAlg(e.target.value)} placeholder={t.inputPlaceholder} className="h-14 w-full resize-none rounded-2xl border border-slate-300 bg-white px-3 py-4 font-mono text-sm leading-5 outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-slate-400" /><div className="mt-3 flex flex-wrap justify-end gap-2"><button onClick={() => runSearch("alg")} disabled={isSearching} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-normal text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95 disabled:opacity-60">{t.searchFromAlg}</button></div></div> : <div className="light-inner overflow-hidden rounded-3xl border border-slate-200 p-3 sm:p-4"><div className="mb-4 flex flex-wrap gap-2">{[...FACE_ORDER, DONT_CARE].map((face) => <button key={face} onClick={() => setSelectedColor(face)} className={`flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-normal transition active:scale-95 ${selectedColor === face ? "border-slate-900 bg-white shadow-md ring-2 ring-slate-400" : "border-slate-300 bg-white hover:bg-slate-50"}`}><span className="inline-flex h-5 w-5 items-center justify-center rounded border border-slate-400 text-[10px] font-normal text-white" style={{ background: FACE_COLOR_STYLE[face] }}>{face === DONT_CARE ? "?" : ""}</span></button>)}</div><NetEditor pattern={targetPattern} setPattern={setTargetPattern} selectedColor={selectedColor} /><div className="mt-4 flex justify-end"><button onClick={() => runSearch("pattern")} disabled={isSearching} className="w-fit whitespace-nowrap rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-normal text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95 disabled:opacity-60">{t.searchFromNet}</button></div></div>}
-          <div className="grid items-start gap-4 sm:grid-cols-3"><label className="grid gap-1"><span className="text-sm font-normal">{t.generator}</span><input value={searchMovesText} onChange={(e) => setSearchMovesText(e.target.value)} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" placeholder="例: R U D / R U f / R U S / R U x" /><div className="mt-2 flex flex-wrap gap-1.5">{PRESET_GENS.map((preset) => <button key={preset} type="button" onClick={() => setSearchMovesText(preset)} className="rounded-lg border border-slate-300 bg-white px-2 py-1 font-mono text-xs text-slate-700 transition hover:bg-slate-50 active:scale-95">{preset}</button>)}</div></label><NumberInput label={t.depthLimit} value={maxSymbolDepth} onChange={setMaxSymbolDepth} min={1} max={30} /><NumberInput label={t.resultLimit} value={limit} onChange={setLimit} min={1} max={50} /></div>
+          <div className="grid items-start gap-4 sm:grid-cols-4"><label className="grid gap-1"><span className="text-sm font-normal">{t.generator}</span><input value={searchMovesText} onChange={(e) => setSearchMovesText(e.target.value)} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" placeholder="例: R U D / R U f / R U S / R U x" /><div className="mt-2 flex flex-wrap gap-1.5">{PRESET_GENS.map((preset) => <button key={preset} type="button" onClick={() => setSearchMovesText(preset)} className="rounded-lg border border-slate-300 bg-white px-2 py-1 font-mono text-xs text-slate-700 transition hover:bg-slate-50 active:scale-95">{preset}</button>)}</div></label><label className="grid gap-1"><span className="text-sm font-normal">{t.requiredParts}</span><input value={requiredPartsText} onChange={(e) => setRequiredPartsText(e.target.value)} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" placeholder={t.requiredPartsPlaceholder} /><div className="mt-2 flex flex-wrap gap-1.5">{REQUIRED_PART_PRESETS.map((preset) => <button key={preset} type="button" onClick={() => setRequiredPartsText((prev) => prev.trim() ? `${prev.trim()}
+${preset}` : preset)} className="rounded-lg border border-slate-300 bg-white px-2 py-1 font-mono text-xs text-slate-700 transition hover:bg-slate-50 active:scale-95">{preset}</button>)}</div></label><NumberInput label={t.depthLimit} value={maxSymbolDepth} onChange={setMaxSymbolDepth} min={1} max={30} /><NumberInput label={t.resultLimit} value={limit} onChange={setLimit} min={1} max={50} /></div>
         </div></div>
-        {error ? <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div> : null}
+        {error ? <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"><span>{error}</span>{canContinueUnsafe ? <button type="button" onClick={() => runSearch(lastSearchModeRef.current, { allowUnsafe: true })} className="rounded-xl border border-red-300 bg-white px-3 py-2 text-xs font-normal text-red-700 transition hover:bg-red-50 active:scale-95">{t.unsafeContinue}</button> : null}</div> : null}
         {shareMessage ? <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-3 text-sm text-slate-600">{shareMessage}</div> : null}
         <div className="mb-4">{isSearching ? <ThinkingCard foundCount={solutions.length} t={t} /> : null}</div>
         <div className="grid gap-4 md:grid-cols-2">{solutions.map((solution, i) => <SolutionCard key={`${i}-${algToString(solution)}`} solution={solution} t={t} showMoveCounts={showMoveCounts} onSave={saveFavoriteSolution} onCopy={copyText} />)}</div>
