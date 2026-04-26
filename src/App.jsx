@@ -892,7 +892,7 @@ function Sticker({ color, onClick, locked = false }) {
       title={FACE_LABEL[color] || color}
     >
       {color === DONT_CARE ? (
-        <span className="text-xs font-bold text-white">?</span>
+        <span className="text-xs font-normal text-white">?</span>
       ) : null}
     </button>
   );
@@ -951,7 +951,7 @@ function SolutionCard({ solution, t, showMoveCounts }) {
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md">
-      <div className="break-words font-mono text-base font-semibold text-slate-900">
+      <div className="break-words font-mono text-base font-normal text-slate-900">
         {displayAlg || "(空)"}
       </div>
 
@@ -959,15 +959,15 @@ function SolutionCard({ solution, t, showMoveCounts }) {
         <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
           <div className="rounded-xl bg-slate-100 p-2">
             <div className="text-slate-500">{t.simultaneous}</div>
-            <div className="text-lg font-bold">{effectiveMoveCount(solution)}</div>
+            <div className="text-lg font-normal">{effectiveMoveCount(solution)}</div>
           </div>
           <div className="rounded-xl bg-slate-100 p-2">
             <div className="text-slate-500">{t.symbolMoves}</div>
-            <div className="text-lg font-bold">{symbolMoveCount(solution)}</div>
+            <div className="text-lg font-normal">{symbolMoveCount(solution)}</div>
           </div>
           <div className="rounded-xl bg-slate-100 p-2">
             <div className="text-slate-500">{t.quarterTurns}</div>
-            <div className="text-lg font-bold">{quarterTurnCount(solution)}</div>
+            <div className="text-lg font-normal">{quarterTurnCount(solution)}</div>
           </div>
         </div>
       ) : null}
@@ -985,7 +985,7 @@ function ThinkingCard({ foundCount, t }) {
           <span className="h-2.5 w-2.5 animate-bounce rounded-full bg-sky-500 [animation-delay:240ms]" />
         </div>
         <div>
-          <div className="font-semibold text-slate-900">{t.thinkingTitle}</div>
+          <div className="font-normal text-slate-900">{t.thinkingTitle}</div>
           <div className="text-sm text-slate-600">{t.thinkingBody(foundCount)}</div>
         </div>
       </div>
@@ -1005,7 +1005,11 @@ const TEXT = {
     inputPlaceholder: "既存の手順を入力…",
     applyToNet: "展開図に反映",
     searchFromAlg: "手順から探索",
-    searching: "探索中…",    searchFromNet: "展開図から探索",
+    searching: "探索中…",
+    netHint: "展開図からも入力できます…",
+    openNet: "展開図を開く",
+    closeNet: "展開図を閉じる",
+    searchFromNet: "展開図から探索",
     generator: "生成系",
     depthLimit: "手数上限",
     resultLimit: "表示件数",
@@ -1025,7 +1029,11 @@ const TEXT = {
     inputPlaceholder: "Enter an existing solution…",
     applyToNet: "Apply to net",
     searchFromAlg: "Search from algorithm",
-    searching: "Searching…",    searchFromNet: "Search from net",
+    searching: "Searching…",
+    netHint: "You can also enter a pattern from the net…",
+    openNet: "Open net",
+    closeNet: "Close net",
+    searchFromNet: "Search from net",
     generator: "Generator",
     depthLimit: "Move limit",
     resultLimit: "Results",
@@ -1045,7 +1053,11 @@ const TEXT = {
     inputPlaceholder: "موجودہ حل کا طریقہ درج کریں…",
     applyToNet: "نیٹ پر لگائیں",
     searchFromAlg: "طریقے سے تلاش",
-    searching: "تلاش جاری…",    searchFromNet: "نیٹ سے تلاش",
+    searching: "تلاش جاری…",
+    netHint: "آپ نیٹ سے بھی پیٹرن درج کر سکتے ہیں…",
+    openNet: "نیٹ کھولیں",
+    closeNet: "نیٹ بند کریں",
+    searchFromNet: "نیٹ سے تلاش",
     generator: "جنریٹر",
     depthLimit: "چالوں کی حد",
     resultLimit: "نتائج",
@@ -1065,7 +1077,11 @@ const TEXT = {
     inputPlaceholder: "기존 해법을 입력…",
     applyToNet: "전개도에 반영",
     searchFromAlg: "알고리즘으로 탐색",
-    searching: "탐색 중…",    searchFromNet: "전개도에서 탐색",
+    searching: "탐색 중…",
+    netHint: "전개도에서도 입력할 수 있습니다…",
+    openNet: "전개도 열기",
+    closeNet: "전개도 닫기",
+    searchFromNet: "전개도에서 탐색",
     generator: "생성계",
     depthLimit: "수순 제한",
     resultLimit: "표시 개수",
@@ -1085,7 +1101,11 @@ const TEXT = {
     inputPlaceholder: "मौजूदा समाधान दर्ज करें…",
     applyToNet: "नेट पर लागू करें",
     searchFromAlg: "एल्गोरिदम से खोजें",
-    searching: "खोज जारी…",    searchFromNet: "नेट से खोजें",
+    searching: "खोज जारी…",
+    netHint: "नेट से भी पैटर्न दर्ज कर सकते हैं…",
+    openNet: "नेट खोलें",
+    closeNet: "नेट बंद करें",
+    searchFromNet: "नेट से खोजें",
     generator: "जनरेटर",
     depthLimit: "चाल सीमा",
     resultLimit: "परिणाम संख्या",
@@ -1105,7 +1125,11 @@ const TEXT = {
     inputPlaceholder: "أدخل الحل الموجود…",
     applyToNet: "تطبيق على المخطط",
     searchFromAlg: "البحث من الخوارزمية",
-    searching: "جارٍ البحث…",    searchFromNet: "البحث من المخطط",
+    searching: "جارٍ البحث…",
+    netHint: "يمكنك أيضًا إدخال النمط من المخطط…",
+    openNet: "فتح المخطط",
+    closeNet: "إغلاق المخطط",
+    searchFromNet: "البحث من المخطط",
     generator: "المولد",
     depthLimit: "حد الحركات",
     resultLimit: "عدد النتائج",
@@ -1140,6 +1164,7 @@ export default function App() {
   const [targetAlg, setTargetAlg] = useState("R' U R' U' y R' F' R2 U' R' U R' F R F y'");
   const [targetPattern, setTargetPattern] = useState(solvedPattern());
   const [selectedColor, setSelectedColor] = useState("F");
+  const [netOpen, setNetOpen] = useState(false);
   const [searchMovesText, setSearchMovesText] = useState("R U D");
   const [maxSymbolDepth, setMaxSymbolDepth] = useState(16);
   const [limit, setLimit] = useState(5);
@@ -1176,6 +1201,7 @@ export default function App() {
     setTargetAlg("R' U R' U' y R' F' R2 U' R' U R' F R F y'");
     setTargetPattern(solvedPattern());
     setSelectedColor("F");
+    setNetOpen(false);
     setSearchMovesText("R U D");
     setMaxSymbolDepth(16);
     setLimit(5);
@@ -1358,7 +1384,7 @@ export default function App() {
       <div className="fixed left-4 top-4 z-50">
         <button
           onClick={() => setMenuOpen((v) => !v)}
-          className="menu-button flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-300 bg-white text-xl font-bold text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95"
+          className="menu-button flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-300 bg-white text-xl font-normal text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95"
           aria-label="menu"
         >
           ☰
@@ -1371,21 +1397,21 @@ export default function App() {
           >
             <button
               onClick={() => setIsDark((v) => !v)}
-              className="menu-item flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 active:scale-95"
+              className="menu-item flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"
             >
               <span>{t.darkMode}</span>
               <span>{isDark ? "ON" : "OFF"}</span>
             </button>
             <button
               onClick={() => setShowMoveCounts((v) => !v)}
-              className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 active:scale-95"
+              className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"
             >
               <span>{t.showMoveCounts}</span>
               <span>{showMoveCounts ? "ON" : "OFF"}</span>
             </button>
             <button
               onClick={() => setLanguageOpen((v) => !v)}
-              className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 active:scale-95"
+              className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"
             >
               <span>{t.language}</span>
               <span>{languageOpen ? "▴" : LANGUAGE_LABEL[language]}</span>
@@ -1400,7 +1426,7 @@ export default function App() {
                       setLanguage(lang);
                       setLanguageOpen(false);
                     }}
-                    className={`menu-item mb-1 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 active:scale-95 ${language === lang ? "ring-2 ring-slate-400" : ""}`}
+                    className={`menu-item mb-1 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95 ${language === lang ? "ring-2 ring-slate-400" : ""}`}
                   >
                     <span>{LANGUAGE_LABEL[lang]}</span>
                     <span>{language === lang ? "✓" : ""}</span>
@@ -1412,7 +1438,7 @@ export default function App() {
         ) : null}
       </div>
       <div className="mx-auto max-w-6xl">
-        <h1 className="mb-6 text-center text-4xl font-black tracking-tight text-slate-900 sm:text-5xl">
+        <h1 className="mb-6 text-center text-4xl font-normal tracking-tight text-slate-900 sm:text-5xl">
           手順探索
         </h1>
         <div className="light-panel mb-6 rounded-3xl p-6 shadow-sm ring-1 ring-slate-200">
@@ -1426,37 +1452,58 @@ export default function App() {
                   className="h-14 w-full resize-none rounded-2xl border border-slate-300 bg-white px-3 py-4 font-mono text-sm leading-5 outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-slate-400"
                 />
                 <div className="mt-3 flex flex-wrap justify-end gap-2">
-                  <button onClick={loadAlgToPattern} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95">{t.applyToNet}</button>
-                  <button onClick={() => runSearch("alg")} disabled={isSearching} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95 disabled:opacity-60">{t.searchFromAlg}</button>
+                  <button onClick={() => runSearch("alg")} disabled={isSearching} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-normal text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95 disabled:opacity-60">{t.searchFromAlg}</button>
                 </div>
               </div>
 
               <div className="light-inner overflow-hidden rounded-3xl border border-slate-200 p-3 sm:p-4">
-                <div className="mb-4 flex flex-wrap gap-2">
-                  {[...FACE_ORDER, DONT_CARE].map((face) => (
-                    <button key={face} onClick={() => setSelectedColor(face)} className={`flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-semibold transition active:scale-95 ${selectedColor === face ? "border-slate-900 bg-white shadow-md ring-2 ring-slate-400" : "border-slate-300 bg-white hover:bg-slate-50"}`}>
-                      <span className="inline-flex h-5 w-5 items-center justify-center rounded border border-slate-400 text-[10px] font-bold text-white" style={{ background: FACE_COLOR_STYLE[face] }}>{face === DONT_CARE ? "?" : ""}</span>
-                    </button>
-                  ))}
-                </div>
-                <NetEditor pattern={targetPattern} setPattern={setTargetPattern} selectedColor={selectedColor} />
-                <div className="mt-4 flex justify-end">
-                  <button onClick={() => runSearch("pattern")} disabled={isSearching} className="w-fit whitespace-nowrap rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95 disabled:opacity-60">{t.searchFromNet}</button>
-                </div>
+                {!netOpen ? (
+                  <button
+                    type="button"
+                    onClick={() => setNetOpen(true)}
+                    className="flex w-full items-center justify-between rounded-2xl border border-slate-300 bg-white px-4 py-3 text-left text-sm font-normal text-slate-700 shadow-sm transition hover:bg-slate-50 active:scale-95"
+                  >
+                    <span>{t.netHint}</span>
+                    <span className="text-slate-500">▾</span>
+                  </button>
+                ) : (
+                  <>
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <div className="flex flex-wrap gap-2">
+                        {[...FACE_ORDER, DONT_CARE].map((face) => (
+                          <button key={face} onClick={() => setSelectedColor(face)} className={`flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-normal transition active:scale-95 ${selectedColor === face ? "border-slate-900 bg-white shadow-md ring-2 ring-slate-400" : "border-slate-300 bg-white hover:bg-slate-50"}`}>
+                            <span className="inline-flex h-5 w-5 items-center justify-center rounded border border-slate-400 text-[10px] font-normal text-white" style={{ background: FACE_COLOR_STYLE[face] }}>{face === DONT_CARE ? "?" : ""}</span>
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setNetOpen(false)}
+                        className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700 shadow-sm transition hover:bg-slate-50 active:scale-95"
+                      >
+                        {t.closeNet}
+                      </button>
+                    </div>
+                    <NetEditor pattern={targetPattern} setPattern={setTargetPattern} selectedColor={selectedColor} />
+                    <div className="mt-4 flex justify-end">
+                      <button onClick={() => runSearch("pattern")} disabled={isSearching} className="w-fit whitespace-nowrap rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-normal text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95 disabled:opacity-60">{t.searchFromNet}</button>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
             <div className="grid items-start gap-4 sm:grid-cols-3">
               <label className="grid gap-1">
-                <span className="text-sm font-semibold">{t.generator}</span>
+                <span className="text-sm font-normal">{t.generator}</span>
                 <input value={searchMovesText} onChange={(e) => setSearchMovesText(e.target.value)} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" placeholder="例: R U D / R U f / R U S / R U x" />
               </label>
               <label className="grid gap-1">
-                <span className="text-sm font-semibold">{t.depthLimit}</span>
+                <span className="text-sm font-normal">{t.depthLimit}</span>
                 <input type="number" value={maxSymbolDepth} onChange={(e) => setMaxSymbolDepth(Number(e.target.value))} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" />
               </label>
               <label className="grid gap-1">
-                <span className="text-sm font-semibold">{t.resultLimit}</span>
+                <span className="text-sm font-normal">{t.resultLimit}</span>
                 <input type="number" value={limit} onChange={(e) => setLimit(Number(e.target.value))} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" />
               </label>
             </div>
