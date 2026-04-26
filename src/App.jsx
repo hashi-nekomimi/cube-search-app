@@ -946,12 +946,11 @@ function NetEditor({ pattern, setPattern, selectedColor }) {
   );
 }
 
-function SolutionCard({ index, solution, t, showMoveCounts }) {
+function SolutionCard({ solution, t, showMoveCounts }) {
   const displayAlg = formatWithSimulUD(solution);
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md">
-      <div className="mb-2 text-sm font-semibold text-slate-500">#{index}</div>
       <div className="break-words font-mono text-base font-semibold text-slate-900">
         {displayAlg || "(空)"}
       </div>
@@ -1413,21 +1412,24 @@ export default function App() {
         ) : null}
       </div>
       <div className="mx-auto max-w-6xl">
+        <h1 className="mb-6 text-center text-4xl font-black tracking-tight text-slate-900 sm:text-5xl">
+          手順探索
+        </h1>
         <div className="light-panel mb-6 rounded-3xl p-6 shadow-sm ring-1 ring-slate-200">
           <div className="grid gap-4">
             <div className="grid gap-4">
-              <label className="grid gap-2">
+              <div className="light-inner rounded-3xl border border-slate-200 p-4 shadow-sm">
                 <textarea
                   value={targetAlg}
                   onChange={(e) => setTargetAlg(e.target.value)}
                   placeholder={t.inputPlaceholder}
-                  className="h-12 resize-none rounded-2xl border border-slate-300 bg-white px-3 py-3 font-mono text-sm leading-5 outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-slate-400"
+                  className="h-14 w-full resize-none rounded-2xl border border-slate-300 bg-white px-3 py-4 font-mono text-sm leading-5 outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-slate-400"
                 />
-                <div className="flex flex-wrap justify-end gap-2">
-                  <button onClick={loadAlgToPattern} className="rounded-xl border border-slate-300 px-3 py-2 text-sm transition hover:bg-slate-50 active:scale-95">{t.applyToNet}</button>
+                <div className="mt-3 flex flex-wrap justify-end gap-2">
+                  <button onClick={loadAlgToPattern} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95">{t.applyToNet}</button>
                   <button onClick={() => runSearch("alg")} disabled={isSearching} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95 disabled:opacity-60">{t.searchFromAlg}</button>
                 </div>
-              </label>
+              </div>
 
               <div className="light-inner overflow-hidden rounded-3xl border border-slate-200 p-3 sm:p-4">
                 <div className="mb-4 flex flex-wrap gap-2">
@@ -1438,10 +1440,10 @@ export default function App() {
                   ))}
                 </div>
                 <NetEditor pattern={targetPattern} setPattern={setTargetPattern} selectedColor={selectedColor} />
+                <div className="mt-4 flex justify-end">
+                  <button onClick={() => runSearch("pattern")} disabled={isSearching} className="w-fit whitespace-nowrap rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95 disabled:opacity-60">{t.searchFromNet}</button>
+                </div>
               </div>
-            </div>
-            <div className="flex justify-end">
-              <button onClick={() => runSearch("pattern")} disabled={isSearching} className="w-fit whitespace-nowrap rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95 disabled:opacity-60">{t.searchFromNet}</button>
             </div>
 
             <div className="grid items-start gap-4 sm:grid-cols-3">
@@ -1468,7 +1470,7 @@ export default function App() {
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          {solutions.map((solution, i) => <SolutionCard key={`${i}-${algToString(solution)}`} index={i + 1} solution={solution} t={t} showMoveCounts={showMoveCounts} />)}
+          {solutions.map((solution, i) => <SolutionCard key={`${i}-${algToString(solution)}`} solution={solution} t={t} showMoveCounts={showMoveCounts} />)}
         </div>
 
         {!isSearching && !error && hasSearched && solutions.length === 0 ? (
