@@ -580,18 +580,16 @@ function sortSolutions(solutions) {
     });
 }
 
-function expandOneSide({ front, seenSelf, seenOther, movePerms, moves, sideEffectiveLimit, sideSymbolLimit, solutionSet, solutions, expandingFromStart, hardLimit }) {
+function expandOneSide({ front, seenSelf, seenOther, movePerms, moves, sideSymbolLimit, solutionSet, solutions, expandingFromStart, hardLimit }) {
   const newFront = new Map();
 
   for (const [, data] of front.entries()) {
-    const { state, path, effCost, symCost } = data;
+    const { state, path, symCost } = data;
 
     for (const move of moves) {
       if (!canAddMove(path, move)) continue;
 
-      const newEffCost = effCost + effectiveDelta(path, move);
       const newSymCost = symCost + symbolDelta(path, move);
-      if (newEffCost > sideEffectiveLimit) continue;
       if (newSymCost > sideSymbolLimit) continue;
 
       const newState = applyPerm(state, movePerms.get(move));
@@ -599,7 +597,7 @@ function expandOneSide({ front, seenSelf, seenOther, movePerms, moves, sideEffec
       if (seenSelf.has(key)) continue;
 
       const newPath = [...path, move];
-      const record = { state: newState, path: newPath, effCost: newEffCost, symCost: newSymCost };
+      const record = { state: newState, path: newPath, symCost: newSymCost };
       seenSelf.set(key, record);
       newFront.set(key, record);
 
@@ -607,7 +605,6 @@ function expandOneSide({ front, seenSelf, seenOther, movePerms, moves, sideEffec
         const otherPath = seenOther.get(key).path;
         const solution = cleanMoves(expandingFromStart ? [...newPath, ...inverseAlgList(otherPath)] : [...otherPath, ...inverseAlgList(newPath)]);
 
-        if (effectiveMoveCount(solution) > hardLimit.maxEffectiveDepth) continue;
         if (symbolMoveCount(solution) > hardLimit.maxSymbolDepth) continue;
 
         const solutionKey = solution.join(" ");
@@ -622,25 +619,23 @@ function expandOneSide({ front, seenSelf, seenOther, movePerms, moves, sideEffec
   return newFront;
 }
 
-function bidirectionalBfsCollect({ start, goal = SOLVED, moves, maxEffectiveDepth = 16, maxSymbolDepth = 16 }) {
+function bidirectionalBfsCollect({ start, goal = SOLVED, moves, maxSymbolDepth = 16 }) {
   const goalStates = goal === SOLVED ? SOLVED_ORIENTATIONS : orientationStates(goal);
   const goalKeys = new Set(goalStates.map(stateKey));
 
   if (goalKeys.has(stateKey(start))) return [[]];
 
-  const sideEffectiveLimitA = Math.ceil(maxEffectiveDepth / 2);
-  const sideEffectiveLimitB = Math.floor(maxEffectiveDepth / 2);
   const sideSymbolLimitA = Math.ceil(maxSymbolDepth / 2);
   const sideSymbolLimitB = Math.floor(maxSymbolDepth / 2);
 
   const movePerms = buildMovePerms(moves);
   const startKey = stateKey(start);
 
-  let frontA = new Map([[startKey, { state: start, path: [], effCost: 0, symCost: 0 }]]);
+  let frontA = new Map([[startKey, { state: start, path: [], symCost: 0 }]]);
   let frontB = new Map();
 
   for (const goalState of goalStates) {
-    frontB.set(stateKey(goalState), { state: goalState, path: [], effCost: 0, symCost: 0 });
+    frontB.set(stateKey(goalState), { state: goalState, path: [], symCost: 0 });
   }
 
   const seenA = new Map(frontA);
@@ -655,13 +650,11 @@ function bidirectionalBfsCollect({ start, goal = SOLVED, moves, maxEffectiveDept
         seenSelf: seenA,
         seenOther: seenB,
         movePerms,
-        moves,
-        sideEffectiveLimit: sideEffectiveLimitA,
-        sideSymbolLimit: sideSymbolLimitA,
+        moves,        sideSymbolLimit: sideSymbolLimitA,
         solutionSet,
         solutions,
         expandingFromStart: true,
-        hardLimit: { maxEffectiveDepth, maxSymbolDepth },
+        hardLimit: { maxSymbolDepth },
       });
     } else if (frontB.size) {
       frontB = expandOneSide({
@@ -669,13 +662,11 @@ function bidirectionalBfsCollect({ start, goal = SOLVED, moves, maxEffectiveDept
         seenSelf: seenB,
         seenOther: seenA,
         movePerms,
-        moves,
-        sideEffectiveLimit: sideEffectiveLimitB,
-        sideSymbolLimit: sideSymbolLimitB,
+        moves,        sideSymbolLimit: sideSymbolLimitB,
         solutionSet,
         solutions,
         expandingFromStart: false,
-        hardLimit: { maxEffectiveDepth, maxSymbolDepth },
+        hardLimit: { maxSymbolDepth },
       });
     }
 
@@ -720,21 +711,19 @@ function yieldToBrowser() {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-async function expandOneSideAsync({ front, seenSelf, seenOther, movePerms, moves, sideEffectiveLimit, sideSymbolLimit, solutionSet, expandingFromStart, hardLimit, shouldStop, onSolution }) {
+async function expandOneSideAsync({ front, seenSelf, seenOther, movePerms, moves, sideSymbolLimit, solutionSet, expandingFromStart, hardLimit, shouldStop, onSolution }) {
   const newFront = new Map();
   let work = 0;
 
   for (const [, data] of front.entries()) {
     if (shouldStop()) break;
-    const { state, path, effCost, symCost } = data;
+    const { state, path, symCost } = data;
 
     for (const move of moves) {
       if (shouldStop()) break;
       if (!canAddMove(path, move)) continue;
 
-      const newEffCost = effCost + effectiveDelta(path, move);
       const newSymCost = symCost + symbolDelta(path, move);
-      if (newEffCost > sideEffectiveLimit) continue;
       if (newSymCost > sideSymbolLimit) continue;
 
       const newState = applyPerm(state, movePerms.get(move));
@@ -742,7 +731,7 @@ async function expandOneSideAsync({ front, seenSelf, seenOther, movePerms, moves
       if (seenSelf.has(key)) continue;
 
       const newPath = [...path, move];
-      const record = { state: newState, path: newPath, effCost: newEffCost, symCost: newSymCost };
+      const record = { state: newState, path: newPath, symCost: newSymCost };
       seenSelf.set(key, record);
       newFront.set(key, record);
 
@@ -750,7 +739,6 @@ async function expandOneSideAsync({ front, seenSelf, seenOther, movePerms, moves
         const otherPath = seenOther.get(key).path;
         const solution = cleanMoves(expandingFromStart ? [...newPath, ...inverseAlgList(otherPath)] : [...otherPath, ...inverseAlgList(newPath)]);
 
-        if (effectiveMoveCount(solution) > hardLimit.maxEffectiveDepth) continue;
         if (symbolMoveCount(solution) > hardLimit.maxSymbolDepth) continue;
 
         const solutionKey = algToString(solution);
@@ -768,7 +756,7 @@ async function expandOneSideAsync({ front, seenSelf, seenOther, movePerms, moves
   return newFront;
 }
 
-async function bidirectionalBfsCollectAsync({ start, goal = SOLVED, moves, maxEffectiveDepth = 16, maxSymbolDepth = 16, shouldStop, onSolution }) {
+async function bidirectionalBfsCollectAsync({ start, goal = SOLVED, moves, maxSymbolDepth = 16, shouldStop, onSolution }) {
   const goalStates = goal === SOLVED ? SOLVED_ORIENTATIONS : orientationStates(goal);
   const goalKeys = new Set(goalStates.map(stateKey));
 
@@ -777,19 +765,17 @@ async function bidirectionalBfsCollectAsync({ start, goal = SOLVED, moves, maxEf
     return;
   }
 
-  const sideEffectiveLimitA = Math.ceil(maxEffectiveDepth / 2);
-  const sideEffectiveLimitB = Math.floor(maxEffectiveDepth / 2);
   const sideSymbolLimitA = Math.ceil(maxSymbolDepth / 2);
   const sideSymbolLimitB = Math.floor(maxSymbolDepth / 2);
 
   const movePerms = buildMovePerms(moves);
   const startKey = stateKey(start);
 
-  let frontA = new Map([[startKey, { state: start, path: [], effCost: 0, symCost: 0 }]]);
+  let frontA = new Map([[startKey, { state: start, path: [], symCost: 0 }]]);
   let frontB = new Map();
 
   for (const goalState of goalStates) {
-    frontB.set(stateKey(goalState), { state: goalState, path: [], effCost: 0, symCost: 0 });
+    frontB.set(stateKey(goalState), { state: goalState, path: [], symCost: 0 });
   }
 
   const seenA = new Map(frontA);
@@ -803,12 +789,10 @@ async function bidirectionalBfsCollectAsync({ start, goal = SOLVED, moves, maxEf
         seenSelf: seenA,
         seenOther: seenB,
         movePerms,
-        moves,
-        sideEffectiveLimit: sideEffectiveLimitA,
-        sideSymbolLimit: sideSymbolLimitA,
+        moves,        sideSymbolLimit: sideSymbolLimitA,
         solutionSet,
         expandingFromStart: true,
-        hardLimit: { maxEffectiveDepth, maxSymbolDepth },
+        hardLimit: { maxSymbolDepth },
         shouldStop,
         onSolution,
       });
@@ -818,12 +802,10 @@ async function bidirectionalBfsCollectAsync({ start, goal = SOLVED, moves, maxEf
         seenSelf: seenB,
         seenOther: seenA,
         movePerms,
-        moves,
-        sideEffectiveLimit: sideEffectiveLimitB,
-        sideSymbolLimit: sideSymbolLimitB,
+        moves,        sideSymbolLimit: sideSymbolLimitB,
         solutionSet,
         expandingFromStart: false,
-        hardLimit: { maxEffectiveDepth, maxSymbolDepth },
+        hardLimit: { maxSymbolDepth },
         shouldStop,
         onSolution,
       });
@@ -833,7 +815,7 @@ async function bidirectionalBfsCollectAsync({ start, goal = SOLVED, moves, maxEf
   }
 }
 
-async function bfsPatternCollectAsync({ pattern, moves, maxEffectiveDepth = 16, maxSymbolDepth = 16, shouldStop, onSolution }) {
+async function bfsPatternCollectAsync({ pattern, moves, maxSymbolDepth = 16, shouldStop, onSolution }) {
   validatePattern(pattern);
 
   const patternArr = patternToArray(pattern);
@@ -845,7 +827,7 @@ async function bfsPatternCollectAsync({ pattern, moves, maxEffectiveDepth = 16, 
     return;
   }
 
-  let currentFront = new Map([[stateKey(start), { state: start, path: [], effCost: 0, symCost: 0 }]]);
+  let currentFront = new Map([[stateKey(start), { state: start, path: [], symCost: 0 }]]);
   const seen = new Map(currentFront);
   const solutionSet = new Set();
   let work = 0;
@@ -855,15 +837,12 @@ async function bfsPatternCollectAsync({ pattern, moves, maxEffectiveDepth = 16, 
 
     for (const [, data] of currentFront.entries()) {
       if (shouldStop()) break;
-      const { state, path, effCost, symCost } = data;
+      const { state, path, symCost } = data;
 
       for (const move of moves) {
         if (shouldStop()) break;
         if (!canAddMove(path, move)) continue;
-
-        const newEffCost = effCost + effectiveDelta(path, move);
         const newSymCost = symCost + symbolDelta(path, move);
-        if (newEffCost > maxEffectiveDepth) continue;
         if (newSymCost > maxSymbolDepth) continue;
 
         const newState = applyPerm(state, movePerms.get(move));
@@ -871,7 +850,7 @@ async function bfsPatternCollectAsync({ pattern, moves, maxEffectiveDepth = 16, 
         if (seen.has(key)) continue;
 
         const newPath = [...path, move];
-        const record = { state: newState, path: newPath, effCost: newEffCost, symCost: newSymCost };
+        const record = { state: newState, path: newPath, symCost: newSymCost };
         seen.set(key, record);
         newFront.set(key, record);
 
@@ -1020,7 +999,6 @@ export default function App() {
   const [targetPattern, setTargetPattern] = useState(solvedPattern());
   const [selectedColor, setSelectedColor] = useState("F");
   const [searchMovesText, setSearchMovesText] = useState("R U D");
-  const [maxEffectiveDepth, setMaxEffectiveDepth] = useState(16);
   const [maxSymbolDepth, setMaxSymbolDepth] = useState(16);
   const [limit, setLimit] = useState(5);
   const [solutions, setSolutions] = useState([]);
@@ -1056,7 +1034,6 @@ export default function App() {
     setTargetPattern(solvedPattern());
     setSelectedColor("F");
     setSearchMovesText("R U D");
-    setMaxEffectiveDepth(16);
     setMaxSymbolDepth(16);
     setLimit(5);
     setSolutions([]);
@@ -1100,18 +1077,14 @@ export default function App() {
         await bidirectionalBfsCollectAsync({
           start,
           goal: SOLVED,
-          moves,
-          maxEffectiveDepth: Number(maxEffectiveDepth),
-          maxSymbolDepth: Number(maxSymbolDepth),
+          moves,          maxSymbolDepth: Number(maxSymbolDepth),
           shouldStop,
           onSolution,
         });
       } else {
         await bfsPatternCollectAsync({
           pattern: targetPattern,
-          moves,
-          maxEffectiveDepth: Number(maxEffectiveDepth),
-          maxSymbolDepth: Number(maxSymbolDepth),
+          moves,          maxSymbolDepth: Number(maxSymbolDepth),
           shouldStop,
           onSolution,
         });
@@ -1164,31 +1137,26 @@ export default function App() {
                 </div>
               </div>
             </div>
-
-            <div className="grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <label className="grid gap-1">
-                <span className="text-sm font-semibold">探索に使う生成系</span>
-                <input value={searchMovesText} onChange={(e) => setSearchMovesText(e.target.value)} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" placeholder="例: R U D / R U f / R U S / R U x" />
-              </label>
-              <label className="grid gap-1">
-                <span className="text-sm font-semibold">同時回し上限</span>
-                <input type="number" value={maxEffectiveDepth} onChange={(e) => setMaxEffectiveDepth(Number(e.target.value))} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" />
-              </label>
-              <label className="grid gap-1">
-                <span className="text-sm font-semibold">記号手数上限</span>
-                <input type="number" value={maxSymbolDepth} onChange={(e) => setMaxSymbolDepth(Number(e.target.value))} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" />
-              </label>
-              <label className="grid gap-1">
-                <span className="text-sm font-semibold">表示上限</span>
-                <input type="number" value={limit} onChange={(e) => setLimit(Number(e.target.value))} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" />
-              </label>
-            </div>
-
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-end">
               {isSearching ? (
                 <button onClick={stopSearch} className="rounded-2xl border border-rose-300 bg-rose-50 px-5 py-3 text-sm font-semibold text-rose-700 shadow-sm transition hover:bg-rose-100 active:scale-95">停止する</button>
               ) : null}
               <button onClick={() => runSearch("pattern")} disabled={isSearching} className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95 disabled:opacity-60">{isSearching ? "探索中…" : "展開図から探索"}</button>
+            </div>
+
+            <div className="grid items-start gap-4 sm:grid-cols-3">
+              <label className="grid gap-1">
+                <span className="text-sm font-semibold">何gen？</span>
+                <input value={searchMovesText} onChange={(e) => setSearchMovesText(e.target.value)} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" placeholder="例: R U D / R U f / R U S / R U x" />
+              </label>
+              <label className="grid gap-1">
+                <span className="text-sm font-semibold">手数上限</span>
+                <input type="number" value={maxSymbolDepth} onChange={(e) => setMaxSymbolDepth(Number(e.target.value))} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" />
+              </label>
+              <label className="grid gap-1">
+                <span className="text-sm font-semibold">出力数</span>
+                <input type="number" value={limit} onChange={(e) => setLimit(Number(e.target.value))} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" />
+              </label>
             </div>
           </div>
         </div>
