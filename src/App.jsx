@@ -667,20 +667,30 @@ function Sticker({ color, onClick, locked = false }) {
       type="button"
       onClick={onClick}
       disabled={locked}
-      className={`h-9 w-9 rounded-md border border-slate-300 transition ${locked ? "cursor-not-allowed ring-2 ring-slate-500" : "hover:scale-105"}`}
+      className={[
+        "aspect-square w-full rounded-md border border-slate-300 transition duration-150",
+        locked ? "cursor-not-allowed ring-2 ring-slate-500" : "hover:scale-105 active:scale-95",
+      ].join(" ")}
       style={{ background: FACE_COLOR_STYLE[color] }}
       title={FACE_LABEL[color] || color}
     >
-      {color === DONT_CARE ? <span className="text-xs font-bold text-white">?</span> : null}
+      {color === DONT_CARE ? (
+        <span className="text-xs font-bold text-white">?</span>
+      ) : null}
     </button>
   );
 }
 
 function FaceGrid({ stickers, onStickerClick }) {
   return (
-    <div className="grid grid-cols-3 gap-1">
+    <div className="grid w-full grid-cols-3 gap-1">
       {stickers.map((color, idx) => (
-        <Sticker key={idx} color={color} locked={idx === 4} onClick={() => onStickerClick(idx)} />
+        <Sticker
+          key={idx}
+          color={color}
+          locked={idx === 4}
+          onClick={() => onStickerClick(idx)}
+        />
       ))}
     </div>
   );
@@ -697,13 +707,10 @@ function NetEditor({ pattern, setPattern, selectedColor }) {
     });
   }
 
-  const spacer = <div className="h-[116px] w-[116px]" />;
+  const spacer = <div />;
 
   return (
-    <div
-      className="grid justify-center gap-3 overflow-x-auto py-2"
-      style={{ gridTemplateColumns: "repeat(4, 116px)" }}
-    >
+    <div className="mx-auto grid w-full max-w-[520px] grid-cols-4 gap-1.5 py-2 sm:gap-3">
       {spacer}
       <FaceGrid stickers={pattern.U} onStickerClick={(idx) => setSticker("U", idx)} />
       {spacer}
@@ -846,13 +853,17 @@ export default function App() {
           <div className="grid gap-4">
             <div className="grid gap-4">
               <label className="grid gap-2">
-                <span className="text-sm font-semibold">対象手順</span>
-                <textarea value={targetAlg} onChange={(e) => setTargetAlg(e.target.value)} className="min-h-24 rounded-2xl border border-slate-300 bg-white p-3 font-mono text-sm outline-none focus:ring-2 focus:ring-slate-400" />
+                <textarea
+                  value={targetAlg}
+                  onChange={(e) => setTargetAlg(e.target.value)}
+                  placeholder="スクランブルを入力..."
+                  className="h-12 resize-none rounded-2xl border border-slate-300 bg-white px-3 py-3 font-mono text-sm leading-5 outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-slate-400"
+                />
                 <div><button onClick={loadAlgToPattern} className="rounded-xl border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">下の展開図に反映</button></div>
               </label>
 
-              <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-                <div className="mb-3 text-sm text-slate-600">展開図入力。黒は dont care。</div>
+              <div className="overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
+                <div className="mb-3 text-sm text-slate-600">黒は dont care。</div>
                 <div className="mb-4 flex flex-wrap gap-2">
                   {[...FACE_ORDER, DONT_CARE].map((face) => (
                     <button key={face} onClick={() => setSelectedColor(face)} className={`flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-semibold ${selectedColor === face ? "border-slate-900 ring-2 ring-slate-400" : "border-slate-300 bg-white"}`}>
