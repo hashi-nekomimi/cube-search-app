@@ -1200,6 +1200,7 @@ export default function App() {
       const maxResults = Math.max(1, Number(limit) || 1);
       let foundCount = 0;
       let stopByLimit = false;
+      const foundKeys = new Set();
 
       const shouldStop = () =>
         searchSessionRef.current !== currentSession || stopByLimit;
@@ -1207,16 +1208,14 @@ export default function App() {
       const onSolution = (solution) => {
         if (shouldStop()) return;
 
-        let added = false;
+        const normalized = cleanMoves(solution);
+        const key = algToString(normalized);
+        if (foundKeys.has(key)) return;
 
-        setSolutions((prev) => {
-          const before = prev.length;
-          const next = insertSolutionSorted(prev, solution, maxResults);
-          added = next.length > before;
-          return next;
-        });
+        foundKeys.add(key);
+        foundCount++;
 
-        if (added) foundCount++;
+        setSolutions((prev) => insertSolutionSorted(prev, normalized, maxResults));
 
         if (foundCount >= maxResults) {
           stopByLimit = true;
@@ -1254,7 +1253,7 @@ export default function App() {
   }
 
   return (
-    <div className={`${isDark ? "dark-mode" : "light-shell"} min-h-screen p-4 text-slate-900 md:p-8`}> 
+    <div className={`${isDark ? "dark-mode" : "light-shell"} min-h-screen px-4 pb-4 pt-16 text-slate-900 md:px-8 md:pb-8 md:pt-16`}>  
       <style>{`
         body {
           background: #e5e7eb;
@@ -1357,7 +1356,7 @@ export default function App() {
         />
       ) : null}
 
-      <div className="fixed left-3 top-3 z-50">
+      <div className="fixed left-4 top-4 z-50">
         <button
           onClick={() => setMenuOpen((v) => !v)}
           className="menu-button flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-300 bg-white text-xl font-bold text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95"
