@@ -994,6 +994,8 @@ function EmptyCard({ text }) {
 }
 
 export default function App() {
+  const [isDark, setIsDark] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [inputMode, setInputMode] = useState("alg");
   const [targetAlg, setTargetAlg] = useState("R' U R' U' y R' F' R2 U' R' U R' F R F y'");
   const [targetPattern, setTargetPattern] = useState(solvedPattern());
@@ -1018,7 +1020,8 @@ export default function App() {
 
   function loadAlgToPattern() {
     try {
-      const state = applyAlg(SOLVED, targetAlg);
+      const inverseAlg = algToString(inverseAlgList(parseAlg(targetAlg)));
+      const state = applyAlg(SOLVED, inverseAlg);
       setTargetPattern(stateToPattern(state));
       setInputMode("pattern");
       setError("");
@@ -1073,7 +1076,8 @@ export default function App() {
       };
 
       if (mode === "alg") {
-        const start = applyAlg(SOLVED, targetAlg);
+        const inverseAlg = algToString(inverseAlgList(parseAlg(targetAlg)));
+        const start = applyAlg(SOLVED, inverseAlg);
         await bidirectionalBfsCollectAsync({
           start,
           goal: SOLVED,
@@ -1100,7 +1104,82 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 text-slate-900 md:p-8">
+    <div className={`${isDark ? "dark-mode" : ""} min-h-screen bg-slate-50 p-4 text-slate-900 md:p-8`}>
+      <style>{`
+        .dark-mode {
+          background: #3f3f46 !important;
+          color: #f4f4f5 !important;
+        }
+        .dark-mode .bg-white {
+          background-color: #52525b !important;
+        }
+        .dark-mode .bg-slate-50 {
+          background-color: #4b5563 !important;
+        }
+        .dark-mode .bg-slate-100 {
+          background-color: #6b7280 !important;
+        }
+        .dark-mode .text-slate-900 {
+          color: #fafafa !important;
+        }
+        .dark-mode .text-slate-700,
+        .dark-mode .text-slate-600 {
+          color: #e5e7eb !important;
+        }
+        .dark-mode .text-slate-500 {
+          color: #d1d5db !important;
+        }
+        .dark-mode .border-slate-200,
+        .dark-mode .border-slate-300 {
+          border-color: #9ca3af !important;
+        }
+        .dark-mode .ring-slate-200,
+        .dark-mode .ring-slate-400 {
+          --tw-ring-color: #9ca3af !important;
+        }
+        .dark-mode input,
+        .dark-mode textarea {
+          background-color: #71717a !important;
+          color: #ffffff !important;
+          border-color: #a1a1aa !important;
+        }
+        .dark-mode input::placeholder,
+        .dark-mode textarea::placeholder {
+          color: #e4e4e7 !important;
+        }
+        .dark-mode button.bg-white {
+          background-color: #71717a !important;
+          color: #ffffff !important;
+        }
+        .dark-mode button.bg-white:hover {
+          background-color: #81818b !important;
+        }
+        .dark-mode .bg-gradient-to-r {
+          background: #52525b !important;
+        }
+      `}</style>
+
+      <div className="fixed left-3 top-3 z-50">
+        <button
+          onClick={() => setMenuOpen((v) => !v)}
+          className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-300 bg-white text-xl font-bold shadow-sm transition hover:bg-slate-50 active:scale-95"
+          aria-label="menu"
+        >
+          ☰
+        </button>
+
+        {menuOpen ? (
+          <div className="mt-2 w-48 rounded-2xl border border-slate-200 bg-white p-2 shadow-lg">
+            <button
+              onClick={() => setIsDark((v) => !v)}
+              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-semibold transition hover:bg-slate-50 active:scale-95"
+            >
+              <span>ダークモード</span>
+              <span>{isDark ? "ON" : "OFF"}</span>
+            </button>
+          </div>
+        ) : null}
+      </div>
       <div className="mx-auto max-w-6xl">
         <div className="mb-6 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
           <div className="grid gap-4">
@@ -1114,7 +1193,7 @@ export default function App() {
                 />
                 <div className="flex flex-wrap justify-end gap-2">
                   <button onClick={loadAlgToPattern} className="rounded-xl border border-slate-300 px-3 py-2 text-sm transition hover:bg-slate-50 active:scale-95">下の展開図に反映</button>
-                  <button onClick={() => runSearch("alg")} disabled={isSearching} className={`rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition active:scale-95 ${isSearching ? "cursor-not-allowed bg-slate-500" : "bg-slate-900 hover:-translate-y-0.5 hover:bg-slate-800 hover:shadow-md"}`}>{isSearching ? "探索中…" : "手順から探索"}</button>
+                  <button onClick={() => runSearch("alg")} disabled={isSearching} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95 disabled:opacity-60">{isSearching ? "探索中…" : "手順から探索"}</button>
                 </div>
               </label>
 
