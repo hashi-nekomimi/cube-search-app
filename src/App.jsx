@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect, useState } from "react";
+import React, { useMemo, useState } from "react";
 
 // =========================
 // 基本設定
@@ -658,20 +658,6 @@ function bfsPatternCollect({ pattern, moves, maxEffectiveDepth = 16, maxSymbolDe
 }
 
 // =========================
-// URL共有
-// =========================
-
-function encodeShareState(obj) {
-  const json = JSON.stringify(obj);
-  return btoa(unescape(encodeURIComponent(json)));
-}
-
-function decodeShareState(text) {
-  const json = decodeURIComponent(escape(atob(text)));
-  return JSON.parse(json);
-}
-
-// =========================
 // UI部品
 // =========================
 
@@ -763,28 +749,13 @@ export default function App() {
   const [targetAlg, setTargetAlg] = useState("R' U R' U' y R' F' R2 U' R' U R' F R F y'");
   const [targetPattern, setTargetPattern] = useState(solvedPattern());
   const [selectedColor, setSelectedColor] = useState("F");
-  const [searchMovesText, setSearchMovesText] = useState("R U S");
+  const [searchMovesText, setSearchMovesText] = useState("R U D");
   const [maxEffectiveDepth, setMaxEffectiveDepth] = useState(16);
   const [maxSymbolDepth, setMaxSymbolDepth] = useState(16);
-  const [limit, setLimit] = useState(200);
+  const [limit, setLimit] = useState(5);
   const [solutions, setSolutions] = useState([]);
   const [error, setError] = useState("");
   const [isSearching, setIsSearching] = useState(false);
-  const [shareMessage, setShareMessage] = useState("");
-
-  useEffect(() => {
-    if (!window.location.hash.startsWith("#s=")) return;
-    try {
-      const data = decodeShareState(window.location.hash.slice(3));
-      if (data.inputMode) setInputMode(data.inputMode);
-      if (typeof data.targetAlg === "string") setTargetAlg(data.targetAlg);
-      if (typeof data.searchMovesText === "string") setSearchMovesText(data.searchMovesText);
-      if (Number.isFinite(data.maxEffectiveDepth)) setMaxEffectiveDepth(data.maxEffectiveDepth);
-      if (Number.isFinite(data.maxSymbolDepth)) setMaxSymbolDepth(data.maxSymbolDepth);
-      if (Number.isFinite(data.limit)) setLimit(data.limit);
-      if (Array.isArray(data.pattern) && data.pattern.length === 54) setTargetPattern(arrayToPattern(data.pattern));
-    } catch (_) {}
-  }, []);
 
   const searchMovesPreview = useMemo(() => {
     try {
@@ -818,32 +789,10 @@ export default function App() {
     setLimit(5);
     setSolutions([]);
     setError("");
-    setShareMessage("");
-  }
-
-  async function makeUrl() {
-    const data = {
-      inputMode,
-      targetAlg,
-      searchMovesText,
-      maxEffectiveDepth: Number(maxEffectiveDepth),
-      maxSymbolDepth: Number(maxSymbolDepth),
-      limit: Number(limit),
-      pattern: patternToArray(targetPattern),
-    };
-    const url = `${window.location.origin}${window.location.pathname}#s=${encodeShareState(data)}`;
-    window.history.replaceState(null, "", url);
-    try {
-      await navigator.clipboard.writeText(url);
-      setShareMessage("URLをコピーした");
-    } catch (_) {
-      setShareMessage("URLをアドレスバーに反映した");
-    }
   }
 
   function runSearch() {
     setError("");
-    setShareMessage("");
     setIsSearching(true);
 
     try {
@@ -888,7 +837,6 @@ export default function App() {
               <p className="mt-1 text-sm text-slate-600">探索は quarter turn のみ。出力では R2 / U2 などへ自動整理。</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button onClick={makeUrl} className="rounded-2xl border border-slate-300 px-4 py-2 text-sm font-medium hover:bg-slate-50">URL化</button>
               <button onClick={resetAll} className="rounded-2xl border border-slate-300 px-4 py-2 text-sm font-medium hover:bg-slate-50">リセット</button>
             </div>
           </div>
@@ -950,7 +898,6 @@ export default function App() {
           </div>
         </div>
 
-        {shareMessage && <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700">{shareMessage}</div>}
         {error && <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
 
         <div className="grid gap-4 md:grid-cols-2">
