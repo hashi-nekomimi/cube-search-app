@@ -1231,107 +1231,317 @@ function writeStorageList(key, value) {
 }
 
 function createSearchWorker() {
-  const source = `
-const FACE_ORDER = ["U", "R", "F", "D", "L", "B"];
+  const workerSource = `
+const FACE_ORDER = ${JSON.stringify(FACE_ORDER)};
 const SOLVED = Uint8Array.from({ length: 54 }, (_, i) => i);
-const DONT_CARE = "X";
-const NORMAL = {
-  U: [0, 1, 0], D: [0, -1, 0], R: [1, 0, 0], L: [-1, 0, 0], F: [0, 0, 1], B: [0, 0, -1],
-};
-
-${keyOf.toString()}
-${facePos.toString()}
-${buildStickers.toString()}
-const built = buildStickers();
-const STICKERS = built.stickers;
-const INDEX_OF = built.indexOf;
-${rot.toString()}
-${makePerm.toString()}
-${applyPerm.toString()}
-${stateKey.toString()}
-${composePerm.toString()}
-${permPower.toString()}
-
-const BASE = {
-  U: makePerm("y", [1], -1),
-  D: makePerm("y", [-1], 1),
-  R: makePerm("x", [1], -1),
-  L: makePerm("x", [-1], 1),
-  F: makePerm("z", [1], -1),
-  B: makePerm("z", [-1], 1),
-  M: makePerm("x", [0], 1),
-  E: makePerm("y", [0], 1),
-  S: makePerm("z", [0], -1),
-  x: makePerm("x", [-1, 0, 1], -1),
-  y: makePerm("y", [-1, 0, 1], -1),
-  z: makePerm("z", [-1, 0, 1], -1),
-  u: makePerm("y", [0, 1], -1),
-  d: makePerm("y", [-1, 0], 1),
-  r: makePerm("x", [0, 1], -1),
-  l: makePerm("x", [-1, 0], 1),
-  f: makePerm("z", [0, 1], -1),
-  b: makePerm("z", [-1, 0], 1),
-};
-
-${orientationPerms.toString()}
-const ORIENTATION_PERMS = orientationPerms();
-${orientationStates.toString()}
-const SOLVED_ORIENTATIONS = orientationStates(SOLVED);
-const TOKEN_RE = /([URFDLBMESxyzurfdlb](?:w)?)(2|')?/g;
-${normalizeAlgText.toString()}
-${parseAlg.toString()}
-const MOVE_PERM_CACHE = new Map();
-${moveToPerm.toString()}
-${applyAlg.toString()}
-${makeSearchMoves.toString()}
-${inverseMove.toString()}
-${inverseAlgList.toString()}
-${algToString.toString()}
+const DONT_CARE = ${JSON.stringify(DONT_CARE)};
+const NORMAL = ${JSON.stringify(NORMAL)};
 const PARALLEL_GROUP = ${JSON.stringify(PARALLEL_GROUP)};
 const PARALLEL_GROUP_FACES = ${JSON.stringify(PARALLEL_GROUP_FACES)};
-${parallelGroup.toString()}
-${isParallelPair.toString()}
-${moveToFacePower.toString()}
-${facePowerToMove.toString()}
-${simplifySameFace.toString()}
-${compressParallelRuns.toString()}
-${cleanMoves.toString()}
-${symbolMoveCount.toString()}
-${quarterTurnCount.toString()}
-${effectiveMoveCount.toString()}
-${symbolDelta.toString()}
-${stickerFaceAt.toString()}
-${patternToArray.toString()}
-${countPatternColors.toString()}
-${validatePattern.toString()}
-${matchesPattern.toString()}
-${matchesPatternUpToRotation.toString()}
-${buildMovePerms.toString()}
-${compareSolutions.toString()}
 
+function keyOf(pos, normal) {
+  return pos.join(",") + "|" + normal.join(",");
+}
+
+function facePos(face, r, c) {
+  const map = {
+    U: [c - 1, 1, r - 1],
+    D: [c - 1, -1, 1 - r],
+    F: [c - 1, 1 - r, 1],
+    B: [1 - c, 1 - r, -1],
+    R: [1, 1 - r, 1 - c],
+    L: [-1, 1 - r, c - 1],
+  };
+  return map[face];
+}
+
+function buildWorkerStickers() {
+  const stickers = [];
+  const indexOf = new Map();
+  for (const face of FACE_ORDER) {
+    for (let r = 0; r < 3; r++) {
+      for (let c = 0; c < 3; c++) {
+        const pos = facePos(face, r, c);
+        const normal = NORMAL[face];
+        indexOf.set(keyOf(pos, normal), stickers.length);
+        stickers.push([pos, normal]);
+      }
+    }
+  }
+  return { stickers, indexOf };
+}
+
+const BUILT = buildWorkerStickers();
+const STICKERS = BUILT.stickers;
+const INDEX_OF = BUILT.indexOf;
+
+function rot(v, axis, direction) {
+  const x = v[0], y = v[1], z = v[2];
+  if (axis === "x") return [x, -direction * z, direction * y];
+  if (axis === "y") return [direction * z, y, -direction * x];
+  if (axis === "z") return [-direction * y, direction * x, z];
+  throw new Error("Unknown axis: " + axis);
+}
+
+function makePerm(axis, layers, direction) {
+  const layerSet = new Set(layers);
+  const perm = Array.from({ length: 54 }, (_, i) => i);
+  const axisIndex = { x: 0, y: 1, z: 2 }[axis];
+  for (let i = 0; i < STICKERS.length; i++) {
+    const pos = STICKERS[i][0];
+    const normal = STICKERS[i][1];
+    if (layerSet.has(pos[axisIndex])) {
+      const newPos = rot(pos, axis, direction);
+      const newNormal = rot(normal, axis, direction);
+      const j = INDEX_OF.get(keyOf(newPos, newNormal));
+      perm[j] = i;
+    }
+  }
+  return perm;
+}
+
+function applyPerm(state, perm) {
+  const next = new Uint8Array(54);
+  for (let i = 0; i < 54; i++) next[i] = state[perm[i]];
+  return next;
+}
+
+function stateKey(state) {
+  return String.fromCharCode(...state);
+}
+
+function composePerm(p, q) {
+  return Array.from({ length: 54 }, (_, i) => p[q[i]]);
+}
+
+function permPower(p, n) {
+  let result = Array.from({ length: 54 }, (_, i) => i);
+  for (let i = 0; i < n; i++) result = composePerm(result, p);
+  return result;
+}
+
+const BASE = {
+  U: makePerm("y", [1], -1), D: makePerm("y", [-1], 1),
+  R: makePerm("x", [1], -1), L: makePerm("x", [-1], 1),
+  F: makePerm("z", [1], -1), B: makePerm("z", [-1], 0 - 1),
+  M: makePerm("x", [0], 1), E: makePerm("y", [0], 1), S: makePerm("z", [0], -1),
+  x: makePerm("x", [-1, 0, 1], -1), y: makePerm("y", [-1, 0, 1], -1), z: makePerm("z", [-1, 0, 1], -1),
+  u: makePerm("y", [0, 1], -1), d: makePerm("y", [-1, 0], 1),
+  r: makePerm("x", [0, 1], -1), l: makePerm("x", [-1, 0], 1),
+  f: makePerm("z", [0, 1], -1), b: makePerm("z", [-1, 0], 1),
+};
+
+function orientationPerms() {
+  const turnPerms = [BASE.x, permPower(BASE.x, 3), BASE.y, permPower(BASE.y, 3), BASE.z, permPower(BASE.z, 3)];
+  const identity = Array.from({ length: 54 }, (_, i) => i);
+  const seen = new Map();
+  const queue = [identity];
+  seen.set(identity.join(","), identity);
+  while (queue.length) {
+    const current = queue.shift();
+    for (const turn of turnPerms) {
+      const next = composePerm(current, turn);
+      const key = next.join(",");
+      if (!seen.has(key)) {
+        seen.set(key, next);
+        queue.push(next);
+      }
+    }
+  }
+  return [...seen.values()];
+}
+const ORIENTATION_PERMS = orientationPerms();
+function orientationStates(state) { return ORIENTATION_PERMS.map((perm) => applyPerm(state, perm)); }
+const SOLVED_ORIENTATIONS = orientationStates(SOLVED);
+
+const TOKEN_RE = /([URFDLBMESxyzurfdlb](?:w)?)(2|')?/g;
+function normalizeAlgText(alg) {
+  return String(alg).replaceAll("’", "'").replaceAll("＇", "'").replace(/([URFDLB])w/g, (_, face) => face.toLowerCase()).replaceAll(",", " ");
+}
+function parseAlg(alg) {
+  alg = normalizeAlgText(alg);
+  const moves = [];
+  let pos = 0;
+  TOKEN_RE.lastIndex = 0;
+  for (;;) {
+    const m = TOKEN_RE.exec(alg);
+    if (!m) break;
+    if (alg.slice(pos, m.index).trim()) throw new Error("入力に読み取れない部分があります: " + alg.slice(pos, m.index));
+    moves.push(m[1] + (m[2] || ""));
+    pos = TOKEN_RE.lastIndex;
+  }
+  if (alg.slice(pos).trim()) throw new Error("入力に読み取れない部分があります: " + alg.slice(pos));
+  return moves;
+}
+const MOVE_PERM_CACHE = new Map();
+function moveToPerm(move) {
+  if (MOVE_PERM_CACHE.has(move)) return MOVE_PERM_CACHE.get(move);
+  const base = move[0];
+  if (!BASE[base]) throw new Error("対応していない記号です: " + base);
+  let perm;
+  if (move.endsWith("2")) perm = permPower(BASE[base], 2);
+  else if (move.endsWith("'")) perm = permPower(BASE[base], 3);
+  else perm = BASE[base];
+  MOVE_PERM_CACHE.set(move, perm);
+  return perm;
+}
+function applyAlg(state, alg) {
+  let current = state;
+  for (const move of parseAlg(alg)) current = applyPerm(current, moveToPerm(move));
+  return current;
+}
+function makeSearchMoves(text) {
+  const faces = [];
+  for (const move of parseAlg(text)) {
+    const face = move[0];
+    if (!BASE[face]) throw new Error("対応していない記号です: " + face);
+    if (!faces.includes(face)) faces.push(face);
+  }
+  const result = [];
+  for (const face of faces) result.push(face, face + "'");
+  return result;
+}
+function inverseMove(move) {
+  if (move.endsWith("'")) return move[0];
+  if (move.endsWith("2")) return move;
+  return move + "'";
+}
+function inverseAlgList(moves) { return [...moves].reverse().map(inverseMove); }
+function algToString(moves) { return moves.join(" "); }
+function parallelGroup(move) { return PARALLEL_GROUP[move[0]] || null; }
+function isParallelPair(a, b) { const ga = parallelGroup(a), gb = parallelGroup(b); return ga !== null && ga === gb && a[0] !== b[0]; }
+function moveToFacePower(move) {
+  let power = 1;
+  if (move.endsWith("2")) power = 2;
+  else if (move.endsWith("'")) power = 3;
+  return [move[0], power];
+}
+function facePowerToMove(face, power) {
+  power = ((power % 4) + 4) % 4;
+  if (power === 0) return null;
+  if (power === 1) return face;
+  if (power === 2) return face + "2";
+  return face + "'";
+}
+function simplifySameFace(moves) {
+  const result = [];
+  for (const move of moves) {
+    const fp = moveToFacePower(move), face = fp[0], power = fp[1];
+    if (result.length && result[result.length - 1][0] === face) {
+      const prev = moveToFacePower(result.pop())[1];
+      const newMove = facePowerToMove(face, prev + power);
+      if (newMove) result.push(newMove);
+    } else result.push(move);
+  }
+  return result;
+}
+function compressParallelRuns(moves) {
+  const result = [];
+  let i = 0;
+  while (i < moves.length) {
+    const group = parallelGroup(moves[i]);
+    if (!group) { result.push(moves[i]); i++; continue; }
+    const powers = {};
+    for (const face of PARALLEL_GROUP_FACES[group]) powers[face] = 0;
+    while (i < moves.length && parallelGroup(moves[i]) === group) {
+      const fp = moveToFacePower(moves[i]);
+      powers[fp[0]] += fp[1];
+      i++;
+    }
+    for (const face of PARALLEL_GROUP_FACES[group]) {
+      const move = facePowerToMove(face, powers[face]);
+      if (move) result.push(move);
+    }
+  }
+  return result;
+}
+function cleanMoves(moves) {
+  let current = [...moves];
+  for (;;) {
+    const old = current.join(" ");
+    current = simplifySameFace(current);
+    current = compressParallelRuns(current);
+    current = simplifySameFace(current);
+    if (old === current.join(" ")) return current;
+  }
+}
+function symbolMoveCount(moves) { return cleanMoves(moves).length; }
+function quarterTurnCount(moves) { return cleanMoves(moves).reduce((acc, move) => acc + (move.endsWith("2") ? 2 : 1), 0); }
+function effectiveMoveCount(moves) {
+  moves = cleanMoves(moves);
+  let count = 0, i = 0;
+  while (i < moves.length) {
+    if (i + 1 < moves.length && isParallelPair(moves[i], moves[i + 1])) { count++; i += 2; }
+    else { count++; i++; }
+  }
+  return count;
+}
+function symbolDelta(path, move) {
+  if (!path.length) return 1;
+  const last = path[path.length - 1];
+  if (last[0] === move[0] && last === move) return 0;
+  return 1;
+}
+function canAddMove(path, move) {
+  if (!path.length) return true;
+  const last = path[path.length - 1];
+  if (last[0] === move[0]) {
+    if (inverseMove(last) === move) return false;
+    if (path.length >= 2 && path[path.length - 2][0] === move[0]) return false;
+    return last === move;
+  }
+  return true;
+}
+function stickerFaceAt(state, pos) { return FACE_ORDER[Math.floor(state[pos] / 9)]; }
+function patternToArray(pattern) { const arr = []; for (const face of FACE_ORDER) arr.push(...pattern[face]); return arr; }
+function countPatternColors(pattern) {
+  const counts = { U: 0, R: 0, F: 0, D: 0, L: 0, B: 0, X: 0 };
+  for (const face of FACE_ORDER) for (const color of pattern[face]) counts[color]++;
+  return counts;
+}
+function validatePattern(pattern) {
+  const counts = countPatternColors(pattern);
+  for (const face of FACE_ORDER) {
+    if (pattern[face][4] !== face) throw new Error(face + "面の中央ステッカーは" + face + "色で固定してください。");
+    if (counts[face] > 9) throw new Error(face + "色が" + counts[face] + "枚あります。各色は9枚以内にしてください。");
+  }
+}
+function matchesPattern(state, patternArr) {
+  for (let i = 0; i < 54; i++) {
+    const expected = patternArr[i];
+    if (expected === DONT_CARE) continue;
+    if (stickerFaceAt(state, i) !== expected) return false;
+  }
+  return true;
+}
+function matchesPatternUpToRotation(state, patternArr) {
+  for (const perm of ORIENTATION_PERMS) if (matchesPattern(applyPerm(state, perm), patternArr)) return true;
+  return false;
+}
+function buildMovePerms(moves) { const out = new Map(); for (const move of moves) out.set(move, moveToPerm(move)); return out; }
+function compareSolutions(a, b) {
+  const ka = [effectiveMoveCount(a), symbolMoveCount(a), quarterTurnCount(a), algToString(a)];
+  const kb = [effectiveMoveCount(b), symbolMoveCount(b), quarterTurnCount(b), algToString(b)];
+  for (let i = 0; i < ka.length; i++) { if (ka[i] < kb[i]) return -1; if (ka[i] > kb[i]) return 1; }
+  return 0;
+}
 function expandOneSideWorker({ front, seenSelf, seenOther, movePerms, moves, sideSymbolLimit, solutionSet, expandingFromStart, maxSymbolDepth, shouldStop, onSolution }) {
   const newFront = new Map();
-
   for (const [, data] of front.entries()) {
     if (shouldStop()) break;
-    const { state, path, symCost } = data;
-
+    const state = data.state, path = data.path, symCost = data.symCost;
     for (const move of moves) {
       if (shouldStop()) break;
       if (!canAddMove(path, move)) continue;
-
       const newSymCost = symCost + symbolDelta(path, move);
       if (newSymCost > sideSymbolLimit) continue;
-
       const newState = applyPerm(state, movePerms.get(move));
       const key = stateKey(newState);
       if (seenSelf.has(key)) continue;
-
       const newPath = [...path, move];
       const record = { state: newState, path: newPath, symCost: newSymCost };
       seenSelf.set(key, record);
       newFront.set(key, record);
-
       if (seenOther.has(key)) {
         const otherPath = seenOther.get(key).path;
         const solution = cleanMoves(expandingFromStart ? [...newPath, ...inverseAlgList(otherPath)] : [...otherPath, ...inverseAlgList(newPath)]);
@@ -1343,106 +1553,69 @@ function expandOneSideWorker({ front, seenSelf, seenOther, movePerms, moves, sid
       }
     }
   }
-
   return newFront;
 }
-
 function bidirectionalBfsWorker({ start, goal = SOLVED, moves, maxSymbolDepth = 16, shouldStop, onSolution }) {
   const goalStates = goal === SOLVED ? SOLVED_ORIENTATIONS : orientationStates(goal);
   const goalKeys = new Set(goalStates.map(stateKey));
-
-  if (goalKeys.has(stateKey(start))) {
-    onSolution([]);
-    return;
-  }
-
+  if (goalKeys.has(stateKey(start))) { onSolution([]); return; }
   const sideSymbolLimitA = Math.ceil(maxSymbolDepth / 2);
   const sideSymbolLimitB = Math.floor(maxSymbolDepth / 2);
   const movePerms = buildMovePerms(moves);
   const startKey = stateKey(start);
-
   let frontA = new Map([[startKey, { state: start, path: [], symCost: 0 }]]);
   let frontB = new Map();
-  for (const goalState of goalStates) {
-    frontB.set(stateKey(goalState), { state: goalState, path: [], symCost: 0 });
-  }
-
+  for (const goalState of goalStates) frontB.set(stateKey(goalState), { state: goalState, path: [], symCost: 0 });
   const seenA = new Map(frontA);
   const seenB = new Map(frontB);
   const solutionSet = new Set();
-
   while ((frontA.size || frontB.size) && !shouldStop()) {
-    if (frontA.size && (frontA.size <= frontB.size || !frontB.size)) {
-      frontA = expandOneSideWorker({ front: frontA, seenSelf: seenA, seenOther: seenB, movePerms, moves, sideSymbolLimit: sideSymbolLimitA, solutionSet, expandingFromStart: true, maxSymbolDepth, shouldStop, onSolution });
-    } else {
-      frontB = expandOneSideWorker({ front: frontB, seenSelf: seenB, seenOther: seenA, movePerms, moves, sideSymbolLimit: sideSymbolLimitB, solutionSet, expandingFromStart: false, maxSymbolDepth, shouldStop, onSolution });
-    }
+    if (frontA.size && (frontA.size <= frontB.size || !frontB.size)) frontA = expandOneSideWorker({ front: frontA, seenSelf: seenA, seenOther: seenB, movePerms, moves, sideSymbolLimit: sideSymbolLimitA, solutionSet, expandingFromStart: true, maxSymbolDepth, shouldStop, onSolution });
+    else frontB = expandOneSideWorker({ front: frontB, seenSelf: seenB, seenOther: seenA, movePerms, moves, sideSymbolLimit: sideSymbolLimitB, solutionSet, expandingFromStart: false, maxSymbolDepth, shouldStop, onSolution });
   }
 }
-
 function bfsPatternWorker({ pattern, moves, maxSymbolDepth = 16, shouldStop, onSolution }) {
   validatePattern(pattern);
   const patternArr = patternToArray(pattern);
   const movePerms = buildMovePerms(moves);
-  const start = SOLVED;
-
-  if (matchesPatternUpToRotation(start, patternArr)) {
-    onSolution([]);
-    return;
-  }
-
-  let currentFront = new Map([[stateKey(start), { state: start, path: [], symCost: 0 }]]);
+  if (matchesPatternUpToRotation(SOLVED, patternArr)) { onSolution([]); return; }
+  let currentFront = new Map([[stateKey(SOLVED), { state: SOLVED, path: [], symCost: 0 }]]);
   const seen = new Map(currentFront);
   const solutionSet = new Set();
-
   while (currentFront.size && !shouldStop()) {
     const newFront = new Map();
-
     for (const [, data] of currentFront.entries()) {
       if (shouldStop()) break;
-      const { state, path, symCost } = data;
-
+      const state = data.state, path = data.path, symCost = data.symCost;
       for (const move of moves) {
         if (shouldStop()) break;
         if (!canAddMove(path, move)) continue;
-
         const newSymCost = symCost + symbolDelta(path, move);
         if (newSymCost > maxSymbolDepth) continue;
-
         const newState = applyPerm(state, movePerms.get(move));
         const key = stateKey(newState);
         if (seen.has(key)) continue;
-
         const newPath = [...path, move];
-        seen.set(key, { state: newState, path: newPath, symCost: newSymCost });
-        newFront.set(key, { state: newState, path: newPath, symCost: newSymCost });
-
+        const record = { state: newState, path: newPath, symCost: newSymCost };
+        seen.set(key, record);
+        newFront.set(key, record);
         if (matchesPatternUpToRotation(newState, patternArr)) {
           const solution = cleanMoves(newPath);
           const solutionKey = algToString(solution);
-          if (!solutionSet.has(solutionKey)) {
-            solutionSet.add(solutionKey);
-            onSolution(solution);
-          }
+          if (!solutionSet.has(solutionKey)) { solutionSet.add(solutionKey); onSolution(solution); }
         }
       }
     }
-
     currentFront = newFront;
   }
 }
-
-${canAddMove.toString()}
-
 self.onmessage = (event) => {
-  const { mode, targetAlg, targetPattern, searchMovesText, maxSymbolDepth, limit } = event.data;
+  const data = event.data;
   let foundCount = 0;
   let stopByLimit = false;
   const foundKeys = new Set();
-  const maxResults = Math.max(1, Number(limit) || 1);
-
+  const maxResults = Math.max(1, Number(data.limit) || 1);
   const shouldStop = () => stopByLimit;
-
   const onSolution = (solution) => {
     if (shouldStop()) return;
     const normalized = cleanMoves(solution);
@@ -1453,27 +1626,29 @@ self.onmessage = (event) => {
     self.postMessage({ type: "solution", solution: normalized });
     if (foundCount >= maxResults) stopByLimit = true;
   };
-
   try {
-    const moves = makeSearchMoves(searchMovesText);
-
-    if (mode === "alg") {
-      const inverseAlg = algToString(inverseAlgList(parseAlg(targetAlg)));
+    const moves = makeSearchMoves(data.searchMovesText);
+    if (data.mode === "alg") {
+      const inverseAlg = algToString(inverseAlgList(parseAlg(data.targetAlg)));
       const start = applyAlg(SOLVED, inverseAlg);
-      bidirectionalBfsWorker({ start, goal: SOLVED, moves, maxSymbolDepth: Number(maxSymbolDepth), shouldStop, onSolution });
+      bidirectionalBfsWorker({ start, goal: SOLVED, moves, maxSymbolDepth: Number(data.maxSymbolDepth), shouldStop, onSolution });
     } else {
-      bfsPatternWorker({ pattern: targetPattern, moves, maxSymbolDepth: Number(maxSymbolDepth), shouldStop, onSolution });
+      bfsPatternWorker({ pattern: data.targetPattern, moves, maxSymbolDepth: Number(data.maxSymbolDepth), shouldStop, onSolution });
     }
-
     self.postMessage({ type: "done" });
   } catch (e) {
     self.postMessage({ type: "error", message: e instanceof Error ? e.message : String(e) });
   }
 };
 `;
-
-  const blob = new Blob([source], { type: "text/javascript" });
-  return new Worker(URL.createObjectURL(blob));
+  const blob = new Blob([workerSource], { type: "text/javascript" });
+  const url = URL.createObjectURL(blob);
+  const worker = new Worker(url);
+  worker.addEventListener("error", () => URL.revokeObjectURL(url), { once: true });
+  worker.addEventListener("message", (event) => {
+    if (event.data && (event.data.type === "done" || event.data.type === "error")) URL.revokeObjectURL(url);
+  });
+  return worker;
 }
 
 export default function App() {
