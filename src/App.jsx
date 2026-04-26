@@ -155,6 +155,51 @@ const BASE = {
   b: makePerm("z", [-1, 0], 1),
 };
 
+function orientationPerms() {
+  const turnPerms = [
+    BASE.x,
+    permPower(BASE.x, 3),
+    BASE.y,
+    permPower(BASE.y, 3),
+    BASE.z,
+    permPower(BASE.z, 3),
+  ];
+
+  const identity = Array.from({ length: 54 }, (_, i) => i);
+  const seen = new Map();
+  const queue = [identity];
+  seen.set(identity.join(","), identity);
+
+  while (queue.length) {
+    const current = queue.shift();
+
+    for (const turn of turnPerms) {
+      const next = composePerm(current, turn);
+      const key = next.join(",");
+
+      if (!seen.has(key)) {
+        seen.set(key, next);
+        queue.push(next);
+      }
+    }
+  }
+
+  return [...seen.values()];
+}
+
+const ORIENTATION_PERMS = orientationPerms();
+
+function orientationStates(state) {
+  return ORIENTATION_PERMS.map((perm) => applyPerm(state, perm));
+}
+
+const SOLVED_ORIENTATIONS = orientationStates(SOLVED);
+const SOLVED_ORIENTATION_KEYS = new Set(SOLVED_ORIENTATIONS.map(stateKey));
+
+function isSolvedUpToRotation(state) {
+  return SOLVED_ORIENTATION_KEYS.has(stateKey(state));
+}
+
 // =========================
 // 手順パース
 // =========================
@@ -254,8 +299,29 @@ function algToString(moves) {
   return moves.join(" ");
 }
 
-function isUD(move) {
-  return move[0] === "U" || move[0] === "D";
+const PARALLEL_GROUP = {
+  U: "UD",
+  D: "UD",
+  R: "RL",
+  L: "RL",
+  F: "FB",
+  B: "FB",
+};
+
+const PARALLEL_GROUP_FACES = {
+  UD: ["U", "D"],
+  RL: ["R", "L"],
+  FB: ["F", "B"],
+};
+
+function parallelGroup(move) {
+  return PARALLEL_GROUP[move[0]] || null;
+}
+
+function isParallelPair(a, b) {
+  const ga = parallelGroup(a);
+  const gb = parallelGroup(b);
+  return ga !== null && ga === gb && a[0] !== b[0];
 }
 
 function moveToFacePower(move) {
@@ -293,31 +359,34 @@ function simplifySameFace(moves) {
   return result;
 }
 
-function compressUDRuns(moves) {
+function compressParallelRuns(moves) {
   const result = [];
   let i = 0;
 
   while (i < moves.length) {
-    if (!isUD(moves[i])) {
+    const group = parallelGroup(moves[i]);
+
+    if (!group) {
       result.push(moves[i]);
       i++;
       continue;
     }
 
-    let uPower = 0;
-    let dPower = 0;
+    const powers = {};
+    for (const face of PARALLEL_GROUP_FACES[group]) {
+      powers[face] = 0;
+    }
 
-    while (i < moves.length && isUD(moves[i])) {
+    while (i < moves.length && parallelGroup(moves[i]) === group) {
       const [face, power] = moveToFacePower(moves[i]);
-      if (face === "U") uPower += power;
-      else dPower += power;
+      powers[face] += power;
       i++;
     }
 
-    const u = facePowerToMove("U", uPower);
-    const d = facePowerToMove("D", dPower);
-    if (u) result.push(u);
-    if (d) result.push(d);
+    for (const face of PARALLEL_GROUP_FACES[group]) {
+      const move = facePowerToMove(face, powers[face]);
+      if (move) result.push(move);
+    }
   }
 
   return result;
@@ -329,7 +398,7 @@ function cleanMoves(moves) {
   for (;;) {
     const old = current.join(" ");
     current = simplifySameFace(current);
-    current = compressUDRuns(current);
+    current = compressParallelRuns(current);
     current = simplifySameFace(current);
     if (old === current.join(" ")) return current;
   }
@@ -349,7 +418,7 @@ function effectiveMoveCount(moves) {
   let i = 0;
 
   while (i < moves.length) {
-    if (i + 1 < moves.length && isUD(moves[i]) && isUD(moves[i + 1]) && moves[i][0] !== moves[i + 1][0]) {
+    if (i + 1 < moves.length && isParallelPair(moves[i], moves[i + 1])) {
       count++;
       i += 2;
     } else {
@@ -372,7 +441,7 @@ function effectiveDelta(path, move) {
   if (!path.length) return 1;
   const last = path[path.length - 1];
   if (last[0] === move[0] && last === move) return 0;
-  if (isUD(last) && isUD(move)) return 0;
+  if (isParallelPair(last, move)) return 0;
   return 1;
 }
 
@@ -382,7 +451,7 @@ function formatWithSimulUD(moves) {
   let i = 0;
 
   while (i < moves.length) {
-    if (i + 1 < moves.length && isUD(moves[i]) && isUD(moves[i + 1]) && moves[i][0] !== moves[i + 1][0]) {
+    if (i + 1 < moves.length && isParallelPair(moves[i], moves[i + 1])) {
       parts.push(`[${moves[i]}+${moves[i + 1]}]`);
       i += 2;
     } else {
@@ -478,6 +547,15 @@ function matchesPattern(state, patternArr) {
   return true;
 }
 
+function matchesPatternUpToRotation(state, patternArr) {
+  for (const perm of ORIENTATION_PERMS) {
+    if (matchesPattern(applyPerm(state, perm), patternArr)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // =========================
 // 探索
 // =========================
@@ -545,7 +623,10 @@ function expandOneSide({ front, seenSelf, seenOther, movePerms, moves, sideEffec
 }
 
 function bidirectionalBfsCollect({ start, goal = SOLVED, moves, maxEffectiveDepth = 16, maxSymbolDepth = 16 }) {
-  if (stateKey(start) === stateKey(goal)) return [[]];
+  const goalStates = goal === SOLVED ? SOLVED_ORIENTATIONS : orientationStates(goal);
+  const goalKeys = new Set(goalStates.map(stateKey));
+
+  if (goalKeys.has(stateKey(start))) return [[]];
 
   const sideEffectiveLimitA = Math.ceil(maxEffectiveDepth / 2);
   const sideEffectiveLimitB = Math.floor(maxEffectiveDepth / 2);
@@ -554,10 +635,13 @@ function bidirectionalBfsCollect({ start, goal = SOLVED, moves, maxEffectiveDept
 
   const movePerms = buildMovePerms(moves);
   const startKey = stateKey(start);
-  const goalKey = stateKey(goal);
 
   let frontA = new Map([[startKey, { state: start, path: [], effCost: 0, symCost: 0 }]]);
-  let frontB = new Map([[goalKey, { state: goal, path: [], effCost: 0, symCost: 0 }]]);
+  let frontB = new Map();
+
+  for (const goalState of goalStates) {
+    frontB.set(stateKey(goalState), { state: goalState, path: [], effCost: 0, symCost: 0 });
+  }
 
   const seenA = new Map(frontA);
   const seenB = new Map(frontB);
@@ -685,7 +769,10 @@ async function expandOneSideAsync({ front, seenSelf, seenOther, movePerms, moves
 }
 
 async function bidirectionalBfsCollectAsync({ start, goal = SOLVED, moves, maxEffectiveDepth = 16, maxSymbolDepth = 16, shouldStop, onSolution }) {
-  if (stateKey(start) === stateKey(goal)) {
+  const goalStates = goal === SOLVED ? SOLVED_ORIENTATIONS : orientationStates(goal);
+  const goalKeys = new Set(goalStates.map(stateKey));
+
+  if (goalKeys.has(stateKey(start))) {
     onSolution([]);
     return;
   }
@@ -697,10 +784,13 @@ async function bidirectionalBfsCollectAsync({ start, goal = SOLVED, moves, maxEf
 
   const movePerms = buildMovePerms(moves);
   const startKey = stateKey(start);
-  const goalKey = stateKey(goal);
 
   let frontA = new Map([[startKey, { state: start, path: [], effCost: 0, symCost: 0 }]]);
-  let frontB = new Map([[goalKey, { state: goal, path: [], effCost: 0, symCost: 0 }]]);
+  let frontB = new Map();
+
+  for (const goalState of goalStates) {
+    frontB.set(stateKey(goalState), { state: goalState, path: [], effCost: 0, symCost: 0 });
+  }
 
   const seenA = new Map(frontA);
   const seenB = new Map(frontB);
@@ -750,7 +840,7 @@ async function bfsPatternCollectAsync({ pattern, moves, maxEffectiveDepth = 16, 
   const movePerms = buildMovePerms(moves);
   const start = SOLVED;
 
-  if (matchesPattern(start, patternArr)) {
+  if (matchesPatternUpToRotation(start, patternArr)) {
     onSolution([]);
     return;
   }
@@ -785,7 +875,7 @@ async function bfsPatternCollectAsync({ pattern, moves, maxEffectiveDepth = 16, 
         seen.set(key, record);
         newFront.set(key, record);
 
-        if (matchesPattern(newState, patternArr)) {
+        if (matchesPatternUpToRotation(newState, patternArr)) {
           const solution = cleanMoves(newPath);
           const solutionKey = algToString(solution);
           if (!solutionSet.has(solutionKey)) {
@@ -1040,15 +1130,6 @@ export default function App() {
     <div className="min-h-screen bg-slate-50 p-4 text-slate-900 md:p-8">
       <div className="mx-auto max-w-6xl">
         <div className="mb-6 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-          <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight md:text-3xl">手順探索アプリ</h1>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button onClick={resetAll} className="rounded-2xl border border-slate-300 px-4 py-2 text-sm font-medium transition hover:bg-slate-50 active:scale-95 active:bg-slate-100">リセット</button>
-            </div>
-          </div>
-
           <div className="grid gap-4">
             <div className="grid gap-4">
               <label className="grid gap-2">
@@ -1058,11 +1139,13 @@ export default function App() {
                   placeholder="スクランブルを入力..."
                   className="h-12 resize-none rounded-2xl border border-slate-300 bg-white px-3 py-3 font-mono text-sm leading-5 outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-slate-400"
                 />
-                <div><button onClick={loadAlgToPattern} className="rounded-xl border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">下の展開図に反映</button></div>
+                <div className="flex flex-wrap justify-end gap-2">
+                  <button onClick={loadAlgToPattern} className="rounded-xl border border-slate-300 px-3 py-2 text-sm transition hover:bg-slate-50 active:scale-95">下の展開図に反映</button>
+                  <button onClick={() => runSearch("alg")} disabled={isSearching} className={`rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition active:scale-95 ${isSearching ? "cursor-not-allowed bg-slate-500" : "bg-slate-900 hover:-translate-y-0.5 hover:bg-slate-800 hover:shadow-md"}`}>{isSearching ? "探索中…" : "手順から探索"}</button>
+                </div>
               </label>
 
               <div className="overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
-                <div className="mb-3 text-sm text-slate-600">黒は dont care。</div>
                 <div className="mb-4 flex flex-wrap gap-2">
                   {[...FACE_ORDER, DONT_CARE].map((face) => (
                     <button key={face} onClick={() => setSelectedColor(face)} className={`flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-semibold transition active:scale-95 ${selectedColor === face ? "border-slate-900 bg-white shadow-md ring-2 ring-slate-400" : "border-slate-300 bg-white hover:bg-slate-50"}`}>
@@ -1082,22 +1165,29 @@ export default function App() {
               </div>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-4">
-              <label className="grid gap-2 md:col-span-2">
+            <div className="grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <label className="grid gap-1">
                 <span className="text-sm font-semibold">探索に使う生成系</span>
-                <input value={searchMovesText} onChange={(e) => setSearchMovesText(e.target.value)} className="rounded-2xl border border-slate-300 bg-white p-3 font-mono text-sm outline-none focus:ring-2 focus:ring-slate-400" placeholder="例: R U D / R U f / R U S / R U x" />
-                <span className="text-xs text-slate-500">実際の探索手: {searchMovesPreview || "未解釈"}</span>
+                <input value={searchMovesText} onChange={(e) => setSearchMovesText(e.target.value)} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" placeholder="例: R U D / R U f / R U S / R U x" />
               </label>
-              <label className="grid gap-2"><span className="text-sm font-semibold">同時回し上限</span><input type="number" value={maxEffectiveDepth} onChange={(e) => setMaxEffectiveDepth(Number(e.target.value))} className="rounded-2xl border border-slate-300 bg-white p-3 text-sm outline-none focus:ring-2 focus:ring-slate-400" /></label>
-              <label className="grid gap-2"><span className="text-sm font-semibold">記号手数上限</span><input type="number" value={maxSymbolDepth} onChange={(e) => setMaxSymbolDepth(Number(e.target.value))} className="rounded-2xl border border-slate-300 bg-white p-3 text-sm outline-none focus:ring-2 focus:ring-slate-400" /></label>
+              <label className="grid gap-1">
+                <span className="text-sm font-semibold">同時回し上限</span>
+                <input type="number" value={maxEffectiveDepth} onChange={(e) => setMaxEffectiveDepth(Number(e.target.value))} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" />
+              </label>
+              <label className="grid gap-1">
+                <span className="text-sm font-semibold">記号手数上限</span>
+                <input type="number" value={maxSymbolDepth} onChange={(e) => setMaxSymbolDepth(Number(e.target.value))} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" />
+              </label>
+              <label className="grid gap-1">
+                <span className="text-sm font-semibold">表示上限</span>
+                <input type="number" value={limit} onChange={(e) => setLimit(Number(e.target.value))} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" />
+              </label>
             </div>
 
-            <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-              <label className="grid max-w-40 gap-2"><span className="text-sm font-semibold">表示上限</span><input type="number" value={limit} onChange={(e) => setLimit(Number(e.target.value))} className="rounded-2xl border border-slate-300 bg-white p-3 text-sm outline-none focus:ring-2 focus:ring-slate-400" /></label>
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-end">
               {isSearching ? (
                 <button onClick={stopSearch} className="rounded-2xl border border-rose-300 bg-rose-50 px-5 py-3 text-sm font-semibold text-rose-700 shadow-sm transition hover:bg-rose-100 active:scale-95">停止する</button>
               ) : null}
-              <button onClick={() => runSearch("alg")} disabled={isSearching} className={`rounded-2xl px-5 py-3 text-sm font-semibold text-white shadow-sm transition active:scale-95 ${isSearching ? "cursor-not-allowed bg-slate-500" : "bg-slate-900 hover:-translate-y-0.5 hover:bg-slate-800 hover:shadow-md"}`}>{isSearching ? "探索中…" : "手順から探索"}</button>
               <button onClick={() => runSearch("pattern")} disabled={isSearching} className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95 disabled:opacity-60">{isSearching ? "探索中…" : "展開図から探索"}</button>
             </div>
           </div>
