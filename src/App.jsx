@@ -1197,18 +1197,32 @@ export default function App() {
 
     try {
       const moves = makeSearchMoves(searchMovesText);
-      const maxResults = Number(limit);
-      const shouldStop = () => searchSessionRef.current !== currentSession;
+      const maxResults = Math.max(1, Number(limit) || 1);
+      let foundCount = 0;
+      let stopByLimit = false;
+
+      const shouldStop = () =>
+        searchSessionRef.current !== currentSession || stopByLimit;
 
       const onSolution = (solution) => {
         if (shouldStop()) return;
-        let reachedLimit = false;
+
+        let added = false;
+
         setSolutions((prev) => {
+          const before = prev.length;
           const next = insertSolutionSorted(prev, solution, maxResults);
-          if (next.length >= maxResults) reachedLimit = true;
+          added = next.length > before;
           return next;
         });
-        if (reachedLimit) searchSessionRef.current += 1;
+
+        if (added) foundCount++;
+
+        if (foundCount >= maxResults) {
+          stopByLimit = true;
+          searchSessionRef.current += 1;
+          setIsSearching(false);
+        }
       };
 
       if (mode === "alg") {
