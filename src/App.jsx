@@ -452,7 +452,7 @@ function formatWithSimulUD(moves) {
 
   while (i < moves.length) {
     if (i + 1 < moves.length && isParallelPair(moves[i], moves[i + 1])) {
-      parts.push(`[${moves[i]}+${moves[i + 1]}]`);
+      parts.push(`( ${moves[i]} ${moves[i + 1]} )`);
       i += 2;
     } else {
       parts.push(moves[i]);
@@ -945,28 +945,32 @@ function NetEditor({ pattern, setPattern, selectedColor }) {
   );
 }
 
-function SolutionCard({ index, solution, t }) {
-  const alg = algToString(solution);
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(alg);
-    } catch (_) {}
-  }
+function SolutionCard({ index, solution, t, showMoveCounts }) {
+  const displayAlg = formatWithSimulUD(solution);
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md">
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <div className="text-sm font-semibold text-slate-500">#{index}</div>
-        <button onClick={copy} className="rounded-xl border px-2 py-1 text-xs text-slate-600 transition hover:bg-slate-50 active:scale-95">{t.copy}</button>
+      <div className="mb-2 text-sm font-semibold text-slate-500">#{index}</div>
+      <div className="break-words font-mono text-base font-semibold text-slate-900">
+        {displayAlg || "(空)"}
       </div>
-      <div className="break-words font-mono text-base font-semibold text-slate-900">{alg || "(空)"}</div>
-      <div className="mt-2 break-words font-mono text-sm text-slate-600">{formatWithSimulUD(solution)}</div>
-      <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
-        <div className="rounded-xl bg-slate-100 p-2"><div className="text-slate-500">{t.simultaneous}</div><div className="text-lg font-bold">{effectiveMoveCount(solution)}</div></div>
-        <div className="rounded-xl bg-slate-100 p-2"><div className="text-slate-500">{t.symbolMoves}</div><div className="text-lg font-bold">{symbolMoveCount(solution)}</div></div>
-        <div className="rounded-xl bg-slate-100 p-2"><div className="text-slate-500">{t.quarterTurns}</div><div className="text-lg font-bold">{quarterTurnCount(solution)}</div></div>
-      </div>
+
+      {showMoveCounts ? (
+        <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
+          <div className="rounded-xl bg-slate-100 p-2">
+            <div className="text-slate-500">{t.simultaneous}</div>
+            <div className="text-lg font-bold">{effectiveMoveCount(solution)}</div>
+          </div>
+          <div className="rounded-xl bg-slate-100 p-2">
+            <div className="text-slate-500">{t.symbolMoves}</div>
+            <div className="text-lg font-bold">{symbolMoveCount(solution)}</div>
+          </div>
+          <div className="rounded-xl bg-slate-100 p-2">
+            <div className="text-slate-500">{t.quarterTurns}</div>
+            <div className="text-lg font-bold">{quarterTurnCount(solution)}</div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -996,13 +1000,12 @@ function EmptyCard({ text }) {
 const TEXT = {
   ja: {
     darkMode: "ダークモード",
+    showMoveCounts: "手数を表示",
     language: "言語",
     inputPlaceholder: "既存の手順を入力…",
     applyToNet: "展開図に反映",
     searchFromAlg: "手順から探索",
-    searching: "探索中…",
-    stop: "停止",
-    searchFromNet: "展開図から探索",
+    searching: "探索中…",    searchFromNet: "展開図から探索",
     generator: "生成系",
     depthLimit: "手数上限",
     resultLimit: "表示件数",
@@ -1017,13 +1020,12 @@ const TEXT = {
   },
   en: {
     darkMode: "Dark mode",
+    showMoveCounts: "Show move counts",
     language: "Language",
     inputPlaceholder: "Enter an existing solution…",
     applyToNet: "Apply to net",
     searchFromAlg: "Search from algorithm",
-    searching: "Searching…",
-    stop: "Stop",
-    searchFromNet: "Search from net",
+    searching: "Searching…",    searchFromNet: "Search from net",
     generator: "Generator",
     depthLimit: "Move limit",
     resultLimit: "Results",
@@ -1038,13 +1040,12 @@ const TEXT = {
   },
   ur: {
     darkMode: "ڈارک موڈ",
+    showMoveCounts: "چالوں کی گنتی دکھائیں",
     language: "زبان",
     inputPlaceholder: "موجودہ حل کا طریقہ درج کریں…",
     applyToNet: "نیٹ پر لگائیں",
     searchFromAlg: "طریقے سے تلاش",
-    searching: "تلاش جاری…",
-    stop: "روکیں",
-    searchFromNet: "نیٹ سے تلاش",
+    searching: "تلاش جاری…",    searchFromNet: "نیٹ سے تلاش",
     generator: "جنریٹر",
     depthLimit: "چالوں کی حد",
     resultLimit: "نتائج",
@@ -1059,13 +1060,12 @@ const TEXT = {
   },
   ko: {
     darkMode: "다크 모드",
+    showMoveCounts: "수순 수 표시",
     language: "언어",
     inputPlaceholder: "기존 해법을 입력…",
     applyToNet: "전개도에 반영",
     searchFromAlg: "알고리즘으로 탐색",
-    searching: "탐색 중…",
-    stop: "중지",
-    searchFromNet: "전개도에서 탐색",
+    searching: "탐색 중…",    searchFromNet: "전개도에서 탐색",
     generator: "생성계",
     depthLimit: "수순 제한",
     resultLimit: "표시 개수",
@@ -1080,13 +1080,12 @@ const TEXT = {
   },
   hi: {
     darkMode: "डार्क मोड",
+    showMoveCounts: "चालों की संख्या दिखाएँ",
     language: "भाषा",
     inputPlaceholder: "मौजूदा समाधान दर्ज करें…",
     applyToNet: "नेट पर लागू करें",
     searchFromAlg: "एल्गोरिदम से खोजें",
-    searching: "खोज जारी…",
-    stop: "रोकें",
-    searchFromNet: "नेट से खोजें",
+    searching: "खोज जारी…",    searchFromNet: "नेट से खोजें",
     generator: "जनरेटर",
     depthLimit: "चाल सीमा",
     resultLimit: "परिणाम संख्या",
@@ -1101,13 +1100,12 @@ const TEXT = {
   },
   ar: {
     darkMode: "الوضع الداكن",
+    showMoveCounts: "إظهار عدد الحركات",
     language: "اللغة",
     inputPlaceholder: "أدخل الحل الموجود…",
     applyToNet: "تطبيق على المخطط",
     searchFromAlg: "البحث من الخوارزمية",
-    searching: "جارٍ البحث…",
-    stop: "إيقاف",
-    searchFromNet: "البحث من المخطط",
+    searching: "جارٍ البحث…",    searchFromNet: "البحث من المخطط",
     generator: "المولد",
     depthLimit: "حد الحركات",
     resultLimit: "عدد النتائج",
@@ -1133,7 +1131,9 @@ const LANGUAGE_LABEL = {
 
 export default function App() {
   const [isDark, setIsDark] = useState(false);
+  const [showMoveCounts, setShowMoveCounts] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [languageOpen, setLanguageOpen] = useState(false);
   const [language, setLanguage] = useState("ja");
   const t = TEXT[language];
   const [inputMode, setInputMode] = useState("alg");
@@ -1185,12 +1185,7 @@ export default function App() {
     setHasSearched(false);
   }
 
-  function stopSearch() {
-    searchSessionRef.current += 1;
-    setIsSearching(false);
-  }
-
-  async function runSearch(mode) {
+    async function runSearch(mode) {
     const currentSession = searchSessionRef.current + 1;
     searchSessionRef.current = currentSession;
     setInputMode(mode);
@@ -1335,6 +1330,18 @@ export default function App() {
         }
       `}</style>
 
+      {menuOpen ? (
+        <button
+          type="button"
+          aria-label="close menu"
+          onClick={() => {
+            setMenuOpen(false);
+            setLanguageOpen(false);
+          }}
+          className="fixed inset-0 z-40 cursor-default bg-transparent"
+        />
+      ) : null}
+
       <div className="fixed left-3 top-3 z-50">
         <button
           onClick={() => setMenuOpen((v) => !v)}
@@ -1345,7 +1352,10 @@ export default function App() {
         </button>
 
         {menuOpen ? (
-          <div className="menu-panel mt-2 w-48 rounded-2xl border border-slate-200 bg-white p-2 shadow-lg">
+          <div
+            className="menu-panel mt-2 w-48 rounded-2xl border border-slate-200 bg-white p-2 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
             <button
               onClick={() => setIsDark((v) => !v)}
               className="menu-item flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 active:scale-95"
@@ -1353,19 +1363,38 @@ export default function App() {
               <span>{t.darkMode}</span>
               <span>{isDark ? "ON" : "OFF"}</span>
             </button>
-            <div className="mt-2 rounded-xl border border-slate-200 p-2">
-              <div className="mb-2 px-1 text-xs font-semibold text-slate-500">{t.language}</div>
-              {Object.keys(TEXT).map((lang) => (
-                <button
-                  key={lang}
-                  onClick={() => setLanguage(lang)}
-                  className={`menu-item mb-1 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 active:scale-95 ${language === lang ? "ring-2 ring-slate-400" : ""}`}
-                >
-                  <span>{LANGUAGE_LABEL[lang]}</span>
-                  <span>{language === lang ? "✓" : ""}</span>
-                </button>
-              ))}
-            </div>
+            <button
+              onClick={() => setShowMoveCounts((v) => !v)}
+              className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 active:scale-95"
+            >
+              <span>{t.showMoveCounts}</span>
+              <span>{showMoveCounts ? "ON" : "OFF"}</span>
+            </button>
+            <button
+              onClick={() => setLanguageOpen((v) => !v)}
+              className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 active:scale-95"
+            >
+              <span>{t.language}</span>
+              <span>{languageOpen ? "▴" : LANGUAGE_LABEL[language]}</span>
+            </button>
+
+            {languageOpen ? (
+              <div className="mt-2 rounded-xl border border-slate-200 p-2">
+                {Object.keys(TEXT).map((lang) => (
+                  <button
+                    key={lang}
+                    onClick={() => {
+                      setLanguage(lang);
+                      setLanguageOpen(false);
+                    }}
+                    className={`menu-item mb-1 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 active:scale-95 ${language === lang ? "ring-2 ring-slate-400" : ""}`}
+                  >
+                    <span>{LANGUAGE_LABEL[lang]}</span>
+                    <span>{language === lang ? "✓" : ""}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -1397,11 +1426,7 @@ export default function App() {
                 <NetEditor pattern={targetPattern} setPattern={setTargetPattern} selectedColor={selectedColor} />
               </div>
             </div>
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-end">
-              {isSearching ? (
-                <button onClick={stopSearch} className="rounded-2xl border border-rose-300 bg-rose-50 px-5 py-3 text-sm font-semibold text-rose-700 shadow-sm transition hover:bg-rose-100 active:scale-95">{t.stop}</button>
-              ) : null}
-              <button onClick={() => runSearch("pattern")} disabled={isSearching} className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95 disabled:opacity-60">{isSearching ? t.searching : t.searchFromNet}</button>
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-end">              <button onClick={() => runSearch("pattern")} disabled={isSearching} className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95 disabled:opacity-60">{isSearching ? t.searching : t.searchFromNet}</button>
             </div>
 
             <div className="grid items-start gap-4 sm:grid-cols-3">
@@ -1428,7 +1453,7 @@ export default function App() {
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          {solutions.map((solution, i) => <SolutionCard key={`${i}-${algToString(solution)}`} index={i + 1} solution={solution} t={t} />)}
+          {solutions.map((solution, i) => <SolutionCard key={`${i}-${algToString(solution)}`} index={i + 1} solution={solution} t={t} showMoveCounts={showMoveCounts} />)}
         </div>
 
         {!isSearching && !error && hasSearched && solutions.length === 0 ? (
