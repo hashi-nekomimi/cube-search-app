@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useState } from "react";
 
 // =========================
-// 基本設定
+// Core settings
 // =========================
 
 const FACE_ORDER = ["U", "R", "F", "D", "L", "B"];
@@ -74,7 +74,7 @@ function buildStickers() {
 const { stickers: STICKERS, indexOf: INDEX_OF } = buildStickers();
 
 // =========================
-// 回転処理
+// Rotation utilities
 // =========================
 
 function rot(v, axis, direction) {
@@ -128,7 +128,7 @@ function permPower(p, n) {
 }
 
 // =========================
-// 回転記号
+// Move definitions
 // =========================
 
 const BASE = {
@@ -201,7 +201,7 @@ function isSolvedUpToRotation(state) {
 }
 
 // =========================
-// 手順パース
+// Algorithm parser
 // =========================
 
 const TOKEN_RE = /([URFDLBMESxyzurfdlb](?:w)?)(2|')?/g;
@@ -225,7 +225,7 @@ function parseAlg(alg) {
     if (!m) break;
 
     if (alg.slice(pos, m.index).trim()) {
-      throw new Error(`解釈できない部分: ${alg.slice(pos, m.index)}`);
+      throw new Error(`入力に読み取れない部分があります: ${alg.slice(pos, m.index)}`);
     }
 
     const move = m[1];
@@ -235,7 +235,7 @@ function parseAlg(alg) {
   }
 
   if (alg.slice(pos).trim()) {
-    throw new Error(`解釈できない部分: ${alg.slice(pos)}`);
+    throw new Error(`入力に読み取れない部分があります: ${alg.slice(pos)}`);
   }
 
   return moves;
@@ -247,7 +247,7 @@ function moveToPerm(move) {
   if (MOVE_PERM_CACHE.has(move)) return MOVE_PERM_CACHE.get(move);
 
   const base = move[0];
-  if (!BASE[base]) throw new Error(`未対応の回転: ${base}`);
+  if (!BASE[base]) throw new Error(`対応していない記号です: ${base}`);
 
   let perm;
   if (move.endsWith("2")) perm = permPower(BASE[base], 2);
@@ -269,7 +269,7 @@ function makeSearchMoves(text) {
 
   for (const move of parseAlg(text)) {
     const face = move[0];
-    if (!BASE[face]) throw new Error(`未対応の回転: ${face}`);
+    if (!BASE[face]) throw new Error(`対応していない記号です: ${face}`);
     if (!faces.includes(face)) faces.push(face);
   }
 
@@ -282,7 +282,7 @@ function makeSearchMoves(text) {
 }
 
 // =========================
-// 手順操作
+// Algorithm utilities
 // =========================
 
 function inverseMove(move) {
@@ -478,7 +478,7 @@ function canAddMove(path, move) {
 }
 
 // =========================
-// 状態パターン
+// Pattern matching
 // =========================
 
 function stickerFaceAt(state, pos) {
@@ -530,10 +530,10 @@ function validatePattern(pattern) {
 
   for (const face of FACE_ORDER) {
     if (pattern[face][4] !== face) {
-      throw new Error(`${face}面のセンターは${face}色固定にして。`);
+      throw new Error(`${face}面の中央ステッカーは${face}色で固定してください。`);
     }
     if (counts[face] > 9) {
-      throw new Error(`${face}色が${counts[face]}枚ある。最大9枚まで。`);
+      throw new Error(`${face}色が${counts[face]}枚あります。各色は9枚以内にしてください。`);
     }
   }
 }
@@ -557,7 +557,7 @@ function matchesPatternUpToRotation(state, patternArr) {
 }
 
 // =========================
-// 探索
+// Search
 // =========================
 
 function buildMovePerms(moves) {
@@ -874,7 +874,7 @@ async function bfsPatternCollectAsync({ pattern, moves, maxSymbolDepth = 16, sho
 }
 
 // =========================
-// UI部品
+// UI components
 // =========================
 
 function Sticker({ color, onClick, locked = false }) {
@@ -945,7 +945,7 @@ function NetEditor({ pattern, setPattern, selectedColor }) {
   );
 }
 
-function SolutionCard({ index, solution }) {
+function SolutionCard({ index, solution, t }) {
   const alg = algToString(solution);
 
   async function copy() {
@@ -958,20 +958,20 @@ function SolutionCard({ index, solution }) {
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md">
       <div className="mb-2 flex items-center justify-between gap-3">
         <div className="text-sm font-semibold text-slate-500">#{index}</div>
-        <button onClick={copy} className="rounded-xl border px-2 py-1 text-xs text-slate-600 transition hover:bg-slate-50 active:scale-95">コピー</button>
+        <button onClick={copy} className="rounded-xl border px-2 py-1 text-xs text-slate-600 transition hover:bg-slate-50 active:scale-95">{t.copy}</button>
       </div>
       <div className="break-words font-mono text-base font-semibold text-slate-900">{alg || "(空)"}</div>
       <div className="mt-2 break-words font-mono text-sm text-slate-600">{formatWithSimulUD(solution)}</div>
       <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
-        <div className="rounded-xl bg-slate-100 p-2"><div className="text-slate-500">同時回し</div><div className="text-lg font-bold">{effectiveMoveCount(solution)}</div></div>
-        <div className="rounded-xl bg-slate-100 p-2"><div className="text-slate-500">記号手数</div><div className="text-lg font-bold">{symbolMoveCount(solution)}</div></div>
-        <div className="rounded-xl bg-slate-100 p-2"><div className="text-slate-500">90度手数</div><div className="text-lg font-bold">{quarterTurnCount(solution)}</div></div>
+        <div className="rounded-xl bg-slate-100 p-2"><div className="text-slate-500">{t.simultaneous}</div><div className="text-lg font-bold">{effectiveMoveCount(solution)}</div></div>
+        <div className="rounded-xl bg-slate-100 p-2"><div className="text-slate-500">{t.symbolMoves}</div><div className="text-lg font-bold">{symbolMoveCount(solution)}</div></div>
+        <div className="rounded-xl bg-slate-100 p-2"><div className="text-slate-500">{t.quarterTurns}</div><div className="text-lg font-bold">{quarterTurnCount(solution)}</div></div>
       </div>
     </div>
   );
 }
 
-function ThinkingCard({ foundCount }) {
+function ThinkingCard({ foundCount, t }) {
   return (
     <div className="rounded-2xl border border-sky-200 bg-gradient-to-r from-sky-50 to-indigo-50 p-4 shadow-sm">
       <div className="flex items-center gap-3">
@@ -981,8 +981,8 @@ function ThinkingCard({ foundCount }) {
           <span className="h-2.5 w-2.5 animate-bounce rounded-full bg-sky-500 [animation-delay:240ms]" />
         </div>
         <div>
-          <div className="font-semibold text-slate-900">考え中…</div>
-          <div className="text-sm text-slate-600">見つけた手順から順に表示中。今 {foundCount} 件見つかってる。</div>
+          <div className="font-semibold text-slate-900">{t.thinkingTitle}</div>
+          <div className="text-sm text-slate-600">{t.thinkingBody(foundCount)}</div>
         </div>
       </div>
     </div>
@@ -993,9 +993,149 @@ function EmptyCard({ text }) {
   return <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-500">{text}</div>;
 }
 
+const TEXT = {
+  ja: {
+    darkMode: "ダークモード",
+    language: "言語",
+    inputPlaceholder: "既存の手順を入力…",
+    applyToNet: "展開図に反映",
+    searchFromAlg: "手順から探索",
+    searching: "探索中…",
+    stop: "停止",
+    searchFromNet: "展開図から探索",
+    generator: "生成系",
+    depthLimit: "手数上限",
+    resultLimit: "表示件数",
+    copy: "コピー",
+    simultaneous: "同時回し",
+    symbolMoves: "記号手数",
+    quarterTurns: "90度手数",
+    thinkingTitle: "探索中…",
+    thinkingBody: (n) => `見つかった手順から順に表示しています。現在 ${n} 件。`,
+    noResults: "条件に一致する手順が見つかりませんでした。",
+    initialHelp: "条件を入力して、探索を開始してください。",
+  },
+  en: {
+    darkMode: "Dark mode",
+    language: "Language",
+    inputPlaceholder: "Enter an existing solution…",
+    applyToNet: "Apply to net",
+    searchFromAlg: "Search from algorithm",
+    searching: "Searching…",
+    stop: "Stop",
+    searchFromNet: "Search from net",
+    generator: "Generator",
+    depthLimit: "Move limit",
+    resultLimit: "Results",
+    copy: "Copy",
+    simultaneous: "Simul moves",
+    symbolMoves: "Move count",
+    quarterTurns: "Quarter turns",
+    thinkingTitle: "Searching…",
+    thinkingBody: (n) => `Showing results as they are found. ${n} found so far.`,
+    noResults: "No matching algorithms found.",
+    initialHelp: "Enter conditions and start searching.",
+  },
+  ur: {
+    darkMode: "ڈارک موڈ",
+    language: "زبان",
+    inputPlaceholder: "موجودہ حل کا طریقہ درج کریں…",
+    applyToNet: "نیٹ پر لگائیں",
+    searchFromAlg: "طریقے سے تلاش",
+    searching: "تلاش جاری…",
+    stop: "روکیں",
+    searchFromNet: "نیٹ سے تلاش",
+    generator: "جنریٹر",
+    depthLimit: "چالوں کی حد",
+    resultLimit: "نتائج",
+    copy: "کاپی",
+    simultaneous: "ساتھ چالیں",
+    symbolMoves: "چالوں کی گنتی",
+    quarterTurns: "کوارٹر ٹرنز",
+    thinkingTitle: "تلاش جاری…",
+    thinkingBody: (n) => `ملنے والے طریقے فوراً دکھائے جا رہے ہیں۔ اب تک ${n} ملے۔`,
+    noResults: "شرائط سے ملتا ہوا کوئی طریقہ نہیں ملا۔",
+    initialHelp: "شرائط درج کریں اور تلاش شروع کریں۔",
+  },
+  ko: {
+    darkMode: "다크 모드",
+    language: "언어",
+    inputPlaceholder: "기존 해법을 입력…",
+    applyToNet: "전개도에 반영",
+    searchFromAlg: "알고리즘으로 탐색",
+    searching: "탐색 중…",
+    stop: "중지",
+    searchFromNet: "전개도에서 탐색",
+    generator: "생성계",
+    depthLimit: "수순 제한",
+    resultLimit: "표시 개수",
+    copy: "복사",
+    simultaneous: "동시 회전",
+    symbolMoves: "기호 수",
+    quarterTurns: "90도 회전 수",
+    thinkingTitle: "탐색 중…",
+    thinkingBody: (n) => `찾은 수순을 순서대로 표시하고 있습니다. 현재 ${n}개.`,
+    noResults: "조건에 맞는 수순을 찾지 못했습니다.",
+    initialHelp: "조건을 입력하고 탐색을 시작하세요.",
+  },
+  hi: {
+    darkMode: "डार्क मोड",
+    language: "भाषा",
+    inputPlaceholder: "मौजूदा समाधान दर्ज करें…",
+    applyToNet: "नेट पर लागू करें",
+    searchFromAlg: "एल्गोरिदम से खोजें",
+    searching: "खोज जारी…",
+    stop: "रोकें",
+    searchFromNet: "नेट से खोजें",
+    generator: "जनरेटर",
+    depthLimit: "चाल सीमा",
+    resultLimit: "परिणाम संख्या",
+    copy: "कॉपी",
+    simultaneous: "साथ-साथ चालें",
+    symbolMoves: "चालों की संख्या",
+    quarterTurns: "90° चालें",
+    thinkingTitle: "खोज जारी…",
+    thinkingBody: (n) => `मिले हुए तरीके क्रम से दिखाए जा रहे हैं। अभी तक ${n} मिले।`,
+    noResults: "शर्तों से मिलता कोई तरीका नहीं मिला।",
+    initialHelp: "शर्तें दर्ज करें और खोज शुरू करें।",
+  },
+  ar: {
+    darkMode: "الوضع الداكن",
+    language: "اللغة",
+    inputPlaceholder: "أدخل الحل الموجود…",
+    applyToNet: "تطبيق على المخطط",
+    searchFromAlg: "البحث من الخوارزمية",
+    searching: "جارٍ البحث…",
+    stop: "إيقاف",
+    searchFromNet: "البحث من المخطط",
+    generator: "المولد",
+    depthLimit: "حد الحركات",
+    resultLimit: "عدد النتائج",
+    copy: "نسخ",
+    simultaneous: "حركات متزامنة",
+    symbolMoves: "عدد الحركات",
+    quarterTurns: "دورات 90°",
+    thinkingTitle: "جارٍ البحث…",
+    thinkingBody: (n) => `يتم عرض النتائج فور العثور عليها. تم العثور على ${n} حتى الآن.`,
+    noResults: "لم يتم العثور على خوارزميات مطابقة.",
+    initialHelp: "أدخل الشروط وابدأ البحث.",
+  },
+};
+
+const LANGUAGE_LABEL = {
+  ja: "日本語",
+  en: "English",
+  ur: "اردو",
+  ko: "한국어",
+  hi: "हिन्दी",
+  ar: "العربية",
+};
+
 export default function App() {
   const [isDark, setIsDark] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [language, setLanguage] = useState("ja");
+  const t = TEXT[language];
   const [inputMode, setInputMode] = useState("alg");
   const [targetAlg, setTargetAlg] = useState("R' U R' U' y R' F' R2 U' R' U R' F R F y'");
   const [targetPattern, setTargetPattern] = useState(solvedPattern());
@@ -1104,20 +1244,36 @@ export default function App() {
   }
 
   return (
-    <div className={`${isDark ? "dark-mode" : ""} min-h-screen bg-slate-50 p-4 text-slate-900 md:p-8`}>
+    <div className={`${isDark ? "dark-mode" : "light-shell"} min-h-screen p-4 text-slate-900 md:p-8`}> 
       <style>{`
+        body {
+          background: #e5e7eb;
+        }
+
+        .light-shell {
+          background: #e5e7eb !important;
+        }
+        .light-panel {
+          background-color: #f1f5f9 !important;
+        }
+        .light-inner {
+          background-color: #e2e8f0 !important;
+        }
+
         .dark-mode {
-          background: #3f3f46 !important;
+          background: #27272a !important;
           color: #f4f4f5 !important;
         }
-        .dark-mode .bg-white {
-          background-color: #52525b !important;
+        .dark-mode .bg-white,
+        .dark-mode .light-panel {
+          background-color: #3f3f46 !important;
         }
-        .dark-mode .bg-slate-50 {
-          background-color: #4b5563 !important;
+        .dark-mode .bg-slate-50,
+        .dark-mode .light-inner {
+          background-color: #34343a !important;
         }
         .dark-mode .bg-slate-100 {
-          background-color: #6b7280 !important;
+          background-color: #52525b !important;
         }
         .dark-mode .text-slate-900 {
           color: #fafafa !important;
@@ -1127,77 +1283,110 @@ export default function App() {
           color: #e5e7eb !important;
         }
         .dark-mode .text-slate-500 {
-          color: #d1d5db !important;
+          color: #d4d4d8 !important;
         }
         .dark-mode .border-slate-200,
         .dark-mode .border-slate-300 {
-          border-color: #9ca3af !important;
+          border-color: #71717a !important;
         }
         .dark-mode .ring-slate-200,
         .dark-mode .ring-slate-400 {
-          --tw-ring-color: #9ca3af !important;
+          --tw-ring-color: #71717a !important;
         }
         .dark-mode input,
         .dark-mode textarea {
-          background-color: #71717a !important;
+          background-color: #52525b !important;
           color: #ffffff !important;
-          border-color: #a1a1aa !important;
+          border-color: #71717a !important;
         }
         .dark-mode input::placeholder,
         .dark-mode textarea::placeholder {
-          color: #e4e4e7 !important;
+          color: #d4d4d8 !important;
         }
         .dark-mode button.bg-white {
-          background-color: #71717a !important;
+          background-color: #52525b !important;
           color: #ffffff !important;
         }
         .dark-mode button.bg-white:hover {
-          background-color: #81818b !important;
+          background-color: #60606a !important;
+        }
+        .dark-mode .menu-button {
+          background-color: #52525b !important;
+          color: #ffffff !important;
+          border-color: #a1a1aa !important;
+        }
+        .dark-mode .menu-panel {
+          background-color: #3f3f46 !important;
+          border-color: #a1a1aa !important;
+        }
+        .dark-mode .menu-item {
+          background-color: #52525b !important;
+          color: #ffffff !important;
+          border: 1px solid #a1a1aa !important;
+        }
+        .dark-mode .menu-item:hover {
+          background-color: #63636d !important;
+        }
+        .dark-mode .menu-item span {
+          color: #ffffff !important;
         }
         .dark-mode .bg-gradient-to-r {
-          background: #52525b !important;
+          background: #3f3f46 !important;
         }
       `}</style>
 
       <div className="fixed left-3 top-3 z-50">
         <button
           onClick={() => setMenuOpen((v) => !v)}
-          className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-300 bg-white text-xl font-bold shadow-sm transition hover:bg-slate-50 active:scale-95"
+          className="menu-button flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-300 bg-white text-xl font-bold text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95"
           aria-label="menu"
         >
           ☰
         </button>
 
         {menuOpen ? (
-          <div className="mt-2 w-48 rounded-2xl border border-slate-200 bg-white p-2 shadow-lg">
+          <div className="menu-panel mt-2 w-48 rounded-2xl border border-slate-200 bg-white p-2 shadow-lg">
             <button
               onClick={() => setIsDark((v) => !v)}
-              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-semibold transition hover:bg-slate-50 active:scale-95"
+              className="menu-item flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 active:scale-95"
             >
-              <span>ダークモード</span>
+              <span>{t.darkMode}</span>
               <span>{isDark ? "ON" : "OFF"}</span>
             </button>
+            <div className="mt-2 rounded-xl border border-slate-200 p-2">
+              <div className="mb-2 px-1 text-xs font-semibold text-slate-500">{t.language}</div>
+              {Object.keys(TEXT).map((lang) => (
+                <button
+                  key={lang}
+                  onClick={() => setLanguage(lang)}
+                  className={`menu-item mb-1 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 active:scale-95 ${language === lang ? "ring-2 ring-slate-400" : ""}`}
+                >
+                  <span>{LANGUAGE_LABEL[lang]}</span>
+                  <span>{language === lang ? "✓" : ""}</span>
+                </button>
+              ))}
+            </div>
           </div>
         ) : null}
       </div>
       <div className="mx-auto max-w-6xl">
-        <div className="mb-6 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+        <div className="light-panel mb-6 rounded-3xl p-6 shadow-sm ring-1 ring-slate-200">
           <div className="grid gap-4">
             <div className="grid gap-4">
               <label className="grid gap-2">
                 <textarea
                   value={targetAlg}
                   onChange={(e) => setTargetAlg(e.target.value)}
-                  placeholder="スクランブルを入力..."
+                  placeholder={t.inputPlaceholder}
                   className="h-12 resize-none rounded-2xl border border-slate-300 bg-white px-3 py-3 font-mono text-sm leading-5 outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-slate-400"
                 />
                 <div className="flex flex-wrap justify-end gap-2">
-                  <button onClick={loadAlgToPattern} className="rounded-xl border border-slate-300 px-3 py-2 text-sm transition hover:bg-slate-50 active:scale-95">下の展開図に反映</button>
-                  <button onClick={() => runSearch("alg")} disabled={isSearching} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95 disabled:opacity-60">{isSearching ? "探索中…" : "手順から探索"}</button>
+                  <button onClick={loadAlgToPattern} className="rounded-xl border border-slate-300 px-3 py-2 text-sm transition hover:bg-slate-50 active:scale-95">{t.applyToNet}</button>
+                  <button onClick={() => runSearch("alg")} disabled={isSearching} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95 disabled:opacity-60">{isSearching ? t.searching : t.searchFromAlg}</button>
                 </div>
               </label>
 
-              <div className="overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
+              <div className="light-inner overflow-hidden rounded-3xl border border-slate-200 p-3 sm:p-4">
                 <div className="mb-4 flex flex-wrap gap-2">
                   {[...FACE_ORDER, DONT_CARE].map((face) => (
                     <button key={face} onClick={() => setSelectedColor(face)} className={`flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-semibold transition active:scale-95 ${selectedColor === face ? "border-slate-900 bg-white shadow-md ring-2 ring-slate-400" : "border-slate-300 bg-white hover:bg-slate-50"}`}>
@@ -1210,22 +1399,22 @@ export default function App() {
             </div>
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-end">
               {isSearching ? (
-                <button onClick={stopSearch} className="rounded-2xl border border-rose-300 bg-rose-50 px-5 py-3 text-sm font-semibold text-rose-700 shadow-sm transition hover:bg-rose-100 active:scale-95">停止する</button>
+                <button onClick={stopSearch} className="rounded-2xl border border-rose-300 bg-rose-50 px-5 py-3 text-sm font-semibold text-rose-700 shadow-sm transition hover:bg-rose-100 active:scale-95">{t.stop}</button>
               ) : null}
-              <button onClick={() => runSearch("pattern")} disabled={isSearching} className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95 disabled:opacity-60">{isSearching ? "探索中…" : "展開図から探索"}</button>
+              <button onClick={() => runSearch("pattern")} disabled={isSearching} className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95 disabled:opacity-60">{isSearching ? t.searching : t.searchFromNet}</button>
             </div>
 
             <div className="grid items-start gap-4 sm:grid-cols-3">
               <label className="grid gap-1">
-                <span className="text-sm font-semibold">何gen？</span>
+                <span className="text-sm font-semibold">{t.generator}</span>
                 <input value={searchMovesText} onChange={(e) => setSearchMovesText(e.target.value)} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" placeholder="例: R U D / R U f / R U S / R U x" />
               </label>
               <label className="grid gap-1">
-                <span className="text-sm font-semibold">手数上限</span>
+                <span className="text-sm font-semibold">{t.depthLimit}</span>
                 <input type="number" value={maxSymbolDepth} onChange={(e) => setMaxSymbolDepth(Number(e.target.value))} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" />
               </label>
               <label className="grid gap-1">
-                <span className="text-sm font-semibold">出力数</span>
+                <span className="text-sm font-semibold">{t.resultLimit}</span>
                 <input type="number" value={limit} onChange={(e) => setLimit(Number(e.target.value))} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" />
               </label>
             </div>
@@ -1235,19 +1424,19 @@ export default function App() {
         {error && <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
 
         <div className="mb-4">
-          {isSearching ? <ThinkingCard foundCount={solutions.length} /> : null}
+          {isSearching ? <ThinkingCard foundCount={solutions.length} t={t} /> : null}
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          {solutions.map((solution, i) => <SolutionCard key={`${i}-${algToString(solution)}`} index={i + 1} solution={solution} />)}
+          {solutions.map((solution, i) => <SolutionCard key={`${i}-${algToString(solution)}`} index={i + 1} solution={solution} t={t} />)}
         </div>
 
         {!isSearching && !error && hasSearched && solutions.length === 0 ? (
-          <div className="mt-4"><EmptyCard text="見つからんかった。" /></div>
+          <div className="mt-4"><EmptyCard text={t.noResults} /></div>
         ) : null}
 
         {!hasSearched && !isSearching ? (
-          <div className="mt-4"><EmptyCard text="条件を入れて探索してな。" /></div>
+          <div className="mt-4"><EmptyCard text={t.initialHelp} /></div>
         ) : null}
       </div>
     </div>
