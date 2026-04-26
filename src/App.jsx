@@ -651,47 +651,38 @@ function EmptyCard({ text, className = "" }) {
   return <div className={`rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-500 ${className}`}>{text}</div>;
 }
 
-function StepperNumberInput({ label, value, onChange, min = 1, max = 99 }) {
+function NumberInput({ label, value, onChange, min = 1, max = 99 }) {
   const normalizedValue = Number.isFinite(Number(value)) ? Number(value) : min;
 
   function setClamped(nextValue) {
-    const numeric = Number(nextValue);
+    const raw = String(nextValue);
+    if (raw === "") {
+      onChange("");
+      return;
+    }
+
+    const numeric = Number(raw);
     if (!Number.isFinite(numeric)) return;
-    onChange(Math.min(max, Math.max(min, numeric)));
+    onChange(Math.min(max, Math.max(min, Math.trunc(numeric))));
   }
 
   return (
     <label className="grid gap-1">
       <span className="text-sm font-normal">{label}</span>
-      <div className="flex h-12 overflow-hidden rounded-xl border border-slate-300 bg-white focus-within:ring-2 focus-within:ring-slate-400">
-        <button
-          type="button"
-          onClick={() => setClamped(normalizedValue - 1)}
-          className="flex w-12 items-center justify-center border-r border-slate-300 text-xl text-slate-700 transition hover:bg-slate-50 active:scale-95"
-          aria-label={`${label} -1`}
-        >
-          −
-        </button>
-        <input
-          type="number"
-          inputMode="numeric"
-          pattern="[0-9]*"
-          min={min}
-          max={max}
-          step="1"
-          value={value}
-          onChange={(e) => setClamped(e.target.value)}
-          className="h-full min-w-0 flex-1 border-0 bg-white px-2 text-center text-base leading-5 outline-none"
-        />
-        <button
-          type="button"
-          onClick={() => setClamped(normalizedValue + 1)}
-          className="flex w-12 items-center justify-center border-l border-slate-300 text-xl text-slate-700 transition hover:bg-slate-50 active:scale-95"
-          aria-label={`${label} +1`}
-        >
-          +
-        </button>
-      </div>
+      <input
+        type="number"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        min={min}
+        max={max}
+        step="1"
+        value={value}
+        onChange={(e) => setClamped(e.target.value)}
+        onBlur={() => {
+          if (value === "") onChange(min);
+        }}
+        className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 text-center text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400"
+      />
     </label>
   );
 }
@@ -1569,8 +1560,8 @@ export default function App() {
                   ))}
                 </div>
               </label>
-              <StepperNumberInput label={t.depthLimit} value={maxSymbolDepth} onChange={setMaxSymbolDepth} min={1} max={30} />
-              <StepperNumberInput label={t.resultLimit} value={limit} onChange={setLimit} min={1} max={50} />
+              <NumberInput label={t.depthLimit} value={maxSymbolDepth} onChange={setMaxSymbolDepth} min={1} max={30} />
+              <NumberInput label={t.resultLimit} value={limit} onChange={setLimit} min={1} max={50} />
             </div>
           </div>
         </div>
