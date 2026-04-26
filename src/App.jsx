@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 // =========================
 // Core settings
@@ -946,11 +946,16 @@ function NetEditor({ pattern, setPattern, selectedColor }) {
   );
 }
 
-function SolutionCard({ solution, t, showMoveCounts }) {
+function SolutionCard({ solution, t, showMoveCounts, onSave, onCopy }) {
   const displayAlg = formatWithSimulUD(solution);
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md">
+      <div className="mb-3 flex justify-end gap-2">
+        <button onClick={() => onCopy(displayAlg)} className="rounded-xl border border-slate-300 bg-white px-3 py-1 text-xs font-normal text-slate-700 transition hover:bg-slate-50 active:scale-95">{t.copy}</button>
+        <button onClick={() => onSave(solution)} className="rounded-xl border border-slate-300 bg-white px-3 py-1 text-xs font-normal text-slate-700 transition hover:bg-slate-50 active:scale-95">{t.favorite}</button>
+      </div>
+
       <div className="break-words font-mono text-base font-normal text-slate-900">
         {displayAlg || "(空)"}
       </div>
@@ -985,25 +990,32 @@ function ThinkingCard({ foundCount, t }) {
           <span className="h-2.5 w-2.5 animate-bounce rounded-full bg-sky-500 [animation-delay:240ms]" />
         </div>
         <div>
-          <div className="font-normal text-slate-900">{t.thinkingTitle}</div>
-          <div className="text-sm text-slate-600">{t.thinkingBody(foundCount)}</div>
+          <div className={`font-normal text-slate-900`}>{t.thinkingTitle}</div>
+          <div className={`text-sm text-slate-600`}>{t.thinkingBody(foundCount)}</div>
         </div>
       </div>
     </div>
   );
 }
 
-function EmptyCard({ text }) {
-  return <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-500">{text}</div>;
+function EmptyCard({ text, className = "" }) {
+  return <div className={`rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-500 ${className}`}>{text}</div>;
 }
+
 
 const TEXT = {
   ja: {
     darkMode: "ダークモード",
     showMoveCounts: "手数を表示",
     language: "言語",
+    shareUrl: "URL共有",
+    saved: "保存済み",
+    history: "履歴",
+    presets: "プリセット",
+    favorite: "保存",
+    clear: "削除",
+    copied: "コピーしました",
     inputPlaceholder: "既存の手順を入力…",
-    applyToNet: "展開図に反映",
     searchFromAlg: "手順から探索",
     searching: "探索中…",
     netHint: "展開図からも入力できます…",
@@ -1026,8 +1038,14 @@ const TEXT = {
     darkMode: "Dark mode",
     showMoveCounts: "Show move counts",
     language: "Language",
+    shareUrl: "Share URL",
+    saved: "Saved",
+    history: "History",
+    presets: "Presets",
+    favorite: "Save",
+    clear: "Clear",
+    copied: "Copied",
     inputPlaceholder: "Enter an existing solution…",
-    applyToNet: "Apply to net",
     searchFromAlg: "Search from algorithm",
     searching: "Searching…",
     netHint: "You can also enter a pattern from the net…",
@@ -1050,8 +1068,14 @@ const TEXT = {
     darkMode: "ڈارک موڈ",
     showMoveCounts: "چالوں کی گنتی دکھائیں",
     language: "زبان",
+    shareUrl: "URL شیئر کریں",
+    saved: "محفوظ",
+    history: "تاریخچہ",
+    presets: "پری سیٹ",
+    favorite: "محفوظ کریں",
+    clear: "حذف",
+    copied: "کاپی ہو گیا",
     inputPlaceholder: "موجودہ حل کا طریقہ درج کریں…",
-    applyToNet: "نیٹ پر لگائیں",
     searchFromAlg: "طریقے سے تلاش",
     searching: "تلاش جاری…",
     netHint: "آپ نیٹ سے بھی پیٹرن درج کر سکتے ہیں…",
@@ -1074,8 +1098,14 @@ const TEXT = {
     darkMode: "다크 모드",
     showMoveCounts: "수순 수 표시",
     language: "언어",
+    shareUrl: "URL 공유",
+    saved: "저장됨",
+    history: "기록",
+    presets: "프리셋",
+    favorite: "저장",
+    clear: "삭제",
+    copied: "복사했습니다",
     inputPlaceholder: "기존 해법을 입력…",
-    applyToNet: "전개도에 반영",
     searchFromAlg: "알고리즘으로 탐색",
     searching: "탐색 중…",
     netHint: "전개도에서도 입력할 수 있습니다…",
@@ -1098,8 +1128,14 @@ const TEXT = {
     darkMode: "डार्क मोड",
     showMoveCounts: "चालों की संख्या दिखाएँ",
     language: "भाषा",
+    shareUrl: "URL साझा करें",
+    saved: "सहेजे गए",
+    history: "इतिहास",
+    presets: "प्रीसेट",
+    favorite: "सहेजें",
+    clear: "हटाएँ",
+    copied: "कॉपी हुआ",
     inputPlaceholder: "मौजूदा समाधान दर्ज करें…",
-    applyToNet: "नेट पर लागू करें",
     searchFromAlg: "एल्गोरिदम से खोजें",
     searching: "खोज जारी…",
     netHint: "नेट से भी पैटर्न दर्ज कर सकते हैं…",
@@ -1122,8 +1158,14 @@ const TEXT = {
     darkMode: "الوضع الداكن",
     showMoveCounts: "إظهار عدد الحركات",
     language: "اللغة",
+    shareUrl: "مشاركة الرابط",
+    saved: "محفوظ",
+    history: "السجل",
+    presets: "إعدادات جاهزة",
+    favorite: "حفظ",
+    clear: "حذف",
+    copied: "تم النسخ",
     inputPlaceholder: "أدخل الحل الموجود…",
-    applyToNet: "تطبيق على المخطط",
     searchFromAlg: "البحث من الخوارزمية",
     searching: "جارٍ البحث…",
     netHint: "يمكنك أيضًا إدخال النمط من المخطط…",
@@ -1153,6 +1195,41 @@ const LANGUAGE_LABEL = {
   ar: "العربية",
 };
 
+const PRESET_GENS = ["R U", "R U F", "R U D", "R U L", "R U f"];
+const STORAGE_KEYS = {
+  favorites: "cube-search-favorites-v1",
+  history: "cube-search-history-v1",
+};
+
+function encodeShareState(obj) {
+  const bytes = new TextEncoder().encode(JSON.stringify(obj));
+  let binary = "";
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
+}
+
+function decodeShareState(text) {
+  const padded = text.replaceAll("-", "+").replaceAll("_", "/") + "===".slice((text.length + 3) % 4);
+  const binary = atob(padded);
+  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+function readStorageList(key) {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || "[]");
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeStorageList(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (_) {}
+}
+
 export default function App() {
   const [isDark, setIsDark] = useState(false);
   const [showMoveCounts, setShowMoveCounts] = useState(false);
@@ -1160,6 +1237,11 @@ export default function App() {
   const [languageOpen, setLanguageOpen] = useState(false);
   const [language, setLanguage] = useState("ja");
   const t = TEXT[language];
+  const [savedOpen, setSavedOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [favorites, setFavorites] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [shareMessage, setShareMessage] = useState("");
   const [inputMode, setInputMode] = useState("alg");
   const [targetAlg, setTargetAlg] = useState("R' U R' U' y R' F' R2 U' R' U R' F R F y'");
   const [targetPattern, setTargetPattern] = useState(solvedPattern());
@@ -1173,6 +1255,28 @@ export default function App() {
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const searchSessionRef = useRef(0);
+
+  useEffect(() => {
+    setFavorites(readStorageList(STORAGE_KEYS.favorites));
+    setHistory(readStorageList(STORAGE_KEYS.history));
+
+    const raw = window.location.hash.startsWith("#s=") ? window.location.hash.slice(3) : "";
+    if (!raw) return;
+
+    try {
+      const data = decodeShareState(raw);
+      if (typeof data.targetAlg === "string") setTargetAlg(data.targetAlg);
+      if (data.targetPattern) setTargetPattern(data.targetPattern);
+      if (typeof data.selectedColor === "string") setSelectedColor(data.selectedColor);
+      if (typeof data.netOpen === "boolean") setNetOpen(data.netOpen);
+      if (typeof data.searchMovesText === "string") setSearchMovesText(data.searchMovesText);
+      if (Number.isFinite(data.maxSymbolDepth)) setMaxSymbolDepth(data.maxSymbolDepth);
+      if (Number.isFinite(data.limit)) setLimit(data.limit);
+      if (typeof data.isDark === "boolean") setIsDark(data.isDark);
+      if (typeof data.showMoveCounts === "boolean") setShowMoveCounts(data.showMoveCounts);
+      if (typeof data.language === "string" && TEXT[data.language]) setLanguage(data.language);
+    } catch (_) {}
+  }, []);
 
   const searchMovesPreview = useMemo(() => {
     try {
@@ -1211,6 +1315,55 @@ export default function App() {
     setHasSearched(false);
   }
 
+  function currentShareState() {
+    return { targetAlg, targetPattern, selectedColor, netOpen, searchMovesText, maxSymbolDepth, limit, isDark, showMoveCounts, language };
+  }
+
+  async function shareUrl() {
+    const hash = `#s=${encodeShareState(currentShareState())}`;
+    const url = `${window.location.origin}${window.location.pathname}${hash}`;
+    window.history.replaceState(null, "", hash);
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareMessage(t.copied);
+    } catch {
+      setShareMessage(url);
+    }
+  }
+
+  function saveHistoryItem(mode) {
+    const item = { id: Date.now(), mode, targetAlg, targetPattern, searchMovesText, maxSymbolDepth, limit };
+    const itemKey = JSON.stringify({ mode, targetAlg, targetPattern, searchMovesText, maxSymbolDepth, limit });
+    const next = [item, ...history.filter((x) => JSON.stringify({ mode: x.mode, targetAlg: x.targetAlg, targetPattern: x.targetPattern, searchMovesText: x.searchMovesText, maxSymbolDepth: x.maxSymbolDepth, limit: x.limit }) !== itemKey)].slice(0, 12);
+    setHistory(next);
+    writeStorageList(STORAGE_KEYS.history, next);
+  }
+
+  function applyHistoryItem(item) {
+    if (item.targetAlg !== undefined) setTargetAlg(item.targetAlg);
+    if (item.targetPattern) setTargetPattern(item.targetPattern);
+    if (item.searchMovesText !== undefined) setSearchMovesText(item.searchMovesText);
+    if (item.maxSymbolDepth !== undefined) setMaxSymbolDepth(item.maxSymbolDepth);
+    if (item.limit !== undefined) setLimit(item.limit);
+    if (item.mode === "pattern") setNetOpen(true);
+    setMenuOpen(false);
+  }
+
+  function saveFavoriteSolution(solution) {
+    const alg = formatWithSimulUD(solution);
+    const item = { id: Date.now(), alg };
+    const next = [item, ...favorites.filter((x) => x.alg !== alg)].slice(0, 30);
+    setFavorites(next);
+    writeStorageList(STORAGE_KEYS.favorites, next);
+  }
+
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setShareMessage(t.copied);
+    } catch (_) {}
+  }
+
     async function runSearch(mode) {
     const currentSession = searchSessionRef.current + 1;
     searchSessionRef.current = currentSession;
@@ -1219,6 +1372,7 @@ export default function App() {
     setSolutions([]);
     setHasSearched(true);
     setIsSearching(true);
+    saveHistoryItem(mode);
 
     try {
       const moves = makeSearchMoves(searchMovesText);
@@ -1397,21 +1551,61 @@ export default function App() {
           >
             <button
               onClick={() => setIsDark((v) => !v)}
-              className="menu-item flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"
+              className={`menu-item flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95`}
             >
               <span>{t.darkMode}</span>
               <span>{isDark ? "ON" : "OFF"}</span>
             </button>
             <button
               onClick={() => setShowMoveCounts((v) => !v)}
-              className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"
+              className={`menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95`}
             >
               <span>{t.showMoveCounts}</span>
               <span>{showMoveCounts ? "ON" : "OFF"}</span>
             </button>
             <button
-              onClick={() => setLanguageOpen((v) => !v)}
+              onClick={shareUrl}
               className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"
+            >
+              <span>{t.shareUrl}</span>
+              <span>↗</span>
+            </button>
+            <button
+              onClick={() => setSavedOpen((v) => !v)}
+              className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"
+            >
+              <span>{t.saved}</span>
+              <span>{savedOpen ? "▴" : favorites.length}</span>
+            </button>
+            {savedOpen ? (
+              <div className="mt-2 max-h-52 overflow-auto rounded-xl border border-slate-200 p-2">
+                {favorites.length ? favorites.map((item) => (
+                  <button key={item.id} onClick={() => copyText(item.alg)} className="menu-item mb-1 block w-full rounded-xl px-3 py-2 text-left font-mono text-xs text-slate-900 transition hover:bg-slate-50 active:scale-95">{item.alg}</button>
+                )) : <div className="px-3 py-2 text-xs text-slate-500">0</div>}
+                {favorites.length ? <button onClick={() => { setFavorites([]); writeStorageList(STORAGE_KEYS.favorites, []); }} className="menu-item mt-2 w-full rounded-xl px-3 py-2 text-xs text-slate-900">{t.clear}</button> : null}
+              </div>
+            ) : null}
+            <button
+              onClick={() => setHistoryOpen((v) => !v)}
+              className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"
+            >
+              <span>{t.history}</span>
+              <span>{historyOpen ? "▴" : history.length}</span>
+            </button>
+            {historyOpen ? (
+              <div className="mt-2 max-h-52 overflow-auto rounded-xl border border-slate-200 p-2">
+                {history.length ? history.map((item) => (
+                  <button key={item.id} onClick={() => applyHistoryItem(item)} className="menu-item mb-1 block w-full rounded-xl px-3 py-2 text-left text-xs text-slate-900 transition hover:bg-slate-50 active:scale-95">
+                    <div className="font-mono">{item.searchMovesText}</div>
+                    <div className="truncate text-slate-500">{item.mode === "alg" ? item.targetAlg : t.searchFromNet}</div>
+                  </button>
+                )) : <div className="px-3 py-2 text-xs text-slate-500">0</div>}
+                {history.length ? <button onClick={() => { setHistory([]); writeStorageList(STORAGE_KEYS.history, []); }} className="menu-item mt-2 w-full rounded-xl px-3 py-2 text-xs text-slate-900">{t.clear}</button> : null}
+              </div>
+            ) : null}
+            <button
+              onClick={() => setLanguageOpen((v) => !v)}
+              className={`menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95`}
             >
               <span>{t.language}</span>
               <span>{languageOpen ? "▴" : LANGUAGE_LABEL[language]}</span>
@@ -1449,10 +1643,10 @@ export default function App() {
                   value={targetAlg}
                   onChange={(e) => setTargetAlg(e.target.value)}
                   placeholder={t.inputPlaceholder}
-                  className="h-14 w-full resize-none rounded-2xl border border-slate-300 bg-white px-3 py-4 font-mono text-sm leading-5 outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-slate-400"
+                  className={`h-14 w-full resize-none rounded-2xl border border-slate-300 bg-white px-3 py-4 font-mono text-sm leading-5 outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-slate-400`}
                 />
                 <div className="mt-3 flex flex-wrap justify-end gap-2">
-                  <button onClick={() => runSearch("alg")} disabled={isSearching} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-normal text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95 disabled:opacity-60">{t.searchFromAlg}</button>
+                  <button onClick={() => runSearch("alg")} disabled={isSearching} className={`rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-normal text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95 disabled:opacity-60`}>{t.searchFromAlg}</button>
                 </div>
               </div>
 
@@ -1461,7 +1655,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setNetOpen(true)}
-                    className="flex w-full items-center justify-between rounded-2xl border border-slate-300 bg-white px-4 py-3 text-left text-sm font-normal text-slate-700 shadow-sm transition hover:bg-slate-50 active:scale-95"
+                    className={`flex w-full items-center justify-between rounded-2xl border border-slate-300 bg-white px-4 py-3 text-left text-sm font-normal text-slate-700 shadow-sm transition hover:bg-slate-50 active:scale-95`}
                   >
                     <span>{t.netHint}</span>
                     <span className="text-slate-500">▾</span>
@@ -1479,14 +1673,14 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => setNetOpen(false)}
-                        className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700 shadow-sm transition hover:bg-slate-50 active:scale-95"
+                        className={`rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700 shadow-sm transition hover:bg-slate-50 active:scale-95`}
                       >
                         {t.closeNet}
                       </button>
                     </div>
                     <NetEditor pattern={targetPattern} setPattern={setTargetPattern} selectedColor={selectedColor} />
                     <div className="mt-4 flex justify-end">
-                      <button onClick={() => runSearch("pattern")} disabled={isSearching} className="w-fit whitespace-nowrap rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-normal text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95 disabled:opacity-60">{t.searchFromNet}</button>
+                      <button onClick={() => runSearch("pattern")} disabled={isSearching} className={`w-fit whitespace-nowrap rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-normal text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95 disabled:opacity-60`}>{t.searchFromNet}</button>
                     </div>
                   </>
                 )}
@@ -1495,15 +1689,20 @@ export default function App() {
 
             <div className="grid items-start gap-4 sm:grid-cols-3">
               <label className="grid gap-1">
-                <span className="text-sm font-normal">{t.generator}</span>
+                <span className={`text-sm font-normal`}>{t.generator}</span>
                 <input value={searchMovesText} onChange={(e) => setSearchMovesText(e.target.value)} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" placeholder="例: R U D / R U f / R U S / R U x" />
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {PRESET_GENS.map((preset) => (
+                    <button key={preset} type="button" onClick={() => setSearchMovesText(preset)} className="rounded-lg border border-slate-300 bg-white px-2 py-1 font-mono text-xs text-slate-700 transition hover:bg-slate-50 active:scale-95">{preset}</button>
+                  ))}
+                </div>
               </label>
               <label className="grid gap-1">
-                <span className="text-sm font-normal">{t.depthLimit}</span>
+                <span className={`text-sm font-normal`}>{t.depthLimit}</span>
                 <input type="number" value={maxSymbolDepth} onChange={(e) => setMaxSymbolDepth(Number(e.target.value))} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" />
               </label>
               <label className="grid gap-1">
-                <span className="text-sm font-normal">{t.resultLimit}</span>
+                <span className={`text-sm font-normal`}>{t.resultLimit}</span>
                 <input type="number" value={limit} onChange={(e) => setLimit(Number(e.target.value))} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" />
               </label>
             </div>
@@ -1512,12 +1711,14 @@ export default function App() {
 
         {error && <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
 
+        {shareMessage ? <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-3 text-sm text-slate-600">{shareMessage}</div> : null}
+
         <div className="mb-4">
           {isSearching ? <ThinkingCard foundCount={solutions.length} t={t} /> : null}
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          {solutions.map((solution, i) => <SolutionCard key={`${i}-${algToString(solution)}`} solution={solution} t={t} showMoveCounts={showMoveCounts} />)}
+          {solutions.map((solution, i) => <SolutionCard key={`${i}-${algToString(solution)}`} solution={solution} t={t} showMoveCounts={showMoveCounts} onSave={saveFavoriteSolution} onCopy={copyText} />)}
         </div>
 
         {!isSearching && !error && hasSearched && solutions.length === 0 ? (
