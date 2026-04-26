@@ -566,8 +566,6 @@ function buildMovePerms(moves) {
   return out;
 }
 
-const MAX_SEARCH_MS = 8000;
-const MAX_SEEN_STATES = 200000;
 
 function sortSolutions(solutions) {
   return solutions
@@ -719,11 +717,11 @@ async function expandOneSideAsync({ front, seenSelf, seenOther, movePerms, moves
   let work = 0;
 
   for (const [, data] of front.entries()) {
-    if (shouldStop() || seenSelf.size + seenOther.size >= MAX_SEEN_STATES) break;
+    if (shouldStop()) break;
     const { state, path, symCost } = data;
 
     for (const move of moves) {
-      if (shouldStop() || seenSelf.size + seenOther.size >= MAX_SEEN_STATES) break;
+      if (shouldStop()) break;
       if (!canAddMove(path, move)) continue;
 
       const newSymCost = symCost + symbolDelta(path, move);
@@ -785,7 +783,7 @@ async function bidirectionalBfsCollectAsync({ start, goal = SOLVED, moves, maxSy
   const seenB = new Map(frontB);
   const solutionSet = new Set();
 
-  while ((frontA.size || frontB.size) && !shouldStop() && seenA.size + seenB.size < MAX_SEEN_STATES) {
+  while ((frontA.size || frontB.size) && !shouldStop()) {
     if (frontA.size && (frontA.size <= frontB.size || !frontB.size)) {
       frontA = await expandOneSideAsync({
         front: frontA,
@@ -835,15 +833,15 @@ async function bfsPatternCollectAsync({ pattern, moves, maxSymbolDepth = 16, sho
   const solutionSet = new Set();
   let work = 0;
 
-  while (currentFront.size && !shouldStop() && seen.size < MAX_SEEN_STATES) {
+  while (currentFront.size && !shouldStop()) {
     const newFront = new Map();
 
     for (const [, data] of currentFront.entries()) {
-      if (shouldStop() || seen.size >= MAX_SEEN_STATES) break;
+      if (shouldStop()) break;
       const { state, path, symCost } = data;
 
       for (const move of moves) {
-        if (shouldStop() || seen.size >= MAX_SEEN_STATES) break;
+        if (shouldStop()) break;
         if (!canAddMove(path, move)) continue;
         const newSymCost = symCost + symbolDelta(path, move);
         if (newSymCost > maxSymbolDepth) continue;
@@ -1200,10 +1198,7 @@ export default function App() {
     try {
       const moves = makeSearchMoves(searchMovesText);
       const maxResults = Number(limit);
-      const startedAt = performance.now();
-      const shouldStop = () =>
-        searchSessionRef.current !== currentSession ||
-        performance.now() - startedAt > MAX_SEARCH_MS;
+      const shouldStop = () => searchSessionRef.current !== currentSession;
 
       const onSolution = (solution) => {
         if (shouldStop()) return;
