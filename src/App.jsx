@@ -566,6 +566,9 @@ function buildMovePerms(moves) {
   return out;
 }
 
+const MAX_SEARCH_MS = 8000;
+const MAX_SEEN_STATES = 200000;
+
 function sortSolutions(solutions) {
   return solutions
     .map(cleanMoves)
@@ -716,11 +719,11 @@ async function expandOneSideAsync({ front, seenSelf, seenOther, movePerms, moves
   let work = 0;
 
   for (const [, data] of front.entries()) {
-    if (shouldStop()) break;
+    if (shouldStop() || seenSelf.size + seenOther.size >= MAX_SEEN_STATES) break;
     const { state, path, symCost } = data;
 
     for (const move of moves) {
-      if (shouldStop()) break;
+      if (shouldStop() || seenSelf.size + seenOther.size >= MAX_SEEN_STATES) break;
       if (!canAddMove(path, move)) continue;
 
       const newSymCost = symCost + symbolDelta(path, move);
@@ -782,7 +785,7 @@ async function bidirectionalBfsCollectAsync({ start, goal = SOLVED, moves, maxSy
   const seenB = new Map(frontB);
   const solutionSet = new Set();
 
-  while ((frontA.size || frontB.size) && !shouldStop()) {
+  while ((frontA.size || frontB.size) && !shouldStop() && seenA.size + seenB.size < MAX_SEEN_STATES) {
     if (frontA.size && (frontA.size <= frontB.size || !frontB.size)) {
       frontA = await expandOneSideAsync({
         front: frontA,
@@ -832,15 +835,15 @@ async function bfsPatternCollectAsync({ pattern, moves, maxSymbolDepth = 16, sho
   const solutionSet = new Set();
   let work = 0;
 
-  while (currentFront.size && !shouldStop()) {
+  while (currentFront.size && !shouldStop() && seen.size < MAX_SEEN_STATES) {
     const newFront = new Map();
 
     for (const [, data] of currentFront.entries()) {
-      if (shouldStop()) break;
+      if (shouldStop() || seen.size >= MAX_SEEN_STATES) break;
       const { state, path, symCost } = data;
 
       for (const move of moves) {
-        if (shouldStop()) break;
+        if (shouldStop() || seen.size >= MAX_SEEN_STATES) break;
         if (!canAddMove(path, move)) continue;
         const newSymCost = symCost + symbolDelta(path, move);
         if (newSymCost > maxSymbolDepth) continue;
@@ -1197,7 +1200,10 @@ export default function App() {
     try {
       const moves = makeSearchMoves(searchMovesText);
       const maxResults = Number(limit);
-      const shouldStop = () => searchSessionRef.current !== currentSession;
+      const startedAt = performance.now();
+      const shouldStop = () =>
+        searchSessionRef.current !== currentSession ||
+        performance.now() - startedAt > MAX_SEARCH_MS;
 
       const onSolution = (solution) => {
         if (shouldStop()) return;
@@ -1411,7 +1417,7 @@ export default function App() {
                 />
                 <div className="flex flex-wrap justify-end gap-2">
                   <button onClick={loadAlgToPattern} className="rounded-xl border border-slate-300 px-3 py-2 text-sm transition hover:bg-slate-50 active:scale-95">{t.applyToNet}</button>
-                  <button onClick={() => runSearch("alg")} disabled={isSearching} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95 disabled:opacity-60">{isSearching ? t.searching : t.searchFromAlg}</button>
+                  <button onClick={() => runSearch("alg")} disabled={isSearching} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95 disabled:opacity-60">{t.searchFromAlg}</button>
                 </div>
               </label>
 
@@ -1426,7 +1432,8 @@ export default function App() {
                 <NetEditor pattern={targetPattern} setPattern={setTargetPattern} selectedColor={selectedColor} />
               </div>
             </div>
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-end">              <button onClick={() => runSearch("pattern")} disabled={isSearching} className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95 disabled:opacity-60">{isSearching ? t.searching : t.searchFromNet}</button>
+            <div className="flex justify-end">
+              <button onClick={() => runSearch("pattern")} disabled={isSearching} className="w-fit whitespace-nowrap rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95 disabled:opacity-60">{t.searchFromNet}</button>
             </div>
 
             <div className="grid items-start gap-4 sm:grid-cols-3">
