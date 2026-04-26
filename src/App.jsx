@@ -1,11 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 // =========================
 // Core settings
 // =========================
 
 const FACE_ORDER = ["U", "R", "F", "D", "L", "B"];
-const SOLVED = Uint8Array.from({ length: 54 }, (_, i) => i);
+const SOLVED = FACE_ORDER.flatMap((face) => Array(9).fill(face));
 const DONT_CARE = "X";
 
 const NORMAL = {
@@ -108,13 +108,13 @@ function makePerm(axis, layers, direction) {
 }
 
 function applyPerm(state, perm) {
-  const next = new Uint8Array(54);
+  const next = new Array(54);
   for (let i = 0; i < 54; i++) next[i] = state[perm[i]];
   return next;
 }
 
 function stateKey(state) {
-  return String.fromCharCode(...state);
+  return state.join("");
 }
 
 function composePerm(p, q) {
@@ -194,11 +194,6 @@ function orientationStates(state) {
 }
 
 const SOLVED_ORIENTATIONS = orientationStates(SOLVED);
-const SOLVED_ORIENTATION_KEYS = new Set(SOLVED_ORIENTATIONS.map(stateKey));
-
-function isSolvedUpToRotation(state) {
-  return SOLVED_ORIENTATION_KEYS.has(stateKey(state));
-}
 
 // =========================
 // Algorithm parser
@@ -258,12 +253,6 @@ function moveToPerm(move) {
   return perm;
 }
 
-function applyAlg(state, alg) {
-  let current = state;
-  for (const move of parseAlg(alg)) current = applyPerm(current, moveToPerm(move));
-  return current;
-}
-
 function makeSearchMoves(text) {
   const faces = [];
 
@@ -273,12 +262,7 @@ function makeSearchMoves(text) {
     if (!faces.includes(face)) faces.push(face);
   }
 
-  const result = [];
-  for (const face of faces) {
-    result.push(face);
-    result.push(face + "'");
-  }
-  return result;
+  return faces.flatMap((face) => [face, face + "'"]);
 }
 
 // =========================
@@ -286,10 +270,12 @@ function makeSearchMoves(text) {
 // =========================
 
 function inverseMove(move) {
-  if (move.endsWith("'")) return move[0];
+  const base = move[0];
+  if (move.endsWith("'")) return base;
   if (move.endsWith("2")) return move;
-  return move + "'";
+  return base + "'";
 }
+
 
 function inverseAlgList(moves) {
   return [...moves].reverse().map(inverseMove);
@@ -437,14 +423,6 @@ function symbolDelta(path, move) {
   return 1;
 }
 
-function effectiveDelta(path, move) {
-  if (!path.length) return 1;
-  const last = path[path.length - 1];
-  if (last[0] === move[0] && last === move) return 0;
-  if (isParallelPair(last, move)) return 0;
-  return 1;
-}
-
 function formatWithSimulUD(moves) {
   moves = cleanMoves(moves);
   const parts = [];
@@ -474,6 +452,12 @@ function canAddMove(path, move) {
     return last === move;
   }
 
+  if (isParallelPair(last, move)) {
+    const group = parallelGroup(last);
+    const order = PARALLEL_GROUP_FACES[group];
+    return order.indexOf(last[0]) < order.indexOf(move[0]);
+  }
+
   return true;
 }
 
@@ -482,7 +466,7 @@ function canAddMove(path, move) {
 // =========================
 
 function stickerFaceAt(state, pos) {
-  return FACE_ORDER[Math.floor(state[pos] / 9)];
+  return state[pos];
 }
 
 function solvedPattern() {
@@ -491,30 +475,10 @@ function solvedPattern() {
   return pattern;
 }
 
-function stateToPattern(state) {
-  const pattern = {};
-  for (let f = 0; f < FACE_ORDER.length; f++) {
-    const face = FACE_ORDER[f];
-    pattern[face] = [];
-    for (let i = 0; i < 9; i++) pattern[face].push(stickerFaceAt(state, f * 9 + i));
-  }
-  return pattern;
-}
-
 function patternToArray(pattern) {
   const arr = [];
   for (const face of FACE_ORDER) arr.push(...pattern[face]);
   return arr;
-}
-
-function arrayToPattern(arr) {
-  const pattern = {};
-  let k = 0;
-  for (const face of FACE_ORDER) {
-    pattern[face] = [];
-    for (let i = 0; i < 9; i++) pattern[face].push(arr[k++] || DONT_CARE);
-  }
-  return pattern;
 }
 
 function countPatternColors(pattern) {
@@ -547,11 +511,29 @@ function matchesPattern(state, patternArr) {
   return true;
 }
 
-function matchesPatternUpToRotation(state, patternArr) {
+function patternArraysUpToRotation(patternArr) {
+  const arrays = [];
+  const seen = new Set();
+
   for (const perm of ORIENTATION_PERMS) {
-    if (matchesPattern(applyPerm(state, perm), patternArr)) {
-      return true;
+    const rotated = Array(54).fill(DONT_CARE);
+    for (let i = 0; i < 54; i++) {
+      rotated[perm[i]] = patternArr[i];
     }
+
+    const key = rotated.join("");
+    if (!seen.has(key)) {
+      seen.add(key);
+      arrays.push(rotated);
+    }
+  }
+
+  return arrays;
+}
+
+function matchesAnyPattern(state, patternArrs) {
+  for (const patternArr of patternArrs) {
+    if (matchesPattern(state, patternArr)) return true;
   }
   return false;
 }
@@ -566,116 +548,10 @@ function buildMovePerms(moves) {
   return out;
 }
 
-
-function sortSolutions(solutions) {
-  return solutions
-    .map(cleanMoves)
-    .sort((a, b) => {
-      const ka = [effectiveMoveCount(a), symbolMoveCount(a), quarterTurnCount(a), algToString(a)];
-      const kb = [effectiveMoveCount(b), symbolMoveCount(b), quarterTurnCount(b), algToString(b)];
-      for (let i = 0; i < ka.length; i++) {
-        if (ka[i] < kb[i]) return -1;
-        if (ka[i] > kb[i]) return 1;
-      }
-      return 0;
-    });
+function needsOrientationEquivalence(moves) {
+  return moves.some((move) => !"URFDLB".includes(move[0]));
 }
 
-function expandOneSide({ front, seenSelf, seenOther, movePerms, moves, sideSymbolLimit, solutionSet, solutions, expandingFromStart, hardLimit }) {
-  const newFront = new Map();
-
-  for (const [, data] of front.entries()) {
-    const { state, path, symCost } = data;
-
-    for (const move of moves) {
-      if (!canAddMove(path, move)) continue;
-
-      const newSymCost = symCost + symbolDelta(path, move);
-      if (newSymCost > sideSymbolLimit) continue;
-
-      const newState = applyPerm(state, movePerms.get(move));
-      const key = stateKey(newState);
-      if (seenSelf.has(key)) continue;
-
-      const newPath = [...path, move];
-      const record = { state: newState, path: newPath, symCost: newSymCost };
-      seenSelf.set(key, record);
-      newFront.set(key, record);
-
-      if (seenOther.has(key)) {
-        const otherPath = seenOther.get(key).path;
-        const solution = cleanMoves(expandingFromStart ? [...newPath, ...inverseAlgList(otherPath)] : [...otherPath, ...inverseAlgList(newPath)]);
-
-        if (symbolMoveCount(solution) > hardLimit.maxSymbolDepth) continue;
-
-        const solutionKey = solution.join(" ");
-        if (solutionSet.has(solutionKey)) continue;
-
-        solutionSet.add(solutionKey);
-        solutions.push(solution);
-      }
-    }
-  }
-
-  return newFront;
-}
-
-function bidirectionalBfsCollect({ start, goal = SOLVED, moves, maxSymbolDepth = 16 }) {
-  const goalStates = goal === SOLVED ? SOLVED_ORIENTATIONS : orientationStates(goal);
-  const goalKeys = new Set(goalStates.map(stateKey));
-
-  if (goalKeys.has(stateKey(start))) return [[]];
-
-  const sideSymbolLimitA = Math.ceil(maxSymbolDepth / 2);
-  const sideSymbolLimitB = Math.floor(maxSymbolDepth / 2);
-
-  const movePerms = buildMovePerms(moves);
-  const startKey = stateKey(start);
-
-  let frontA = new Map([[startKey, { state: start, path: [], symCost: 0 }]]);
-  let frontB = new Map();
-
-  for (const goalState of goalStates) {
-    frontB.set(stateKey(goalState), { state: goalState, path: [], symCost: 0 });
-  }
-
-  const seenA = new Map(frontA);
-  const seenB = new Map(frontB);
-  const solutions = [];
-  const solutionSet = new Set();
-
-  while (frontA.size || frontB.size) {
-    if (frontA.size && (frontA.size <= frontB.size || !frontB.size)) {
-      frontA = expandOneSide({
-        front: frontA,
-        seenSelf: seenA,
-        seenOther: seenB,
-        movePerms,
-        moves,        sideSymbolLimit: sideSymbolLimitA,
-        solutionSet,
-        solutions,
-        expandingFromStart: true,
-        hardLimit: { maxSymbolDepth },
-      });
-    } else if (frontB.size) {
-      frontB = expandOneSide({
-        front: frontB,
-        seenSelf: seenB,
-        seenOther: seenA,
-        movePerms,
-        moves,        sideSymbolLimit: sideSymbolLimitB,
-        solutionSet,
-        solutions,
-        expandingFromStart: false,
-        hardLimit: { maxSymbolDepth },
-      });
-    }
-
-    if (!frontA.size && !frontB.size) break;
-  }
-
-  return solutions;
-}
 
 function compareSolutions(a, b) {
   const ka = [effectiveMoveCount(a), symbolMoveCount(a), quarterTurnCount(a), algToString(a)];
@@ -706,172 +582,6 @@ function insertSolutionSorted(list, solution, maxLen = Infinity) {
   if (!inserted) next.push(normalized);
   if (next.length > maxLen) next.length = maxLen;
   return next;
-}
-
-function yieldToBrowser() {
-  return new Promise((resolve) => setTimeout(resolve, 0));
-}
-
-async function expandOneSideAsync({ front, seenSelf, seenOther, movePerms, moves, sideSymbolLimit, solutionSet, expandingFromStart, hardLimit, shouldStop, onSolution }) {
-  const newFront = new Map();
-  let work = 0;
-
-  for (const [, data] of front.entries()) {
-    if (shouldStop()) break;
-    const { state, path, symCost } = data;
-
-    for (const move of moves) {
-      if (shouldStop()) break;
-      if (!canAddMove(path, move)) continue;
-
-      const newSymCost = symCost + symbolDelta(path, move);
-      if (newSymCost > sideSymbolLimit) continue;
-
-      const newState = applyPerm(state, movePerms.get(move));
-      const key = stateKey(newState);
-      if (seenSelf.has(key)) continue;
-
-      const newPath = [...path, move];
-      const record = { state: newState, path: newPath, symCost: newSymCost };
-      seenSelf.set(key, record);
-      newFront.set(key, record);
-
-      if (seenOther.has(key)) {
-        const otherPath = seenOther.get(key).path;
-        const solution = cleanMoves(expandingFromStart ? [...newPath, ...inverseAlgList(otherPath)] : [...otherPath, ...inverseAlgList(newPath)]);
-
-        if (symbolMoveCount(solution) > hardLimit.maxSymbolDepth) continue;
-
-        const solutionKey = algToString(solution);
-        if (solutionSet.has(solutionKey)) continue;
-
-        solutionSet.add(solutionKey);
-        onSolution(solution);
-      }
-
-      work++;
-      if (work % 1200 === 0) await yieldToBrowser();
-    }
-  }
-
-  return newFront;
-}
-
-async function bidirectionalBfsCollectAsync({ start, goal = SOLVED, moves, maxSymbolDepth = 16, shouldStop, onSolution }) {
-  const goalStates = goal === SOLVED ? SOLVED_ORIENTATIONS : orientationStates(goal);
-  const goalKeys = new Set(goalStates.map(stateKey));
-
-  if (goalKeys.has(stateKey(start))) {
-    onSolution([]);
-    return;
-  }
-
-  const sideSymbolLimitA = Math.ceil(maxSymbolDepth / 2);
-  const sideSymbolLimitB = Math.floor(maxSymbolDepth / 2);
-
-  const movePerms = buildMovePerms(moves);
-  const startKey = stateKey(start);
-
-  let frontA = new Map([[startKey, { state: start, path: [], symCost: 0 }]]);
-  let frontB = new Map();
-
-  for (const goalState of goalStates) {
-    frontB.set(stateKey(goalState), { state: goalState, path: [], symCost: 0 });
-  }
-
-  const seenA = new Map(frontA);
-  const seenB = new Map(frontB);
-  const solutionSet = new Set();
-
-  while ((frontA.size || frontB.size) && !shouldStop()) {
-    if (frontA.size && (frontA.size <= frontB.size || !frontB.size)) {
-      frontA = await expandOneSideAsync({
-        front: frontA,
-        seenSelf: seenA,
-        seenOther: seenB,
-        movePerms,
-        moves,        sideSymbolLimit: sideSymbolLimitA,
-        solutionSet,
-        expandingFromStart: true,
-        hardLimit: { maxSymbolDepth },
-        shouldStop,
-        onSolution,
-      });
-    } else {
-      frontB = await expandOneSideAsync({
-        front: frontB,
-        seenSelf: seenB,
-        seenOther: seenA,
-        movePerms,
-        moves,        sideSymbolLimit: sideSymbolLimitB,
-        solutionSet,
-        expandingFromStart: false,
-        hardLimit: { maxSymbolDepth },
-        shouldStop,
-        onSolution,
-      });
-    }
-
-    await yieldToBrowser();
-  }
-}
-
-async function bfsPatternCollectAsync({ pattern, moves, maxSymbolDepth = 16, shouldStop, onSolution }) {
-  validatePattern(pattern);
-
-  const patternArr = patternToArray(pattern);
-  const movePerms = buildMovePerms(moves);
-  const start = SOLVED;
-
-  if (matchesPatternUpToRotation(start, patternArr)) {
-    onSolution([]);
-    return;
-  }
-
-  let currentFront = new Map([[stateKey(start), { state: start, path: [], symCost: 0 }]]);
-  const seen = new Map(currentFront);
-  const solutionSet = new Set();
-  let work = 0;
-
-  while (currentFront.size && !shouldStop()) {
-    const newFront = new Map();
-
-    for (const [, data] of currentFront.entries()) {
-      if (shouldStop()) break;
-      const { state, path, symCost } = data;
-
-      for (const move of moves) {
-        if (shouldStop()) break;
-        if (!canAddMove(path, move)) continue;
-        const newSymCost = symCost + symbolDelta(path, move);
-        if (newSymCost > maxSymbolDepth) continue;
-
-        const newState = applyPerm(state, movePerms.get(move));
-        const key = stateKey(newState);
-        if (seen.has(key)) continue;
-
-        const newPath = [...path, move];
-        const record = { state: newState, path: newPath, symCost: newSymCost };
-        seen.set(key, record);
-        newFront.set(key, record);
-
-        if (matchesPatternUpToRotation(newState, patternArr)) {
-          const solution = cleanMoves(newPath);
-          const solutionKey = algToString(solution);
-          if (!solutionSet.has(solutionKey)) {
-            solutionSet.add(solutionKey);
-            onSolution(solution);
-          }
-        }
-
-        work++;
-        if (work % 1200 === 0) await yieldToBrowser();
-      }
-    }
-
-    currentFront = newFront;
-    await yieldToBrowser();
-  }
 }
 
 // =========================
@@ -1005,8 +715,10 @@ function EmptyCard({ text, className = "" }) {
 
 const TEXT = {
   ja: {
+    title: "手順探索",
     darkMode: "ダークモード",
     showMoveCounts: "手数を表示",
+    netInput: "入力方式",
     language: "言語",
     shareUrl: "URL共有",
     saved: "保存済み",
@@ -1020,8 +732,9 @@ const TEXT = {
     searching: "探索中…",
     netHint: "展開図からも入力できます…",
     openNet: "展開図を開く",
-    closeNet: "展開図を閉じる",
     searchFromNet: "展開図から探索",
+    algMode: "手順",
+    netMode: "展開図",
     generator: "生成系",
     depthLimit: "手数上限",
     resultLimit: "表示件数",
@@ -1035,8 +748,10 @@ const TEXT = {
     initialHelp: "条件を入力して、探索を開始してください。",
   },
   en: {
+    title: "Algorithm Search",
     darkMode: "Dark mode",
     showMoveCounts: "Show move counts",
+    netInput: "Input mode",
     language: "Language",
     shareUrl: "Share URL",
     saved: "Saved",
@@ -1050,8 +765,9 @@ const TEXT = {
     searching: "Searching…",
     netHint: "You can also enter a pattern from the net…",
     openNet: "Open net",
-    closeNet: "Close net",
     searchFromNet: "Search from net",
+    algMode: "Algorithm",
+    netMode: "Net",
     generator: "Generator",
     depthLimit: "Move limit",
     resultLimit: "Results",
@@ -1065,8 +781,10 @@ const TEXT = {
     initialHelp: "Enter conditions and start searching.",
   },
   ur: {
+    title: "طریقہ تلاش",
     darkMode: "ڈارک موڈ",
     showMoveCounts: "چالوں کی گنتی دکھائیں",
+    netInput: "طریقۂ اندراج",
     language: "زبان",
     shareUrl: "URL شیئر کریں",
     saved: "محفوظ",
@@ -1080,8 +798,9 @@ const TEXT = {
     searching: "تلاش جاری…",
     netHint: "آپ نیٹ سے بھی پیٹرن درج کر سکتے ہیں…",
     openNet: "نیٹ کھولیں",
-    closeNet: "نیٹ بند کریں",
     searchFromNet: "نیٹ سے تلاش",
+    algMode: "طریقہ",
+    netMode: "نیٹ",
     generator: "جنریٹر",
     depthLimit: "چالوں کی حد",
     resultLimit: "نتائج",
@@ -1095,8 +814,10 @@ const TEXT = {
     initialHelp: "شرائط درج کریں اور تلاش شروع کریں۔",
   },
   ko: {
+    title: "수순 탐색",
     darkMode: "다크 모드",
     showMoveCounts: "수순 수 표시",
+    netInput: "입력 방식",
     language: "언어",
     shareUrl: "URL 공유",
     saved: "저장됨",
@@ -1110,8 +831,9 @@ const TEXT = {
     searching: "탐색 중…",
     netHint: "전개도에서도 입력할 수 있습니다…",
     openNet: "전개도 열기",
-    closeNet: "전개도 닫기",
     searchFromNet: "전개도에서 탐색",
+    algMode: "알고리즘",
+    netMode: "전개도",
     generator: "생성계",
     depthLimit: "수순 제한",
     resultLimit: "표시 개수",
@@ -1125,8 +847,10 @@ const TEXT = {
     initialHelp: "조건을 입력하고 탐색을 시작하세요.",
   },
   hi: {
+    title: "एल्गोरिदम खोज",
     darkMode: "डार्क मोड",
     showMoveCounts: "चालों की संख्या दिखाएँ",
+    netInput: "इनपुट मोड",
     language: "भाषा",
     shareUrl: "URL साझा करें",
     saved: "सहेजे गए",
@@ -1140,8 +864,9 @@ const TEXT = {
     searching: "खोज जारी…",
     netHint: "नेट से भी पैटर्न दर्ज कर सकते हैं…",
     openNet: "नेट खोलें",
-    closeNet: "नेट बंद करें",
     searchFromNet: "नेट से खोजें",
+    algMode: "एल्गोरिदम",
+    netMode: "नेट",
     generator: "जनरेटर",
     depthLimit: "चाल सीमा",
     resultLimit: "परिणाम संख्या",
@@ -1155,8 +880,10 @@ const TEXT = {
     initialHelp: "शर्तें दर्ज करें और खोज शुरू करें।",
   },
   ar: {
+    title: "البحث عن الخوارزميات",
     darkMode: "الوضع الداكن",
     showMoveCounts: "إظهار عدد الحركات",
+    netInput: "طريقة الإدخال",
     language: "اللغة",
     shareUrl: "مشاركة الرابط",
     saved: "محفوظ",
@@ -1170,8 +897,9 @@ const TEXT = {
     searching: "جارٍ البحث…",
     netHint: "يمكنك أيضًا إدخال النمط من المخطط…",
     openNet: "فتح المخطط",
-    closeNet: "إغلاق المخطط",
     searchFromNet: "البحث من المخطط",
+    algMode: "الخوارزمية",
+    netMode: "المخطط",
     generator: "المولد",
     depthLimit: "حد الحركات",
     resultLimit: "عدد النتائج",
@@ -1233,7 +961,7 @@ function writeStorageList(key, value) {
 function createSearchWorker() {
   const workerSource = `
 const FACE_ORDER = ${JSON.stringify(FACE_ORDER)};
-const SOLVED = Uint8Array.from({ length: 54 }, (_, i) => i);
+const SOLVED = FACE_ORDER.flatMap((face) => Array(9).fill(face));
 const DONT_CARE = ${JSON.stringify(DONT_CARE)};
 const NORMAL = ${JSON.stringify(NORMAL)};
 const PARALLEL_GROUP = ${JSON.stringify(PARALLEL_GROUP)};
@@ -1301,13 +1029,13 @@ function makePerm(axis, layers, direction) {
 }
 
 function applyPerm(state, perm) {
-  const next = new Uint8Array(54);
+  const next = new Array(54);
   for (let i = 0; i < 54; i++) next[i] = state[perm[i]];
   return next;
 }
 
 function stateKey(state) {
-  return String.fromCharCode(...state);
+  return state.join("");
 }
 
 function composePerm(p, q) {
@@ -1323,7 +1051,7 @@ function permPower(p, n) {
 const BASE = {
   U: makePerm("y", [1], -1), D: makePerm("y", [-1], 1),
   R: makePerm("x", [1], -1), L: makePerm("x", [-1], 1),
-  F: makePerm("z", [1], -1), B: makePerm("z", [-1], 0 - 1),
+  F: makePerm("z", [1], -1), B: makePerm("z", [-1], 1),
   M: makePerm("x", [0], 1), E: makePerm("y", [0], 1), S: makePerm("z", [0], -1),
   x: makePerm("x", [-1, 0, 1], -1), y: makePerm("y", [-1, 0, 1], -1), z: makePerm("z", [-1, 0, 1], -1),
   u: makePerm("y", [0, 1], -1), d: makePerm("y", [-1, 0], 1),
@@ -1490,9 +1218,14 @@ function canAddMove(path, move) {
     if (path.length >= 2 && path[path.length - 2][0] === move[0]) return false;
     return last === move;
   }
+  if (isParallelPair(last, move)) {
+    const group = parallelGroup(last);
+    const order = PARALLEL_GROUP_FACES[group];
+    return order.indexOf(last[0]) < order.indexOf(move[0]);
+  }
   return true;
 }
-function stickerFaceAt(state, pos) { return FACE_ORDER[Math.floor(state[pos] / 9)]; }
+function stickerFaceAt(state, pos) { return state[pos]; }
 function patternToArray(pattern) { const arr = []; for (const face of FACE_ORDER) arr.push(...pattern[face]); return arr; }
 function countPatternColors(pattern) {
   const counts = { U: 0, R: 0, F: 0, D: 0, L: 0, B: 0, X: 0 };
@@ -1514,11 +1247,29 @@ function matchesPattern(state, patternArr) {
   }
   return true;
 }
-function matchesPatternUpToRotation(state, patternArr) {
-  for (const perm of ORIENTATION_PERMS) if (matchesPattern(applyPerm(state, perm), patternArr)) return true;
+function patternArraysUpToRotation(patternArr) {
+  const arrays = [];
+  const seen = new Set();
+  for (const perm of ORIENTATION_PERMS) {
+    const rotated = Array(54).fill(DONT_CARE);
+    for (let i = 0; i < 54; i++) rotated[perm[i]] = patternArr[i];
+    const key = rotated.join("");
+    if (!seen.has(key)) {
+      seen.add(key);
+      arrays.push(rotated);
+    }
+  }
+  return arrays;
+}
+function matchesAnyPattern(state, patternArrs) {
+  for (const patternArr of patternArrs) if (matchesPattern(state, patternArr)) return true;
   return false;
 }
+function matchesPatternUpToRotation(state, patternArr) {
+  return matchesAnyPattern(state, patternArraysUpToRotation(patternArr));
+}
 function buildMovePerms(moves) { const out = new Map(); for (const move of moves) out.set(move, moveToPerm(move)); return out; }
+function needsOrientationEquivalence(moves) { return moves.some((move) => !"URFDLB".includes(move[0])); }
 function compareSolutions(a, b) {
   const ka = [effectiveMoveCount(a), symbolMoveCount(a), quarterTurnCount(a), algToString(a)];
   const kb = [effectiveMoveCount(b), symbolMoveCount(b), quarterTurnCount(b), algToString(b)];
@@ -1556,7 +1307,8 @@ function expandOneSideWorker({ front, seenSelf, seenOther, movePerms, moves, sid
   return newFront;
 }
 function bidirectionalBfsWorker({ start, goal = SOLVED, moves, maxSymbolDepth = 16, shouldStop, onSolution }) {
-  const goalStates = goal === SOLVED ? SOLVED_ORIENTATIONS : orientationStates(goal);
+  const useOrientations = needsOrientationEquivalence(moves);
+  const goalStates = useOrientations ? (goal === SOLVED ? SOLVED_ORIENTATIONS : orientationStates(goal)) : [goal];
   const goalKeys = new Set(goalStates.map(stateKey));
   if (goalKeys.has(stateKey(start))) { onSolution([]); return; }
   const sideSymbolLimitA = Math.ceil(maxSymbolDepth / 2);
@@ -1574,40 +1326,167 @@ function bidirectionalBfsWorker({ start, goal = SOLVED, moves, maxSymbolDepth = 
     else frontB = expandOneSideWorker({ front: frontB, seenSelf: seenB, seenOther: seenA, movePerms, moves, sideSymbolLimit: sideSymbolLimitB, solutionSet, expandingFromStart: false, maxSymbolDepth, shouldStop, onSolution });
   }
 }
-function bfsPatternWorker({ pattern, moves, maxSymbolDepth = 16, shouldStop, onSolution }) {
-  validatePattern(pattern);
-  const patternArr = patternToArray(pattern);
-  const movePerms = buildMovePerms(moves);
-  if (matchesPatternUpToRotation(SOLVED, patternArr)) { onSolution([]); return; }
-  let currentFront = new Map([[stateKey(SOLVED), { state: SOLVED, path: [], symCost: 0 }]]);
-  const seen = new Map(currentFront);
-  const solutionSet = new Set();
-  while (currentFront.size && !shouldStop()) {
-    const newFront = new Map();
-    for (const [, data] of currentFront.entries()) {
+function patternMaskKey(patternArr) {
+  const positions = [];
+  for (let i = 0; i < 54; i++) {
+    if (patternArr[i] !== DONT_CARE) positions.push(i);
+  }
+  return positions.join(",");
+}
+
+function patternValueKeyFromState(state, positions) {
+  let key = "";
+  for (const pos of positions) key += state[pos];
+  return key;
+}
+
+function patternValueKeyFromPattern(patternArr, positions) {
+  let key = "";
+  for (const pos of positions) key += patternArr[pos];
+  return key;
+}
+
+function pullPatternBack(patternArr, perm) {
+  const pulled = Array(54).fill(DONT_CARE);
+  for (let i = 0; i < 54; i++) {
+    const expected = patternArr[i];
+    if (expected !== DONT_CARE) pulled[perm[i]] = expected;
+  }
+  return pulled;
+}
+
+function buildForwardIndex(records, positions) {
+  const index = new Map();
+  for (const record of records) {
+    const key = patternValueKeyFromState(record.state, positions);
+    if (!index.has(key)) index.set(key, []);
+    index.get(key).push(record);
+  }
+  return index;
+}
+
+function enumerateForwardRecords({ moves, movePerms, depthLimit, shouldStop }) {
+  const start = SOLVED;
+  let front = new Map([[stateKey(start), { state: start, path: [], symCost: 0 }]]);
+  const seen = new Map(front);
+  const records = [...front.values()];
+
+  while (front.size && !shouldStop()) {
+    const nextFront = new Map();
+
+    for (const [, data] of front.entries()) {
       if (shouldStop()) break;
       const state = data.state, path = data.path, symCost = data.symCost;
+
       for (const move of moves) {
         if (shouldStop()) break;
         if (!canAddMove(path, move)) continue;
+
         const newSymCost = symCost + symbolDelta(path, move);
-        if (newSymCost > maxSymbolDepth) continue;
+        if (newSymCost > depthLimit) continue;
+
         const newState = applyPerm(state, movePerms.get(move));
         const key = stateKey(newState);
         if (seen.has(key)) continue;
-        const newPath = [...path, move];
-        const record = { state: newState, path: newPath, symCost: newSymCost };
+
+        const record = { state: newState, path: [...path, move], symCost: newSymCost };
         seen.set(key, record);
-        newFront.set(key, record);
-        if (matchesPatternUpToRotation(newState, patternArr)) {
-          const solution = cleanMoves(newPath);
-          const solutionKey = algToString(solution);
-          if (!solutionSet.has(solutionKey)) { solutionSet.add(solutionKey); onSolution(solution); }
-        }
+        nextFront.set(key, record);
+        records.push(record);
       }
     }
-    currentFront = newFront;
+
+    front = nextFront;
   }
+
+  return records;
+}
+
+function enumerateSecondHalfPatterns({ patternArrs, records, moves, movePerms, depthLimit, maxSymbolDepth, shouldStop, onSolution }) {
+  const indexCache = new Map();
+  const solutionSet = new Set();
+  let front = new Map([["", { path: [], perm: Array.from({ length: 54 }, (_, i) => i), symCost: 0 }]]);
+
+  function emitMatches(secondPath, secondPerm) {
+    for (const targetPattern of patternArrs) {
+      const pulled = pullPatternBack(targetPattern, secondPerm);
+      const mask = patternMaskKey(pulled);
+      const positions = mask ? mask.split(",").map(Number) : [];
+      const valueKey = patternValueKeyFromPattern(pulled, positions);
+
+      if (!indexCache.has(mask)) {
+        indexCache.set(mask, buildForwardIndex(records, positions));
+      }
+
+      const candidates = indexCache.get(mask).get(valueKey) || [];
+
+      for (const first of candidates) {
+        const totalPath = cleanMoves([...first.path, ...secondPath]);
+        if (symbolMoveCount(totalPath) > maxSymbolDepth) continue;
+        const solution = cleanMoves(inverseAlgList(totalPath));
+        const solutionKey = algToString(solution);
+        if (solutionSet.has(solutionKey)) continue;
+        solutionSet.add(solutionKey);
+        onSolution(solution);
+        if (shouldStop()) return;
+      }
+    }
+  }
+
+  emitMatches([], Array.from({ length: 54 }, (_, i) => i));
+
+  while (front.size && !shouldStop()) {
+    const nextFront = new Map();
+
+    for (const [, data] of front.entries()) {
+      if (shouldStop()) break;
+      const path = data.path, perm = data.perm, symCost = data.symCost;
+
+      for (const move of moves) {
+        if (shouldStop()) break;
+        if (!canAddMove(path, move)) continue;
+
+        const newSymCost = symCost + symbolDelta(path, move);
+        if (newSymCost > depthLimit) continue;
+
+        const newPath = [...path, move];
+        const newPerm = composePerm(perm, movePerms.get(move));
+        const key = newPath.join(" ");
+        nextFront.set(key, { path: newPath, perm: newPerm, symCost: newSymCost });
+        emitMatches(newPath, newPerm);
+      }
+    }
+
+    front = nextFront;
+  }
+}
+
+function bfsPatternWorker({ pattern, moves, maxSymbolDepth = 16, shouldStop, onSolution }) {
+  validatePattern(pattern);
+  const patternArr = patternToArray(pattern);
+  const useOrientations = needsOrientationEquivalence(moves);
+  const patternArrs = useOrientations ? patternArraysUpToRotation(patternArr) : [patternArr];
+  const movePerms = buildMovePerms(moves);
+
+  if (matchesAnyPattern(SOLVED, patternArrs)) {
+    onSolution([]);
+    return;
+  }
+
+  const firstLimit = Math.ceil(maxSymbolDepth / 2);
+  const secondLimit = Math.floor(maxSymbolDepth / 2);
+  const records = enumerateForwardRecords({ moves, movePerms, depthLimit: firstLimit, shouldStop });
+
+  enumerateSecondHalfPatterns({
+    patternArrs,
+    records,
+    moves,
+    movePerms,
+    depthLimit: secondLimit,
+    maxSymbolDepth,
+    shouldStop,
+    onSolution,
+  });
 }
 self.onmessage = (event) => {
   const data = event.data;
@@ -1644,16 +1523,23 @@ self.onmessage = (event) => {
   const blob = new Blob([workerSource], { type: "text/javascript" });
   const url = URL.createObjectURL(blob);
   const worker = new Worker(url);
-  worker.addEventListener("error", () => URL.revokeObjectURL(url), { once: true });
-  worker.addEventListener("message", (event) => {
-    if (event.data && (event.data.type === "done" || event.data.type === "error")) URL.revokeObjectURL(url);
-  });
+  worker.__objectUrl = url;
   return worker;
+}
+
+function terminateWorker(worker) {
+  if (!worker) return;
+  worker.terminate();
+  if (worker.__objectUrl) {
+    URL.revokeObjectURL(worker.__objectUrl);
+    worker.__objectUrl = null;
+  }
 }
 
 export default function App() {
   const [isDark, setIsDark] = useState(false);
   const [showMoveCounts, setShowMoveCounts] = useState(false);
+  const [showNetInput, setShowNetInput] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [languageOpen, setLanguageOpen] = useState(false);
   const [language, setLanguage] = useState("ja");
@@ -1663,11 +1549,9 @@ export default function App() {
   const [favorites, setFavorites] = useState([]);
   const [history, setHistory] = useState([]);
   const [shareMessage, setShareMessage] = useState("");
-  const [inputMode, setInputMode] = useState("alg");
   const [targetAlg, setTargetAlg] = useState("R' U R' U' y R' F' R2 U' R' U R' F R F y'");
   const [targetPattern, setTargetPattern] = useState(solvedPattern());
   const [selectedColor, setSelectedColor] = useState("F");
-  const [netOpen, setNetOpen] = useState(false);
   const [searchMovesText, setSearchMovesText] = useState("R U D");
   const [maxSymbolDepth, setMaxSymbolDepth] = useState(16);
   const [limit, setLimit] = useState(5);
@@ -1680,7 +1564,7 @@ export default function App() {
 
   useEffect(() => {
     return () => {
-      if (workerRef.current) workerRef.current.terminate();
+      if (workerRef.current) terminateWorker(workerRef.current);
     };
   }, []);
 
@@ -1696,55 +1580,18 @@ export default function App() {
       if (typeof data.targetAlg === "string") setTargetAlg(data.targetAlg);
       if (data.targetPattern) setTargetPattern(data.targetPattern);
       if (typeof data.selectedColor === "string") setSelectedColor(data.selectedColor);
-      if (typeof data.netOpen === "boolean") setNetOpen(data.netOpen);
       if (typeof data.searchMovesText === "string") setSearchMovesText(data.searchMovesText);
       if (Number.isFinite(data.maxSymbolDepth)) setMaxSymbolDepth(data.maxSymbolDepth);
       if (Number.isFinite(data.limit)) setLimit(data.limit);
       if (typeof data.isDark === "boolean") setIsDark(data.isDark);
       if (typeof data.showMoveCounts === "boolean") setShowMoveCounts(data.showMoveCounts);
+      if (typeof data.showNetInput === "boolean") setShowNetInput(data.showNetInput);
       if (typeof data.language === "string" && TEXT[data.language]) setLanguage(data.language);
     } catch (_) {}
   }, []);
 
-  const searchMovesPreview = useMemo(() => {
-    try {
-      return makeSearchMoves(searchMovesText).join(" ");
-    } catch {
-      return "";
-    }
-  }, [searchMovesText]);
-
-
-  function loadAlgToPattern() {
-    try {
-      const inverseAlg = algToString(inverseAlgList(parseAlg(targetAlg)));
-      const state = applyAlg(SOLVED, inverseAlg);
-      setTargetPattern(stateToPattern(state));
-      setInputMode("pattern");
-      setError("");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  }
-
-  function resetAll() {
-    searchSessionRef.current += 1;
-    setInputMode("alg");
-    setTargetAlg("R' U R' U' y R' F' R2 U' R' U R' F R F y'");
-    setTargetPattern(solvedPattern());
-    setSelectedColor("F");
-    setNetOpen(false);
-    setSearchMovesText("R U D");
-    setMaxSymbolDepth(16);
-    setLimit(5);
-    setSolutions([]);
-    setError("");
-    setIsSearching(false);
-    setHasSearched(false);
-  }
-
   function currentShareState() {
-    return { targetAlg, targetPattern, selectedColor, netOpen, searchMovesText, maxSymbolDepth, limit, isDark, showMoveCounts, language };
+    return { targetAlg, targetPattern, selectedColor, showNetInput, searchMovesText, maxSymbolDepth, limit, isDark, showMoveCounts, language };
   }
 
   async function shareUrl() {
@@ -1773,7 +1620,11 @@ export default function App() {
     if (item.searchMovesText !== undefined) setSearchMovesText(item.searchMovesText);
     if (item.maxSymbolDepth !== undefined) setMaxSymbolDepth(item.maxSymbolDepth);
     if (item.limit !== undefined) setLimit(item.limit);
-    if (item.mode === "pattern") setNetOpen(true);
+    if (item.mode === "pattern") {
+      setShowNetInput(true);
+    } else {
+      setShowNetInput(false);
+    }
     setMenuOpen(false);
   }
 
@@ -1797,11 +1648,10 @@ export default function App() {
     searchSessionRef.current = currentSession;
 
     if (workerRef.current) {
-      workerRef.current.terminate();
+      terminateWorker(workerRef.current);
       workerRef.current = null;
     }
 
-    setInputMode(mode);
     setError("");
     setSolutions([]);
     setHasSearched(true);
@@ -1825,14 +1675,14 @@ export default function App() {
         setSolutions([]);
         setError(data.message);
         setIsSearching(false);
-        worker.terminate();
+        terminateWorker(worker);
         if (workerRef.current === worker) workerRef.current = null;
         return;
       }
 
       if (data.type === "done") {
         setIsSearching(false);
-        worker.terminate();
+        terminateWorker(worker);
         if (workerRef.current === worker) workerRef.current = null;
       }
     };
@@ -1841,7 +1691,7 @@ export default function App() {
       if (searchSessionRef.current !== currentSession) return;
       setError(event.message || "Worker error");
       setIsSearching(false);
-      worker.terminate();
+      terminateWorker(worker);
       if (workerRef.current === worker) workerRef.current = null;
     };
 
@@ -1988,6 +1838,16 @@ export default function App() {
               <span>{showMoveCounts ? "ON" : "OFF"}</span>
             </button>
             <button
+              onClick={() => {
+                const next = !showNetInput;
+                setShowNetInput(next);
+              }}
+              className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"
+            >
+              <span>{t.netInput}</span>
+              <span>{showNetInput ? t.netMode : t.algMode}</span>
+            </button>
+            <button
               onClick={shareUrl}
               className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"
             >
@@ -2057,58 +1917,42 @@ export default function App() {
       </div>
       <div className="mx-auto max-w-6xl">
         <h1 className="mb-6 text-center text-4xl font-normal tracking-tight text-slate-900 sm:text-5xl">
-          手順探索
+          {t.title}
         </h1>
         <div className="light-panel mb-6 rounded-3xl p-6 shadow-sm ring-1 ring-slate-200">
           <div className="grid gap-4">
             <div className="grid gap-4">
-              <div className="light-inner rounded-3xl border border-slate-200 p-4 shadow-sm">
-                <textarea
-                  value={targetAlg}
-                  onChange={(e) => setTargetAlg(e.target.value)}
-                  placeholder={t.inputPlaceholder}
-                  className={`h-14 w-full resize-none rounded-2xl border border-slate-300 bg-white px-3 py-4 font-mono text-sm leading-5 outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-slate-400`}
-                />
-                <div className="mt-3 flex flex-wrap justify-end gap-2">
-                  <button onClick={() => runSearch("alg")} disabled={isSearching} className={`rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-normal text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95 disabled:opacity-60`}>{t.searchFromAlg}</button>
+              {!showNetInput ? (
+                <div className="light-inner rounded-3xl border border-slate-200 p-4 shadow-sm">
+                  <textarea
+                    value={targetAlg}
+                    onChange={(e) => setTargetAlg(e.target.value)}
+                    placeholder={t.inputPlaceholder}
+                    className={`h-14 w-full resize-none rounded-2xl border border-slate-300 bg-white px-3 py-4 font-mono text-sm leading-5 outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-slate-400`}
+                  />
+                  <div className="mt-3 flex flex-wrap justify-end gap-2">
+                    <button onClick={() => runSearch("alg")} disabled={isSearching} className={`rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-normal text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95 disabled:opacity-60`}>{t.searchFromAlg}</button>
+                  </div>
                 </div>
-              </div>
+              ) : null}
 
-              <div className="light-inner overflow-hidden rounded-3xl border border-slate-200 p-3 sm:p-4">
-                {!netOpen ? (
-                  <button
-                    type="button"
-                    onClick={() => setNetOpen(true)}
-                    className={`flex w-full items-center justify-between rounded-2xl border border-slate-300 bg-white px-4 py-3 text-left text-sm font-normal text-slate-700 shadow-sm transition hover:bg-slate-50 active:scale-95`}
-                  >
-                    <span>{t.netHint}</span>
-                    <span className="text-slate-500">▾</span>
-                  </button>
-                ) : (
-                  <>
-                    <div className="mb-4 flex items-center justify-between gap-3">
-                      <div className="flex flex-wrap gap-2">
-                        {[...FACE_ORDER, DONT_CARE].map((face) => (
-                          <button key={face} onClick={() => setSelectedColor(face)} className={`flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-normal transition active:scale-95 ${selectedColor === face ? "border-slate-900 bg-white shadow-md ring-2 ring-slate-400" : "border-slate-300 bg-white hover:bg-slate-50"}`}>
-                            <span className="inline-flex h-5 w-5 items-center justify-center rounded border border-slate-400 text-[10px] font-normal text-white" style={{ background: FACE_COLOR_STYLE[face] }}>{face === DONT_CARE ? "?" : ""}</span>
-                          </button>
-                        ))}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setNetOpen(false)}
-                        className={`rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700 shadow-sm transition hover:bg-slate-50 active:scale-95`}
-                      >
-                        {t.closeNet}
-                      </button>
+              {showNetInput ? (
+                <div className="light-inner overflow-hidden rounded-3xl border border-slate-200 p-3 sm:p-4">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <div className="flex flex-wrap gap-2">
+                      {[...FACE_ORDER, DONT_CARE].map((face) => (
+                        <button key={face} onClick={() => setSelectedColor(face)} className={`flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-normal transition active:scale-95 ${selectedColor === face ? "border-slate-900 bg-white shadow-md ring-2 ring-slate-400" : "border-slate-300 bg-white hover:bg-slate-50"}`}>
+                          <span className="inline-flex h-5 w-5 items-center justify-center rounded border border-slate-400 text-[10px] font-normal text-white" style={{ background: FACE_COLOR_STYLE[face] }}>{face === DONT_CARE ? "?" : ""}</span>
+                        </button>
+                      ))}
                     </div>
-                    <NetEditor pattern={targetPattern} setPattern={setTargetPattern} selectedColor={selectedColor} />
-                    <div className="mt-4 flex justify-end">
-                      <button onClick={() => runSearch("pattern")} disabled={isSearching} className={`w-fit whitespace-nowrap rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-normal text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95 disabled:opacity-60`}>{t.searchFromNet}</button>
-                    </div>
-                  </>
-                )}
-              </div>
+                  </div>
+                  <NetEditor pattern={targetPattern} setPattern={setTargetPattern} selectedColor={selectedColor} />
+                  <div className="mt-4 flex justify-end">
+                    <button onClick={() => runSearch("pattern")} disabled={isSearching} className={`w-fit whitespace-nowrap rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-normal text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95 disabled:opacity-60`}>{t.searchFromNet}</button>
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             <div className="grid items-start gap-4 sm:grid-cols-3">
