@@ -3,30 +3,62 @@ import React, { useEffect, useRef, useState } from "react";
 const FACE_ORDER = ["U", "R", "F", "D", "L", "B"];
 const DONT_CARE = "X";
 const SOLVED_STRING = FACE_ORDER.map((face) => face.repeat(9)).join("");
-const NORMAL = { U: [0, 1, 0], D: [0, -1, 0], R: [1, 0, 0], L: [-1, 0, 0], F: [0, 0, 1], B: [0, 0, -1] };
-const FACE_COLOR_STYLE = { U: "#f8fafc", R: "#ef4444", F: "#22c55e", D: "#facc15", L: "#fb923c", B: "#3b82f6", X: "#111827" };
+const NORMAL = {
+  U: [0, 1, 0],
+  D: [0, -1, 0],
+  R: [1, 0, 0],
+  L: [-1, 0, 0],
+  F: [0, 0, 1],
+  B: [0, 0, -1],
+};
+const FACE_COLOR_STYLE = {
+  U: "#f8fafc",
+  R: "#ef4444",
+  F: "#22c55e",
+  D: "#facc15",
+  L: "#fb923c",
+  B: "#3b82f6",
+  X: "#111827",
+};
 const FACE_LABEL = { U: "白", R: "赤", F: "緑", D: "黄", L: "橙", B: "青", X: "dont care" };
 const PARALLEL_GROUP = { U: "UD", D: "UD", R: "RL", L: "RL", F: "FB", B: "FB" };
 const PARALLEL_GROUP_FACES = { UD: ["U", "D"], RL: ["R", "L"], FB: ["F", "B"] };
 const TOKEN_RE = /([URFDLBMESxyzurfdlb](?:w)?)(2|')?/g;
 
-function keyOf(pos, normal) { return `${pos.join(",")}|${normal.join(",")}`; }
+function keyOf(pos, normal) {
+  return `${pos.join(",")}|${normal.join(",")}`;
+}
+
 function facePos(face, r, c) {
-  const map = { U: [c - 1, 1, r - 1], D: [c - 1, -1, 1 - r], F: [c - 1, 1 - r, 1], B: [1 - c, 1 - r, -1], R: [1, 1 - r, 1 - c], L: [-1, 1 - r, c - 1] };
+  const map = {
+    U: [c - 1, 1, r - 1],
+    D: [c - 1, -1, 1 - r],
+    F: [c - 1, 1 - r, 1],
+    B: [1 - c, 1 - r, -1],
+    R: [1, 1 - r, 1 - c],
+    L: [-1, 1 - r, c - 1],
+  };
   return map[face];
 }
+
 function buildStickers() {
   const stickers = [];
   const indexOf = new Map();
-  for (const face of FACE_ORDER) for (let r = 0; r < 3; r += 1) for (let c = 0; c < 3; c += 1) {
-    const pos = facePos(face, r, c);
-    const normal = NORMAL[face];
-    indexOf.set(keyOf(pos, normal), stickers.length);
-    stickers.push([pos, normal]);
+  for (const face of FACE_ORDER) {
+    for (let r = 0; r < 3; r += 1) {
+      for (let c = 0; c < 3; c += 1) {
+        const pos = facePos(face, r, c);
+        const normal = NORMAL[face];
+        indexOf.set(keyOf(pos, normal), stickers.length);
+        stickers.push([pos, normal]);
+      }
+    }
   }
   return { stickers, indexOf };
 }
+
 const { stickers: STICKERS, indexOf: INDEX_OF } = buildStickers();
+
 function rot(v, axis, direction) {
   const [x, y, z] = v;
   if (axis === "x") return [x, -direction * z, direction * y];
@@ -34,25 +66,62 @@ function rot(v, axis, direction) {
   if (axis === "z") return [-direction * y, direction * x, z];
   throw new Error(`Unknown axis: ${axis}`);
 }
+
 function makePerm(axis, layers, direction) {
   const layerSet = new Set(layers);
-  const perm = Array.from({ length: 54 }, (_, i) => i);
   const axisIndex = { x: 0, y: 1, z: 2 }[axis];
+  const perm = Array.from({ length: 54 }, (_, i) => i);
   for (let i = 0; i < STICKERS.length; i += 1) {
     const [pos, normal] = STICKERS[i];
     if (!layerSet.has(pos[axisIndex])) continue;
-    perm[INDEX_OF.get(keyOf(rot(pos, axis, direction), rot(normal, axis, direction)))] = i;
+    const nextPos = rot(pos, axis, direction);
+    const nextNormal = rot(normal, axis, direction);
+    perm[INDEX_OF.get(keyOf(nextPos, nextNormal))] = i;
   }
   return perm;
 }
-function composePerm(p, q) { const out = new Array(54); for (let i = 0; i < 54; i += 1) out[i] = p[q[i]]; return out; }
-function permPower(p, n) { let result = Array.from({ length: 54 }, (_, i) => i); for (let i = 0; i < n; i += 1) result = composePerm(result, p); return result; }
+
+function composePerm(p, q) {
+  const out = new Array(54);
+  for (let i = 0; i < 54; i += 1) out[i] = p[q[i]];
+  return out;
+}
+
+function permPower(p, n) {
+  let result = Array.from({ length: 54 }, (_, i) => i);
+  for (let i = 0; i < n; i += 1) result = composePerm(result, p);
+  return result;
+}
+
 const BASE = {
-  U: makePerm("y", [1], -1), D: makePerm("y", [-1], 1), R: makePerm("x", [1], -1), L: makePerm("x", [-1], 1), F: makePerm("z", [1], -1), B: makePerm("z", [-1], 1),
-  M: makePerm("x", [0], 1), E: makePerm("y", [0], 1), S: makePerm("z", [0], -1), x: makePerm("x", [-1, 0, 1], -1), y: makePerm("y", [-1, 0, 1], -1), z: makePerm("z", [-1, 0, 1], -1),
-  u: makePerm("y", [0, 1], -1), d: makePerm("y", [-1, 0], 1), r: makePerm("x", [0, 1], -1), l: makePerm("x", [-1, 0], 1), f: makePerm("z", [0, 1], -1), b: makePerm("z", [-1, 0], 1),
+  U: makePerm("y", [1], -1),
+  D: makePerm("y", [-1], 1),
+  R: makePerm("x", [1], -1),
+  L: makePerm("x", [-1], 1),
+  F: makePerm("z", [1], -1),
+  B: makePerm("z", [-1], 1),
+  M: makePerm("x", [0], 1),
+  E: makePerm("y", [0], 1),
+  S: makePerm("z", [0], -1),
+  x: makePerm("x", [-1, 0, 1], -1),
+  y: makePerm("y", [-1, 0, 1], -1),
+  z: makePerm("z", [-1, 0, 1], -1),
+  u: makePerm("y", [0, 1], -1),
+  d: makePerm("y", [-1, 0], 1),
+  r: makePerm("x", [0, 1], -1),
+  l: makePerm("x", [-1, 0], 1),
+  f: makePerm("z", [0, 1], -1),
+  b: makePerm("z", [-1, 0], 1),
 };
-function normalizeAlgText(alg) { return String(alg).replaceAll("’", "'").replaceAll("＇", "'").replace(/([URFDLB])w/g, (_, face) => face.toLowerCase()).replaceAll(",", " "); }
+
+function normalizeAlgText(alg) {
+  return String(alg)
+    .replaceAll("’", "'")
+    .replaceAll("＇", "'")
+    .replace(/([URFDLB])w/g, (_, face) => face.toLowerCase())
+    .replaceAll(",", " ");
+}
+
 function parseAlg(alg) {
   const text = normalizeAlgText(alg);
   const moves = [];
@@ -61,16 +130,31 @@ function parseAlg(alg) {
   for (;;) {
     const match = TOKEN_RE.exec(text);
     if (!match) break;
-    if (text.slice(pos, match.index).trim()) throw new Error(`入力に読み取れない部分があります: ${text.slice(pos, match.index)}`);
+    if (text.slice(pos, match.index).trim()) {
+      throw new Error(`入力に読み取れない部分があります: ${text.slice(pos, match.index)}`);
+    }
     moves.push(match[1] + (match[2] || ""));
     pos = TOKEN_RE.lastIndex;
   }
   if (text.slice(pos).trim()) throw new Error(`入力に読み取れない部分があります: ${text.slice(pos)}`);
   return moves;
 }
-function inverseMove(move) { const base = move[0]; if (move.endsWith("'")) return base; if (move.endsWith("2")) return move; return `${base}'`; }
-function inverseAlgList(moves) { return [...moves].reverse().map(inverseMove); }
-function algToString(moves) { return moves.join(" "); }
+
+function inverseMove(move) {
+  const base = move[0];
+  if (move.endsWith("'")) return base;
+  if (move.endsWith("2")) return move;
+  return `${base}'`;
+}
+
+function inverseAlgList(moves) {
+  return [...moves].reverse().map(inverseMove);
+}
+
+function algToString(moves) {
+  return moves.join(" ");
+}
+
 function makeSearchMoves(text) {
   const faces = [];
   for (const move of parseAlg(text)) {
@@ -80,24 +164,63 @@ function makeSearchMoves(text) {
   }
   return faces.flatMap((face) => [face, `${face}'`]);
 }
+
 function parseRequiredParts(text) {
-  return String(text || "").replaceAll("、", "\n").replaceAll(",", "\n").split("\n").map((part) => part.trim()).filter(Boolean).map((part) => cleanMoves(parseAlg(part)));
+  return String(text || "")
+    .replaceAll("、", "\n")
+    .replaceAll(",", "\n")
+    .split("\n")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => cleanMoves(parseAlg(part)));
 }
+
 function listContainsSubsequence(list, part) {
   if (!part.length) return true;
   if (part.length > list.length) return false;
   for (let i = 0; i <= list.length - part.length; i += 1) {
     let ok = true;
-    for (let j = 0; j < part.length; j += 1) if (list[i + j] !== part[j]) { ok = false; break; }
+    for (let j = 0; j < part.length; j += 1) {
+      if (list[i + j] !== part[j]) {
+        ok = false;
+        break;
+      }
+    }
     if (ok) return true;
   }
   return false;
 }
-function solutionMatchesRequiredParts(solution, requiredParts) { const cleaned = cleanMoves(solution); return requiredParts.every((part) => listContainsSubsequence(cleaned, part)); }
-function parallelGroup(move) { return PARALLEL_GROUP[move[0]] || null; }
-function isParallelPair(a, b) { const ga = parallelGroup(a); const gb = parallelGroup(b); return ga !== null && ga === gb && a[0] !== b[0]; }
-function moveToFacePower(move) { let power = 1; if (move.endsWith("2")) power = 2; else if (move.endsWith("'")) power = 3; return [move[0], power]; }
-function facePowerToMove(face, power) { const normalized = ((power % 4) + 4) % 4; if (normalized === 0) return null; if (normalized === 1) return face; if (normalized === 2) return `${face}2`; return `${face}'`; }
+
+function solutionMatchesRequiredParts(solution, requiredParts) {
+  const cleaned = cleanMoves(solution);
+  return requiredParts.every((part) => listContainsSubsequence(cleaned, part));
+}
+
+function parallelGroup(move) {
+  return PARALLEL_GROUP[move[0]] || null;
+}
+
+function isParallelPair(a, b) {
+  const ga = parallelGroup(a);
+  const gb = parallelGroup(b);
+  return ga !== null && ga === gb && a[0] !== b[0];
+}
+
+function moveToFacePower(move) {
+  let power = 1;
+  if (move.endsWith("2")) power = 2;
+  else if (move.endsWith("'")) power = 3;
+  return [move[0], power];
+}
+
+function facePowerToMove(face, power) {
+  const normalized = ((power % 4) + 4) % 4;
+  if (normalized === 0) return null;
+  if (normalized === 1) return face;
+  if (normalized === 2) return `${face}2`;
+  return `${face}'`;
+}
+
 function simplifySameFace(moves) {
   const result = [];
   for (const move of moves) {
@@ -106,51 +229,133 @@ function simplifySameFace(moves) {
       const [, prevPower] = moveToFacePower(result.pop());
       const newMove = facePowerToMove(face, prevPower + power);
       if (newMove) result.push(newMove);
-    } else result.push(move);
+    } else {
+      result.push(move);
+    }
   }
   return result;
 }
+
 function compressParallelRuns(moves) {
   const result = [];
   let i = 0;
   while (i < moves.length) {
     const group = parallelGroup(moves[i]);
-    if (!group) { result.push(moves[i]); i += 1; continue; }
+    if (!group) {
+      result.push(moves[i]);
+      i += 1;
+      continue;
+    }
     const powers = {};
     for (const face of PARALLEL_GROUP_FACES[group]) powers[face] = 0;
-    while (i < moves.length && parallelGroup(moves[i]) === group) { const [face, power] = moveToFacePower(moves[i]); powers[face] += power; i += 1; }
-    for (const face of PARALLEL_GROUP_FACES[group]) { const move = facePowerToMove(face, powers[face]); if (move) result.push(move); }
+    while (i < moves.length && parallelGroup(moves[i]) === group) {
+      const [face, power] = moveToFacePower(moves[i]);
+      powers[face] += power;
+      i += 1;
+    }
+    for (const face of PARALLEL_GROUP_FACES[group]) {
+      const move = facePowerToMove(face, powers[face]);
+      if (move) result.push(move);
+    }
   }
   return result;
 }
-function cleanMoves(moves) { let current = [...moves]; for (;;) { const old = current.join(" "); current = simplifySameFace(current); current = compressParallelRuns(current); current = simplifySameFace(current); if (old === current.join(" ")) return current; } }
-function symbolMoveCount(moves) { return cleanMoves(moves).length; }
-function quarterTurnCount(moves) { return cleanMoves(moves).reduce((acc, move) => acc + (move.endsWith("2") ? 2 : 1), 0); }
+
+function cleanMoves(moves) {
+  let current = [...moves];
+  for (;;) {
+    const old = current.join(" ");
+    current = simplifySameFace(current);
+    current = compressParallelRuns(current);
+    current = simplifySameFace(current);
+    if (old === current.join(" ")) return current;
+  }
+}
+
+function symbolMoveCount(moves) {
+  return cleanMoves(moves).length;
+}
+
+function quarterTurnCount(moves) {
+  return cleanMoves(moves).reduce((acc, move) => acc + (move.endsWith("2") ? 2 : 1), 0);
+}
+
 function effectiveMoveCount(moves) {
   const cleaned = cleanMoves(moves);
   let count = 0;
   for (let i = 0; i < cleaned.length;) {
-    if (i + 1 < cleaned.length && isParallelPair(cleaned[i], cleaned[i + 1])) { count += 1; i += 2; }
-    else { count += 1; i += 1; }
+    if (i + 1 < cleaned.length && isParallelPair(cleaned[i], cleaned[i + 1])) {
+      count += 1;
+      i += 2;
+    } else {
+      count += 1;
+      i += 1;
+    }
   }
   return count;
 }
+
 function formatWithSimulUD(moves) {
   const cleaned = cleanMoves(moves);
   const parts = [];
   for (let i = 0; i < cleaned.length;) {
-    if (i + 1 < cleaned.length && isParallelPair(cleaned[i], cleaned[i + 1])) { parts.push(`( ${cleaned[i]} ${cleaned[i + 1]} )`); i += 2; }
-    else { parts.push(cleaned[i]); i += 1; }
+    if (i + 1 < cleaned.length && isParallelPair(cleaned[i], cleaned[i + 1])) {
+      parts.push(`( ${cleaned[i]} ${cleaned[i + 1]} )`);
+      i += 2;
+    } else {
+      parts.push(cleaned[i]);
+      i += 1;
+    }
   }
   return parts.join(" ");
 }
-function applyPermToString(state, perm) { let next = ""; for (let i = 0; i < 54; i += 1) next += state[perm[i]]; return next; }
-function solvedPattern() { const pattern = {}; for (const face of FACE_ORDER) pattern[face] = Array(9).fill(face); return pattern; }
-function clonePattern(pattern) { const next = {}; for (const face of FACE_ORDER) next[face] = [...pattern[face]]; return next; }
-function makePattern(faces) { const pattern = solvedPattern(); for (const face of FACE_ORDER) if (faces[face]) pattern[face] = [...faces[face]]; return pattern; }
-function topLayerPattern(u, rTop, fTop, lTop, bTop) { return makePattern({ U: u, R: [...rTop, "R", "R", "R", "R", "R", "R"], F: [...fTop, "F", "F", "F", "F", "F", "F"], L: [...lTop, "L", "L", "L", "L", "L", "L"], B: [...bTop, "B", "B", "B", "B", "B", "B"] }); }
-function patternToArray(pattern) { const arr = []; for (const face of FACE_ORDER) arr.push(...pattern[face]); return arr; }
-function countPatternColors(pattern) { const counts = { U: 0, R: 0, F: 0, D: 0, L: 0, B: 0, X: 0 }; for (const face of FACE_ORDER) for (const color of pattern[face]) counts[color] += 1; return counts; }
+
+function applyPermToString(state, perm) {
+  let next = "";
+  for (let i = 0; i < 54; i += 1) next += state[perm[i]];
+  return next;
+}
+
+function solvedPattern() {
+  const pattern = {};
+  for (const face of FACE_ORDER) pattern[face] = Array(9).fill(face);
+  return pattern;
+}
+
+function clonePattern(pattern) {
+  const next = {};
+  for (const face of FACE_ORDER) next[face] = [...pattern[face]];
+  return next;
+}
+
+function makePattern(faces) {
+  const pattern = solvedPattern();
+  for (const face of FACE_ORDER) if (faces[face]) pattern[face] = [...faces[face]];
+  return pattern;
+}
+
+function topLayerPattern(u, rTop, fTop, lTop, bTop) {
+  return makePattern({
+    U: u,
+    R: [...rTop, "R", "R", "R", "R", "R", "R"],
+    F: [...fTop, "F", "F", "F", "F", "F", "F"],
+    L: [...lTop, "L", "L", "L", "L", "L", "L"],
+    B: [...bTop, "B", "B", "B", "B", "B", "B"],
+  });
+}
+
+function patternToArray(pattern) {
+  const arr = [];
+  for (const face of FACE_ORDER) arr.push(...pattern[face]);
+  return arr;
+}
+
+function countPatternColors(pattern) {
+  const counts = { U: 0, R: 0, F: 0, D: 0, L: 0, B: 0, X: 0 };
+  for (const face of FACE_ORDER) for (const color of pattern[face]) counts[color] += 1;
+  return counts;
+}
+
 function validatePattern(pattern) {
   const counts = countPatternColors(pattern);
   for (const face of FACE_ORDER) {
@@ -158,6 +363,7 @@ function validatePattern(pattern) {
     if (counts[face] > 9) throw new Error(`${face}色が${counts[face]}枚あります。各色は9枚以内にしてください。`);
   }
 }
+
 function insertSolutionSorted(list, solution, maxLen = Infinity) {
   const normalized = cleanMoves(solution);
   const key = algToString(normalized);
@@ -165,7 +371,10 @@ function insertSolutionSorted(list, solution, maxLen = Infinity) {
   const next = [...list, normalized].sort((a, b) => {
     const ka = [effectiveMoveCount(a), symbolMoveCount(a), quarterTurnCount(a), algToString(a)];
     const kb = [effectiveMoveCount(b), symbolMoveCount(b), quarterTurnCount(b), algToString(b)];
-    for (let i = 0; i < ka.length; i += 1) { if (ka[i] < kb[i]) return -1; if (ka[i] > kb[i]) return 1; }
+    for (let i = 0; i < ka.length; i += 1) {
+      if (ka[i] < kb[i]) return -1;
+      if (ka[i] > kb[i]) return 1;
+    }
     return 0;
   });
   if (next.length > maxLen) next.length = maxLen;
@@ -228,37 +437,62 @@ function workerMain() {
   const SOLVED = FACE_ORDER.map((face) => face.repeat(9)).join("");
   const DONT_CARE = "X";
   const MAX_STORED_STATES = 10000000;
+  const DIRECT_PATTERN_THRESHOLD = 0;
+  const TOKEN_RE = /([URFDLBMESxyzurfdlb](?:w)?)(2|')?/g;
   const NORMAL = { U: [0, 1, 0], D: [0, -1, 0], R: [1, 0, 0], L: [-1, 0, 0], F: [0, 0, 1], B: [0, 0, -1] };
   const PARALLEL_GROUP = { U: "UD", D: "UD", R: "RL", L: "RL", F: "FB", B: "FB" };
   const PARALLEL_GROUP_FACES = { UD: ["U", "D"], RL: ["R", "L"], FB: ["F", "B"] };
-  const TOKEN_RE = /([URFDLBMESxyzurfdlb](?:w)?)(2|')?/g;
   let CURRENT_JOB = null;
+
   function keyOf(pos, normal) { return pos.join(",") + "|" + normal.join(","); }
-  function facePos(face, r, c) { return { U: [c - 1, 1, r - 1], D: [c - 1, -1, 1 - r], F: [c - 1, 1 - r, 1], B: [1 - c, 1 - r, -1], R: [1, 1 - r, 1 - c], L: [-1, 1 - r, c - 1] }[face]; }
-  function buildStickers() { const stickers = []; const indexOf = new Map(); for (const face of FACE_ORDER) for (let r = 0; r < 3; r += 1) for (let c = 0; c < 3; c += 1) { const pos = facePos(face, r, c); const normal = NORMAL[face]; indexOf.set(keyOf(pos, normal), stickers.length); stickers.push([pos, normal]); } return { stickers, indexOf }; }
+  function facePos(face, r, c) {
+    return { U: [c - 1, 1, r - 1], D: [c - 1, -1, 1 - r], F: [c - 1, 1 - r, 1], B: [1 - c, 1 - r, -1], R: [1, 1 - r, 1 - c], L: [-1, 1 - r, c - 1] }[face];
+  }
+  function buildStickers() {
+    const stickers = [];
+    const indexOf = new Map();
+    for (const face of FACE_ORDER) for (let r = 0; r < 3; r += 1) for (let c = 0; c < 3; c += 1) {
+      const pos = facePos(face, r, c);
+      const normal = NORMAL[face];
+      indexOf.set(keyOf(pos, normal), stickers.length);
+      stickers.push([pos, normal]);
+    }
+    return { stickers, indexOf };
+  }
   const built = buildStickers();
   const STICKERS = built.stickers;
   const INDEX_OF = built.indexOf;
   function rot(v, axis, direction) { const x = v[0], y = v[1], z = v[2]; if (axis === "x") return [x, -direction * z, direction * y]; if (axis === "y") return [direction * z, y, -direction * x]; if (axis === "z") return [-direction * y, direction * x, z]; throw new Error("Unknown axis: " + axis); }
-  function makePerm(axis, layers, direction) { const layerSet = new Set(layers); const perm = Array.from({ length: 54 }, (_, i) => i); const axisIndex = { x: 0, y: 1, z: 2 }[axis]; for (let i = 0; i < STICKERS.length; i += 1) { const pos = STICKERS[i][0]; const normal = STICKERS[i][1]; if (!layerSet.has(pos[axisIndex])) continue; perm[INDEX_OF.get(keyOf(rot(pos, axis, direction), rot(normal, axis, direction)))] = i; } return perm; }
+  function makePerm(axis, layers, direction) {
+    const layerSet = new Set(layers);
+    const axisIndex = { x: 0, y: 1, z: 2 }[axis];
+    const perm = Array.from({ length: 54 }, (_, i) => i);
+    for (let i = 0; i < STICKERS.length; i += 1) {
+      const pos = STICKERS[i][0];
+      const normal = STICKERS[i][1];
+      if (!layerSet.has(pos[axisIndex])) continue;
+      perm[INDEX_OF.get(keyOf(rot(pos, axis, direction), rot(normal, axis, direction)))] = i;
+    }
+    return perm;
+  }
   function composePerm(p, q) { const out = new Array(54); for (let i = 0; i < 54; i += 1) out[i] = p[q[i]]; return out; }
   function permPower(p, n) { let result = Array.from({ length: 54 }, (_, i) => i); for (let i = 0; i < n; i += 1) result = composePerm(result, p); return result; }
   const BASE = { U: makePerm("y", [1], -1), D: makePerm("y", [-1], 1), R: makePerm("x", [1], -1), L: makePerm("x", [-1], 1), F: makePerm("z", [1], -1), B: makePerm("z", [-1], 1), M: makePerm("x", [0], 1), E: makePerm("y", [0], 1), S: makePerm("z", [0], -1), x: makePerm("x", [-1, 0, 1], -1), y: makePerm("y", [-1, 0, 1], -1), z: makePerm("z", [-1, 0, 1], -1), u: makePerm("y", [0, 1], -1), d: makePerm("y", [-1, 0], 1), r: makePerm("x", [0, 1], -1), l: makePerm("x", [-1, 0], 1), f: makePerm("z", [0, 1], -1), b: makePerm("z", [-1, 0], 1) };
   const MOVE_PERM_CACHE = new Map();
-  function applyPerm(state, perm) { let next = ""; for (let i = 0; i < 54; i += 1) next += state[perm[i]]; return next; }
   function normalizeAlgText(alg) { return String(alg).replaceAll("’", "'").replaceAll("＇", "'").replace(/([URFDLB])w/g, (_, face) => face.toLowerCase()).replaceAll(",", " "); }
   function parseAlg(alg) { const text = normalizeAlgText(alg); const moves = []; let pos = 0; TOKEN_RE.lastIndex = 0; for (;;) { const match = TOKEN_RE.exec(text); if (!match) break; if (text.slice(pos, match.index).trim()) throw new Error("入力に読み取れない部分があります: " + text.slice(pos, match.index)); moves.push(match[1] + (match[2] || "")); pos = TOKEN_RE.lastIndex; } if (text.slice(pos).trim()) throw new Error("入力に読み取れない部分があります: " + text.slice(pos)); return moves; }
   function moveToPerm(move) { if (MOVE_PERM_CACHE.has(move)) return MOVE_PERM_CACHE.get(move); const base = move[0]; if (!BASE[base]) throw new Error("対応していない記号です: " + base); const perm = move.endsWith("2") ? permPower(BASE[base], 2) : move.endsWith("'") ? permPower(BASE[base], 3) : BASE[base]; MOVE_PERM_CACHE.set(move, perm); return perm; }
+  function applyPerm(state, perm) { let next = ""; for (let i = 0; i < 54; i += 1) next += state[perm[i]]; return next; }
   function applyAlg(state, alg) { let current = state; for (const move of parseAlg(alg)) current = applyPerm(current, moveToPerm(move)); return current; }
   function makeSearchMoves(text) { const faces = []; for (const move of parseAlg(text)) { const face = move[0]; if (!BASE[face]) throw new Error("対応していない記号です: " + face); if (!faces.includes(face)) faces.push(face); } return faces.flatMap((face) => [face, face + "'"]); }
   function inverseMove(move) { const base = move[0]; if (move.endsWith("'")) return base; if (move.endsWith("2")) return move; return base + "'"; }
   function inverseAlgList(moves) { return moves.slice().reverse().map(inverseMove); }
   function algToString(moves) { return moves.join(" "); }
   function parseRequiredParts(text) { return String(text || "").replaceAll("、", "\n").replaceAll(",", "\n").split("\n").map((part) => part.trim()).filter(Boolean).map((part) => cleanMoves(parseAlg(part))); }
-  function listContainsSubsequence(list, part) { if (!part.length) return true; if (part.length > list.length) return false; for (let i = 0; i <= list.length - part.length; i += 1) { let ok = true; for (let j = 0; j < part.length; j += 1) if (list[i + j] !== part[j]) { ok = false; break; } if (ok) return true; } return false; }
+  function listContainsSubsequence(list, part) { if (!part.length) return true; if (part.length > list.length) return false; for (let i = 0; i <= list.length - part.length; i += 1) { let ok = true; for (let j = 0; j < part.length; j += 1) { if (list[i + j] !== part[j]) { ok = false; break; } } if (ok) return true; } return false; }
   function solutionMatchesRequiredParts(solution, requiredParts) { const cleaned = cleanMoves(solution); return requiredParts.every((part) => listContainsSubsequence(cleaned, part)); }
   function parallelGroup(move) { return PARALLEL_GROUP[move[0]] || null; }
-  function isParallelPair(a, b) { const ga = parallelGroup(a); const gb = parallelGroup(b); return ga !== null && ga === gb && a[0] !== b[0]; }
+  function isParallelPair(a, b) { const ga = parallelGroup(a), gb = parallelGroup(b); return ga !== null && ga === gb && a[0] !== b[0]; }
   function moveToFacePower(move) { let power = 1; if (move.endsWith("2")) power = 2; else if (move.endsWith("'")) power = 3; return [move[0], power]; }
   function facePowerToMove(face, power) { const normalized = ((power % 4) + 4) % 4; if (normalized === 0) return null; if (normalized === 1) return face; if (normalized === 2) return face + "2"; return face + "'"; }
   function simplifySameFace(moves) { const result = []; for (const move of moves) { const fp = moveToFacePower(move); const face = fp[0]; const power = fp[1]; if (result.length && result[result.length - 1][0] === face) { const prevPower = moveToFacePower(result.pop())[1]; const newMove = facePowerToMove(face, prevPower + power); if (newMove) result.push(newMove); } else result.push(move); } return result; }
@@ -271,16 +505,210 @@ function workerMain() {
   function countPatternColors(pattern) { const counts = { U: 0, R: 0, F: 0, D: 0, L: 0, B: 0, X: 0 }; for (const face of FACE_ORDER) for (const color of pattern[face]) counts[color] += 1; return counts; }
   function validatePattern(pattern) { const counts = countPatternColors(pattern); for (const face of FACE_ORDER) { if (pattern[face][4] !== face) throw new Error(face + "面の中央ステッカーは" + face + "色で固定してください。"); if (counts[face] > 9) throw new Error(face + "色が" + counts[face] + "枚あります。各色は9枚以内にしてください。"); } }
   function buildMovePerms(moves) { const out = new Map(); for (const move of moves) out.set(move, moveToPerm(move)); return out; }
-  function makeMatcher(patternArr) { const pos = []; const val = []; for (let i = 0; i < 54; i += 1) if (patternArr[i] !== DONT_CARE) { pos.push(i); val.push(patternArr[i]); } return { count: pos.length, matches(state) { for (let i = 0; i < pos.length; i += 1) if (state[pos[i]] !== val[i]) return false; return true; } }; }
-  function emitSolution(job, solution) { const normalized = cleanMoves(solution); if (!solutionMatchesRequiredParts(normalized, job.requiredParts)) return; const key = algToString(normalized); if (job.foundKeys.has(key)) return; job.foundKeys.add(key); job.foundCount += 1; self.postMessage({ type: "solution", solution: normalized }); if (job.foundCount >= job.maxResults) job.stopByLimit = true; }
-  function shouldPause(job) { return !job.allowUnsafe && ((job.directFront ? job.directFront.length : 0) + job.seen.size) > MAX_STORED_STATES; }
+  function makeMatcher(patternArr) { const pos = []; const val = []; for (let i = 0; i < 54; i += 1) { if (patternArr[i] !== DONT_CARE) { pos.push(i); val.push(patternArr[i]); } } return { count: pos.length, matches(state) { for (let i = 0; i < pos.length; i += 1) if (state[pos[i]] !== val[i]) return false; return true; } }; }
+  function stateFromSolution(solution) { let state = SOLVED; for (const move of inverseAlgList(solution)) state = applyPerm(state, moveToPerm(move)); return state; }
+  function trimRedundantFinalAuf(job, solution) {
+    let current = cleanMoves(solution);
+    if (!job.matcher) return current;
+    while (current.length && current[current.length - 1][0] === "U") {
+      const shorter = cleanMoves(current.slice(0, -1));
+      if (!job.matcher.matches(stateFromSolution(shorter))) break;
+      current = shorter;
+    }
+    return current;
+  }
+  function emitSolution(job, solution) { const normalized = trimRedundantFinalAuf(job, solution); if (!solutionMatchesRequiredParts(normalized, job.requiredParts)) return false; const key = algToString(normalized); if (job.foundKeys.has(key)) return false; job.foundKeys.add(key); job.foundCount += 1; self.postMessage({ type: "solution", solution: normalized }); if (job.foundCount >= job.maxResults) job.stopByLimit = true; return true; }
   function pauseJob(job) { job.paused = true; self.postMessage({ type: "paused", message: "探索が大きすぎたため中断しました。" }); }
-  function processDirectPatternJob(job) { try { while (job.directFront.length && !job.stopByLimit) { const nextFront = []; for (const node of job.directFront) { if (job.stopByLimit) break; for (const move of job.moves) { if (job.stopByLimit) break; if (!canAddMove(node.path, move)) continue; const nextCost = node.cost + symbolDelta(node.path, move); if (nextCost > job.maxSymbolDepth) continue; const nextState = applyPerm(node.state, job.movePerms.get(move)); if (job.seen.has(nextState)) continue; const nextPath = node.path.concat(move); job.seen.add(nextState); if (job.matcher.matches(nextState)) emitSolution(job, inverseAlgList(nextPath)); nextFront.push({ state: nextState, path: nextPath, cost: nextCost }); } } job.directFront = nextFront; if (shouldPause(job)) return pauseJob(job); } CURRENT_JOB = null; self.postMessage({ type: "done", completed: !job.stopByLimit }); } catch (e) { CURRENT_JOB = null; self.postMessage({ type: "error", message: e instanceof Error ? e.message : String(e) }); } }
-  function processAlgJob(job) { try { while ((job.frontA.length || job.frontB.length) && !job.stopByLimit) { const expandA = job.frontA.length && (job.frontA.length <= job.frontB.length || !job.frontB.length); const front = expandA ? job.frontA : job.frontB; const selfStore = expandA ? job.storeA : job.storeB; const otherStore = expandA ? job.storeB : job.storeA; const sideLimit = expandA ? job.sideSymbolLimitA : job.sideSymbolLimitB; const newFront = []; for (const id of front) { const state = selfStore.states[id]; const path = selfStore.paths[id]; const cost = selfStore.cost[id]; for (const move of job.moves) { if (!canAddMove(path, move)) continue; const nextCost = cost + symbolDelta(path, move); if (nextCost > sideLimit) continue; const nextState = applyPerm(state, job.movePerms.get(move)); if (selfStore.seen.has(nextState)) continue; const nextPath = path.concat(move); const nextId = selfStore.states.length; selfStore.states.push(nextState); selfStore.paths.push(nextPath); selfStore.cost.push(nextCost); selfStore.seen.set(nextState, nextId); newFront.push(nextId); if (otherStore.seen.has(nextState)) { const otherPath = otherStore.paths[otherStore.seen.get(nextState)]; const solution = cleanMoves(expandA ? nextPath.concat(inverseAlgList(otherPath)) : otherPath.concat(inverseAlgList(nextPath))); if (symbolMoveCount(solution) <= job.maxSymbolDepth) emitSolution(job, solution); } } } if (expandA) job.frontA = newFront; else job.frontB = newFront; if (!job.allowUnsafe && (job.storeA.states.length + job.storeB.states.length) > MAX_STORED_STATES) return pauseJob(job); } CURRENT_JOB = null; self.postMessage({ type: "done", completed: !job.stopByLimit }); } catch (e) { CURRENT_JOB = null; self.postMessage({ type: "error", message: e instanceof Error ? e.message : String(e) }); } }
-  function makeStore(state) { return { states: [state], paths: [[]], cost: [0], seen: new Map([[state, 0]]) }; }
+  function totalStored(job) { return (job.storeA ? job.storeA.states.length : 0) + (job.storeB ? job.storeB.states.length : 0) + (job.forwardStore ? job.forwardStore.states.length : 0) + (job.secondFront ? job.secondFront.length : 0) + (job.directFront ? job.directFront.length : 0) + (job.seen ? job.seen.size : 0); }
+  function shouldPause(job) { return !job.allowUnsafe && totalStored(job) > MAX_STORED_STATES; }
+  function makeStore(initialState) { return { states: [initialState], parent: [-1], move: [""], cost: [0], seen: new Map([[initialState, 0]]) }; }
+  function addNode(store, state, parentId, move, cost) { const id = store.states.length; store.states.push(state); store.parent.push(parentId); store.move.push(move); store.cost.push(cost); store.seen.set(state, id); return id; }
+  function pathFromNode(store, id) { const out = []; while (id >= 0) { const move = store.move[id]; if (move) out.push(move); id = store.parent[id]; } out.reverse(); return out; }
+  function lastTwoMoves(store, id) { if (id < 0) return []; const last = store.move[id]; if (!last) return []; const parentId = store.parent[id]; if (parentId < 0) return [last]; const prev = store.move[parentId]; return prev ? [prev, last] : [last]; }
+  function expandAlgLayer(job, side) { const expandingFromStart = side === "A"; const front = expandingFromStart ? job.frontA : job.frontB; const storeSelf = expandingFromStart ? job.storeA : job.storeB; const storeOther = expandingFromStart ? job.storeB : job.storeA; const sideLimit = expandingFromStart ? job.sideSymbolLimitA : job.sideSymbolLimitB; const newFront = []; for (const id of front) { if (job.stopByLimit) break; const state = storeSelf.states[id]; const tail = lastTwoMoves(storeSelf, id); const cost = storeSelf.cost[id]; for (const move of job.moves) { if (job.stopByLimit) break; if (!canAddMove(tail, move)) continue; const nextCost = cost + symbolDelta(tail, move); if (nextCost > sideLimit) continue; const nextState = applyPerm(state, job.movePerms.get(move)); if (storeSelf.seen.has(nextState)) continue; const nextId = addNode(storeSelf, nextState, id, move, nextCost); newFront.push(nextId); if (storeOther.seen.has(nextState)) { const otherId = storeOther.seen.get(nextState); const selfPath = pathFromNode(storeSelf, nextId); const otherPath = pathFromNode(storeOther, otherId); const solution = cleanMoves(expandingFromStart ? selfPath.concat(inverseAlgList(otherPath)) : otherPath.concat(inverseAlgList(selfPath))); if (symbolMoveCount(solution) <= job.maxSymbolDepth) emitSolution(job, solution); } } } if (expandingFromStart) job.frontA = newFront; else job.frontB = newFront; }
+  function processAlgJob(job) { try { while ((job.frontA.length || job.frontB.length) && !job.stopByLimit) { if (job.frontA.length && (job.frontA.length <= job.frontB.length || !job.frontB.length)) expandAlgLayer(job, "A"); else expandAlgLayer(job, "B"); if (shouldPause(job)) return pauseJob(job); } CURRENT_JOB = null; self.postMessage({ type: "done", completed: !job.stopByLimit }); } catch (e) { CURRENT_JOB = null; self.postMessage({ type: "error", message: e instanceof Error ? e.message : String(e) }); } }
   function startAlgJob(data) { const moves = makeSearchMoves(data.searchMovesText); const maxSymbolDepth = Number(data.maxSymbolDepth) || 1; const start = applyAlg(SOLVED, algToString(inverseAlgList(parseAlg(data.targetAlg)))); const job = { kind: "alg", allowUnsafe: Boolean(data.allowUnsafe), requiredParts: parseRequiredParts(data.requiredPartsText || ""), maxResults: Math.max(1, Number(data.limit) || 1), foundCount: 0, foundKeys: new Set(), stopByLimit: false, moves, maxSymbolDepth, sideSymbolLimitA: Math.ceil(maxSymbolDepth / 2), sideSymbolLimitB: Math.floor(maxSymbolDepth / 2), movePerms: buildMovePerms(moves), storeA: makeStore(start), storeB: makeStore(SOLVED), frontA: [0], frontB: [0] }; CURRENT_JOB = job; if (start === SOLVED) emitSolution(job, []); processAlgJob(job); }
-  function startPatternJob(data) { const pattern = data.targetPattern; validatePattern(pattern); const moves = makeSearchMoves(data.searchMovesText); const maxSymbolDepth = Number(data.maxSymbolDepth) || 1; const patternArr = patternToArray(pattern); const matcher = makeMatcher(patternArr); const job = { kind: "pattern", allowUnsafe: Boolean(data.allowUnsafe), requiredParts: parseRequiredParts(data.requiredPartsText || ""), maxResults: Math.max(1, Number(data.limit) || 1), foundCount: 0, foundKeys: new Set(), stopByLimit: false, moves, maxSymbolDepth, movePerms: buildMovePerms(moves), matcher, directFront: [{ state: SOLVED, path: [], cost: 0 }], seen: new Set([SOLVED]) }; CURRENT_JOB = job; if (matcher.matches(SOLVED)) emitSolution(job, []); processDirectPatternJob(job); }
-  self.onmessage = function (event) { const data = event.data || {}; if (data.command === "continue") { if (CURRENT_JOB) { CURRENT_JOB.allowUnsafe = true; if (CURRENT_JOB.kind === "alg") processAlgJob(CURRENT_JOB); else processDirectPatternJob(CURRENT_JOB); } return; } try { if (data.mode === "alg") startAlgJob(data); else startPatternJob(data); } catch (e) { self.postMessage({ type: "error", message: e instanceof Error ? e.message : String(e) }); } };
+  function processDirectPatternJob(job) { try { while (job.directFront.length && !job.stopByLimit) { const nextFront = []; for (const node of job.directFront) { if (job.stopByLimit) break; for (const move of job.moves) { if (job.stopByLimit) break; if (!canAddMove(node.path, move)) continue; const nextCost = node.cost + symbolDelta(node.path, move); if (nextCost > job.maxSymbolDepth) continue; const nextState = applyPerm(node.state, job.movePerms.get(move)); if (job.seen.has(nextState)) continue; const nextPath = node.path.concat(move); job.seen.add(nextState); if (job.matcher.matches(nextState)) { emitSolution(job, inverseAlgList(nextPath)); continue; } nextFront.push({ state: nextState, path: nextPath, cost: nextCost }); } } job.directFront = nextFront; if (shouldPause(job)) return pauseJob(job); } CURRENT_JOB = null; self.postMessage({ type: "done", completed: !job.stopByLimit }); } catch (e) { CURRENT_JOB = null; self.postMessage({ type: "error", message: e instanceof Error ? e.message : String(e) }); } }
+  function patternMaskKey(patternArr) {
+    let key = "";
+    for (let i = 0; i < 54; i += 1) {
+      if (patternArr[i] !== DONT_CARE) key += i + ",";
+    }
+    return key;
+  }
+
+  function positionsFromMask(mask) {
+    return mask ? mask.slice(0, -1).split(",").map(Number) : [];
+  }
+
+  function patternValueKeyFromState(state, positions) {
+    let key = "";
+    for (let i = 0; i < positions.length; i += 1) key += state[positions[i]];
+    return key;
+  }
+
+  function patternValueKeyFromPattern(patternArr, positions) {
+    let key = "";
+    for (let i = 0; i < positions.length; i += 1) key += patternArr[positions[i]];
+    return key;
+  }
+
+  function permKey(perm) {
+    return perm.join(",");
+  }
+
+  function pullPatternBack(patternArr, perm) {
+    const pulled = Array(54).fill(DONT_CARE);
+    for (let i = 0; i < 54; i += 1) {
+      const expected = patternArr[i];
+      if (expected !== DONT_CARE) pulled[perm[i]] = expected;
+    }
+    return pulled;
+  }
+
+  function buildForwardIndex(store, positions) {
+    const index = new Map();
+    for (let id = 0; id < store.states.length; id += 1) {
+      const key = patternValueKeyFromState(store.states[id], positions);
+      let bucket = index.get(key);
+      if (!bucket) {
+        bucket = [];
+        index.set(key, bucket);
+      }
+      bucket.push(id);
+    }
+    return index;
+  }
+
+  function getPatternIndex(job, mask, positions) {
+    if (job.indexCache.has(mask)) return job.indexCache.get(mask);
+    const index = buildForwardIndex(job.forwardStore, positions);
+    job.indexCache.set(mask, index);
+    return index;
+  }
+
+  function emitPatternMatches(job, secondPath, secondPerm) {
+    let emitted = false;
+    const pulled = pullPatternBack(job.patternArr, secondPerm);
+    const mask = patternMaskKey(pulled);
+    const positions = positionsFromMask(mask);
+    const valueKey = patternValueKeyFromPattern(pulled, positions);
+    const candidates = getPatternIndex(job, mask, positions).get(valueKey) || [];
+
+    for (const firstId of candidates) {
+      if (job.stopByLimit) break;
+      const firstPath = pathFromNode(job.forwardStore, firstId);
+      const totalPath = cleanMoves(firstPath.concat(secondPath));
+      if (symbolMoveCount(totalPath) > job.maxSymbolDepth) continue;
+
+      const solution = cleanMoves(inverseAlgList(totalPath));
+      const key = algToString(solution);
+      if (job.solutionSet.has(key)) continue;
+      job.solutionSet.add(key);
+      if (emitSolution(job, solution)) emitted = true;
+    }
+    return emitted;
+  }
+
+  function expandPatternForwardLayer(job) {
+    const nextFront = [];
+    for (const id of job.forwardFront) {
+      if (job.stopByLimit) break;
+      const state = job.forwardStore.states[id];
+      const tail = lastTwoMoves(job.forwardStore, id);
+      const cost = job.forwardStore.cost[id];
+
+      for (const move of job.moves) {
+        if (job.stopByLimit) break;
+        if (!canAddMove(tail, move)) continue;
+        const nextCost = cost + symbolDelta(tail, move);
+        if (nextCost > job.forwardDepth + 1) continue;
+        const nextState = applyPerm(state, job.movePerms.get(move));
+        if (job.forwardStore.seen.has(nextState)) continue;
+        const nextId = addNode(job.forwardStore, nextState, id, move, nextCost);
+        nextFront.push(nextId);
+      }
+    }
+    job.forwardFront = nextFront;
+    job.forwardDepth += 1;
+    job.indexCache.clear();
+  }
+
+  function expandPatternSecondLayer(job) {
+    const nextFront = [];
+    for (const node of job.secondFront) {
+      if (job.stopByLimit) break;
+      for (const move of job.moves) {
+        if (job.stopByLimit) break;
+        if (!canAddMove(node.path, move)) continue;
+        const nextCost = node.cost + symbolDelta(node.path, move);
+        if (nextCost > job.secondDepth + 1) continue;
+
+        const nextPath = node.path.concat(move);
+        const nextPerm = composePerm(node.perm, job.movePerms.get(move));
+        const key = permKey(nextPerm);
+        if (job.secondSeen.has(key)) continue;
+        job.secondSeen.add(key);
+
+        const nextNode = { path: nextPath, perm: nextPerm, cost: nextCost };
+        job.secondNodes.push(nextNode);
+        const reachedGoal = emitPatternMatches(job, nextPath, nextPerm);
+        if (!reachedGoal) nextFront.push(nextNode);
+      }
+    }
+    job.secondFront = nextFront;
+    job.secondDepth += 1;
+  }
+
+  function ensureForwardDepth(job, targetDepth) {
+    while (job.forwardDepth < targetDepth && job.forwardFront.length && !job.stopByLimit) {
+      expandPatternForwardLayer(job);
+      if (shouldPause(job)) return false;
+    }
+    return true;
+  }
+
+  function ensureSecondDepth(job, targetDepth) {
+    while (job.secondDepth < targetDepth && job.secondFront.length && !job.stopByLimit) {
+      expandPatternSecondLayer(job);
+      if (shouldPause(job)) return false;
+    }
+    return true;
+  }
+
+  function matchSecondNodesForCurrentForward(job) {
+    if (job.lastMatchedForwardDepth === job.forwardDepth) return;
+    for (const node of job.secondNodes) {
+      if (job.stopByLimit) break;
+      if (node.cost > job.secondDepth) continue;
+      emitPatternMatches(job, node.path, node.perm);
+    }
+    job.lastMatchedForwardDepth = job.forwardDepth;
+  }
+
+  function processBidirectionalPatternJob(job) {
+    try {
+      while (job.searchDepth <= job.maxSymbolDepth && !job.stopByLimit) {
+        const firstDepth = Math.ceil(job.searchDepth / 2);
+        const secondDepth = Math.floor(job.searchDepth / 2);
+
+        if (!ensureForwardDepth(job, firstDepth)) return pauseJob(job);
+        matchSecondNodesForCurrentForward(job);
+        if (!ensureSecondDepth(job, secondDepth)) return pauseJob(job);
+
+        job.searchDepth += 1;
+      }
+
+      CURRENT_JOB = null;
+      self.postMessage({ type: "done", completed: !job.stopByLimit });
+    } catch (e) {
+      CURRENT_JOB = null;
+      self.postMessage({ type: "error", message: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  function startPatternJob(data) { const pattern = data.targetPattern; validatePattern(pattern); const moves = makeSearchMoves(data.searchMovesText); const maxSymbolDepth = Number(data.maxSymbolDepth) || 1; const patternArr = patternToArray(pattern); const matcher = makeMatcher(patternArr); const requiredParts = parseRequiredParts(data.requiredPartsText || ""); const baseJob = { kind: "pattern", allowUnsafe: Boolean(data.allowUnsafe), requiredParts, maxResults: Math.max(1, Number(data.limit) || 1), foundCount: 0, foundKeys: new Set(), stopByLimit: false, moves, maxSymbolDepth, movePerms: buildMovePerms(moves), matcher, patternArr }; if (matcher.matches(SOLVED)) emitSolution(baseJob, []); if (baseJob.stopByLimit) { self.postMessage({ type: "done", completed: false }); return; } const identityPerm = Array.from({ length: 54 }, (_, i) => i); const identitySecondNode = { path: [], perm: identityPerm, cost: 0 }; const job = Object.assign(baseJob, { forwardStore: makeStore(SOLVED), forwardFront: [0], forwardDepth: 0, secondFront: [identitySecondNode], secondNodes: [identitySecondNode], secondSeen: new Set([permKey(identityPerm)]), secondDepth: 0, searchDepth: 0, lastMatchedForwardDepth: -1, phase: "balanced-bidirectional", solutionSet: new Set(), indexCache: new Map() }); CURRENT_JOB = job; processBidirectionalPatternJob(job); }
+  self.onmessage = function (event) { const data = event.data || {}; if (data.command === "continue") { if (CURRENT_JOB) { CURRENT_JOB.allowUnsafe = true; if (CURRENT_JOB.kind === "alg") processAlgJob(CURRENT_JOB); else if (CURRENT_JOB.directFront) processDirectPatternJob(CURRENT_JOB); else processBidirectionalPatternJob(CURRENT_JOB); } return; } try { if (data.mode === "alg") startAlgJob(data); else startPatternJob(data); } catch (e) { self.postMessage({ type: "error", message: e instanceof Error ? e.message : String(e) }); } };
 }
 
 function Sticker({ color, onClick, locked = false }) { return <button type="button" onClick={onClick} disabled={locked} className={["aspect-square w-full rounded-md border border-slate-300 transition duration-150", locked ? "cursor-not-allowed ring-2 ring-slate-500" : "hover:scale-105 active:scale-95"].join(" ")} style={{ background: FACE_COLOR_STYLE[color] }} title={FACE_LABEL[color] || color}>{color === DONT_CARE ? <span className="text-xs font-normal text-white">?</span> : null}</button>; }
@@ -293,8 +721,6 @@ function SolutionCard({ solution, t, showMoveCounts, onSave, onCopy }) { const d
 function ThinkingCard({ foundCount, t }) { return <div className="rounded-2xl border border-sky-200 bg-gradient-to-r from-sky-50 to-indigo-50 p-4 shadow-sm"><div className="flex items-center gap-3"><div className="flex gap-1"><span className="h-2.5 w-2.5 animate-bounce rounded-full bg-sky-500 [animation-delay:0ms]" /><span className="h-2.5 w-2.5 animate-bounce rounded-full bg-sky-500 [animation-delay:120ms]" /><span className="h-2.5 w-2.5 animate-bounce rounded-full bg-sky-500 [animation-delay:240ms]" /></div><div><div className="font-normal text-slate-900">{t.thinkingTitle}</div><div className="text-sm text-slate-600">{t.thinkingBody(foundCount)}</div></div></div></div>; }
 function EmptyCard({ text, className = "" }) { return <div className={`rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-500 ${className}`}>{text}</div>; }
 function NumberInput({ label, value, onChange, min = 1, max = 99 }) { function setClamped(nextValue) { const raw = String(nextValue); if (raw === "") { onChange(""); return; } const numeric = Number(raw); if (!Number.isFinite(numeric)) return; onChange(Math.min(max, Math.max(min, Math.trunc(numeric)))); } return <label className="grid gap-1"><span className="text-sm font-normal">{label}</span><input type="number" inputMode="numeric" pattern="[0-9]*" min={min} max={max} step="1" value={value} onChange={(e) => setClamped(e.target.value)} onBlur={() => { if (value === "") onChange(min); }} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 text-center text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" /></label>; }
-function runInternalTests() { const tests = [() => algToString(parseAlg("R U R'")) === "R U R'", () => algToString(cleanMoves(["R", "R"])) === "R2", () => algToString(cleanMoves(["R", "R", "R"])) === "R'", () => inverseAlgList(["R", "U'"]).join(" ") === "U R'", () => makeSearchMoves("R U D").join(" ") === "R R' U U' D D'", () => formatWithSimulUD(["U", "D"]) === "( U D )", () => applyPermToString(SOLVED_STRING, BASE.R).length === 54, () => OLL_CASES.length === 57 && OLL_CASES.every((c) => c.previewMask.length === 25 && c.previewMask.split("").filter((x) => x === "1").length === 9), () => countPatternColors(OLL_CASES[0].pattern).U === 9 && OLL_CASES[0].pattern.D.every((x) => x === "D"), () => parseRequiredParts("R U R' U'\nR' F R F'").length === 2, () => solutionMatchesRequiredParts(parseAlg("R U R' U' F"), parseRequiredParts("R U R' U'"))]; const failed = tests.findIndex((test) => !test()); if (failed !== -1) console.warn(`Internal test failed: ${failed + 1}`); }
-runInternalTests();
 
 export default function App() {
   const workerUrlRef = useRef(new WeakMap());
