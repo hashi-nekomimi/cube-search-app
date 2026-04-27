@@ -519,7 +519,7 @@ function workerMain() {
   }
   function emitSolution(job, solution) { const normalized = trimRedundantFinalAuf(job, solution); if (!solutionMatchesRequiredParts(normalized, job.requiredParts)) return false; const key = algToString(normalized); if (job.foundKeys.has(key)) return false; job.foundKeys.add(key); job.foundCount += 1; self.postMessage({ type: "solution", solution: normalized }); if (job.foundCount >= job.maxResults) job.stopByLimit = true; return true; }
   function pauseJob(job) { job.paused = true; self.postMessage({ type: "paused", message: "探索が大きすぎたため中断しました。" }); }
-  function totalStored(job) { return (job.storeA ? job.storeA.states.length : 0) + (job.storeB ? job.storeB.states.length : 0) + (job.forwardStore ? job.forwardStore.states.length : 0) + (job.secondFront ? job.secondFront.length : 0) + (job.directFront ? job.directFront.length : 0) + (job.seen ? job.seen.size : 0); }
+  function totalStored(job) { return (job.storeA ? job.storeA.states.length : 0) + (job.storeB ? job.storeB.states.length : 0) + (job.forwardStore ? job.forwardStore.states.length : 0) + (job.secondNodes ? job.secondNodes.length : 0) + (job.directFront ? job.directFront.length : 0) + (job.seen ? job.seen.size : 0); }
   function shouldPause(job) { return !job.allowUnsafe && totalStored(job) > MAX_STORED_STATES; }
   function makeStore(initialState) { return { states: [initialState], parent: [-1], move: [""], cost: [0], seen: new Map([[initialState, 0]]) }; }
   function addNode(store, state, parentId, move, cost) { const id = store.states.length; store.states.push(state); store.parent.push(parentId); store.move.push(move); store.cost.push(cost); store.seen.set(state, id); return id; }
@@ -554,7 +554,9 @@ function workerMain() {
   }
 
   function permKey(perm) {
-    return perm.join(",");
+    let key = "";
+    for (let i = 0; i < 54; i += 1) key += String.fromCharCode(perm[i] + 35);
+    return key;
   }
 
   function pullPatternBack(patternArr, perm) {
@@ -566,9 +568,9 @@ function workerMain() {
     return pulled;
   }
 
-  function buildForwardIndex(store, positions) {
+  function buildForwardIndex(store, ids, positions) {
     const index = new Map();
-    for (let id = 0; id < store.states.length; id += 1) {
+    for (const id of ids) {
       const key = patternValueKeyFromState(store.states[id], positions);
       let bucket = index.get(key);
       if (!bucket) {
@@ -580,28 +582,67 @@ function workerMain() {
     return index;
   }
 
-  function getPatternIndex(job, mask, positions) {
-    if (job.indexCache.has(mask)) return job.indexCache.get(mask);
-    const index = buildForwardIndex(job.forwardStore, positions);
-    job.indexCache.set(mask, index);
+  function allForwardIds(job) {
+    if (job.allForwardIdsVersion === job.forwardStore.states.length) return job.allForwardIds;
+    job.allForwardIds = Array.from({ length: job.forwardStore.states.length }, (_, i) => i);
+    job.allForwardIdsVersion = job.forwardStore.states.length;
+    return job.allForwardIds;
+  }
+
+  function getPatternIndex(job, mask, positions, ids, cache) {
+    if (cache.has(mask)) return cache.get(mask);
+    const index = buildForwardIndex(job.forwardStore, ids, positions);
+    cache.set(mask, index);
     return index;
   }
 
-  function emitPatternMatches(job, secondPath, secondPerm) {
-    let emitted = false;
-    const pulled = pullPatternBack(job.patternArr, secondPerm);
+  function makeSecondNode(job, parent, move, perm, cost) {
+    const pulled = pullPatternBack(job.patternArr, perm);
     const mask = patternMaskKey(pulled);
     const positions = positionsFromMask(mask);
-    const valueKey = patternValueKeyFromPattern(pulled, positions);
-    const candidates = getPatternIndex(job, mask, positions).get(valueKey) || [];
+    return {
+      parent,
+      move,
+      perm,
+      cost,
+      mask,
+      positions,
+      valueKey: patternValueKeyFromPattern(pulled, positions),
+    };
+  }
+
+  function pathFromSecondNode(job, id) {
+    const out = [];
+    while (id >= 0) {
+      const node = job.secondNodes[id];
+      if (node.move) out.push(node.move);
+      id = node.parent;
+    }
+    out.reverse();
+    return out;
+  }
+
+  function lastTwoSecondMoves(job, id) {
+    if (id < 0) return [];
+    const last = job.secondNodes[id].move;
+    if (!last) return [];
+    const parentId = job.secondNodes[id].parent;
+    if (parentId < 0) return [last];
+    const prev = job.secondNodes[parentId].move;
+    return prev ? [prev, last] : [last];
+  }
+
+  function emitPatternMatches(job, node, secondId, ids, cache) {
+    let emitted = false;
+    const index = getPatternIndex(job, node.mask, node.positions, ids, cache);
+    const candidates = index.get(node.valueKey) || [];
+    if (!candidates.length) return false;
+    const secondPath = pathFromSecondNode(job, secondId);
 
     for (const firstId of candidates) {
       if (job.stopByLimit) break;
       const firstPath = pathFromNode(job.forwardStore, firstId);
-      const totalPath = cleanMoves(firstPath.concat(secondPath));
-      if (symbolMoveCount(totalPath) > job.maxSymbolDepth) continue;
-
-      const solution = cleanMoves(inverseAlgList(totalPath));
+      const solution = cleanMoves(inverseAlgList(firstPath.concat(secondPath)));
       const key = algToString(solution);
       if (job.solutionSet.has(key)) continue;
       job.solutionSet.add(key);
@@ -610,11 +651,24 @@ function workerMain() {
     return emitted;
   }
 
+  function emitPatternMatchesAllForward(job, node, secondId) {
+    return emitPatternMatches(job, node, secondId, allForwardIds(job), job.indexCache);
+  }
+
+  function emitPatternMatchesNewForwardOnly(job, node, secondId) {
+    if (!job.newForwardIds || !job.newForwardIds.length) return false;
+    return emitPatternMatches(job, node, secondId, job.newForwardIds, job.layerIndexCache);
+  }
+
   function expandPatternForwardLayer(job) {
     const nextFront = [];
     for (const id of job.forwardFront) {
       if (job.stopByLimit) break;
       const state = job.forwardStore.states[id];
+      if (job.matcher.matches(state)) {
+        emitSolution(job, inverseAlgList(pathFromNode(job.forwardStore, id)));
+        continue;
+      }
       const tail = lastTwoMoves(job.forwardStore, id);
       const cost = job.forwardStore.cost[id];
 
@@ -630,30 +684,35 @@ function workerMain() {
       }
     }
     job.forwardFront = nextFront;
+    job.newForwardIds = nextFront;
     job.forwardDepth += 1;
     job.indexCache.clear();
+    job.layerIndexCache = new Map();
+    job.allForwardIdsVersion = -1;
   }
 
   function expandPatternSecondLayer(job) {
     const nextFront = [];
-    for (const node of job.secondFront) {
+    for (const nodeId of job.secondFront) {
       if (job.stopByLimit) break;
+      const node = job.secondNodes[nodeId];
+      const tail = lastTwoSecondMoves(job, nodeId);
       for (const move of job.moves) {
         if (job.stopByLimit) break;
-        if (!canAddMove(node.path, move)) continue;
-        const nextCost = node.cost + symbolDelta(node.path, move);
+        if (!canAddMove(tail, move)) continue;
+        const nextCost = node.cost + symbolDelta(tail, move);
         if (nextCost > job.secondDepth + 1) continue;
 
-        const nextPath = node.path.concat(move);
         const nextPerm = composePerm(node.perm, job.movePerms.get(move));
         const key = permKey(nextPerm);
         if (job.secondSeen.has(key)) continue;
         job.secondSeen.add(key);
 
-        const nextNode = { path: nextPath, perm: nextPerm, cost: nextCost };
+        const nextNode = makeSecondNode(job, nodeId, move, nextPerm, nextCost);
+        const nextId = job.secondNodes.length;
         job.secondNodes.push(nextNode);
-        const reachedGoal = emitPatternMatches(job, nextPath, nextPerm);
-        if (!reachedGoal) nextFront.push(nextNode);
+        const reachedGoal = emitPatternMatchesAllForward(job, nextNode, nextId);
+        if (!reachedGoal) nextFront.push(nextId);
       }
     }
     job.secondFront = nextFront;
@@ -678,10 +737,11 @@ function workerMain() {
 
   function matchSecondNodesForCurrentForward(job) {
     if (job.lastMatchedForwardDepth === job.forwardDepth) return;
-    for (const node of job.secondNodes) {
+    for (let id = 0; id < job.secondNodes.length; id += 1) {
       if (job.stopByLimit) break;
+      const node = job.secondNodes[id];
       if (node.cost > job.secondDepth) continue;
-      emitPatternMatches(job, node.path, node.perm);
+      emitPatternMatchesNewForwardOnly(job, node, id);
     }
     job.lastMatchedForwardDepth = job.forwardDepth;
   }
@@ -707,7 +767,7 @@ function workerMain() {
     }
   }
 
-  function startPatternJob(data) { const pattern = data.targetPattern; validatePattern(pattern); const moves = makeSearchMoves(data.searchMovesText); const maxSymbolDepth = Number(data.maxSymbolDepth) || 1; const patternArr = patternToArray(pattern); const matcher = makeMatcher(patternArr); const requiredParts = parseRequiredParts(data.requiredPartsText || ""); const baseJob = { kind: "pattern", allowUnsafe: Boolean(data.allowUnsafe), requiredParts, maxResults: Math.max(1, Number(data.limit) || 1), foundCount: 0, foundKeys: new Set(), stopByLimit: false, moves, maxSymbolDepth, movePerms: buildMovePerms(moves), matcher, patternArr }; if (matcher.matches(SOLVED)) emitSolution(baseJob, []); if (baseJob.stopByLimit) { self.postMessage({ type: "done", completed: false }); return; } const identityPerm = Array.from({ length: 54 }, (_, i) => i); const identitySecondNode = { path: [], perm: identityPerm, cost: 0 }; const job = Object.assign(baseJob, { forwardStore: makeStore(SOLVED), forwardFront: [0], forwardDepth: 0, secondFront: [identitySecondNode], secondNodes: [identitySecondNode], secondSeen: new Set([permKey(identityPerm)]), secondDepth: 0, searchDepth: 0, lastMatchedForwardDepth: -1, phase: "balanced-bidirectional", solutionSet: new Set(), indexCache: new Map() }); CURRENT_JOB = job; processBidirectionalPatternJob(job); }
+  function startPatternJob(data) { const pattern = data.targetPattern; validatePattern(pattern); const moves = makeSearchMoves(data.searchMovesText); const maxSymbolDepth = Number(data.maxSymbolDepth) || 1; const patternArr = patternToArray(pattern); const matcher = makeMatcher(patternArr); const requiredParts = parseRequiredParts(data.requiredPartsText || ""); const baseJob = { kind: "pattern", allowUnsafe: Boolean(data.allowUnsafe), requiredParts, maxResults: Math.max(1, Number(data.limit) || 1), foundCount: 0, foundKeys: new Set(), stopByLimit: false, moves, maxSymbolDepth, movePerms: buildMovePerms(moves), matcher, patternArr }; if (matcher.matches(SOLVED)) emitSolution(baseJob, []); if (baseJob.stopByLimit) { self.postMessage({ type: "done", completed: false }); return; } const identityPerm = Array.from({ length: 54 }, (_, i) => i); const job = Object.assign(baseJob, { forwardStore: makeStore(SOLVED), forwardFront: [0], newForwardIds: [0], forwardDepth: 0, secondFront: [], secondNodes: [], secondSeen: new Set([permKey(identityPerm)]), secondDepth: 0, searchDepth: 0, lastMatchedForwardDepth: -1, phase: "balanced-bidirectional", solutionSet: new Set(), indexCache: new Map(), layerIndexCache: new Map(), allForwardIds: [0], allForwardIdsVersion: 1 }); const identitySecondNode = makeSecondNode(job, -1, "", identityPerm, 0); job.secondNodes = [identitySecondNode]; job.secondFront = [0]; CURRENT_JOB = job; processBidirectionalPatternJob(job); }
   self.onmessage = function (event) { const data = event.data || {}; if (data.command === "continue") { if (CURRENT_JOB) { CURRENT_JOB.allowUnsafe = true; if (CURRENT_JOB.kind === "alg") processAlgJob(CURRENT_JOB); else if (CURRENT_JOB.directFront) processDirectPatternJob(CURRENT_JOB); else processBidirectionalPatternJob(CURRENT_JOB); } return; } try { if (data.mode === "alg") startAlgJob(data); else startPatternJob(data); } catch (e) { self.postMessage({ type: "error", message: e instanceof Error ? e.message : String(e) }); } };
 }
 
