@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const FACE_ORDER = ["U", "R", "F", "D", "L", "B"];
 const DONT_CARE = "X";
@@ -151,47 +151,6 @@ function algToString(moves) {
   return moves.join(" ");
 }
 
-function makeSearchMoves(text) {
-  const faces = [];
-  for (const move of parseAlg(text)) {
-    const face = move[0];
-    if (!BASE[face]) throw new Error(`対応していない記号です: ${face}`);
-    if (!faces.includes(face)) faces.push(face);
-  }
-  return faces.flatMap((face) => [face, `${face}'`]);
-}
-
-function parseRequiredParts(text) {
-  return String(text || "")
-    .replaceAll("、", NL)
-    .replaceAll(",", NL)
-    .split(NL)
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .map((part) => cleanMoves(parseAlg(part)));
-}
-
-function listContainsSubsequence(list, part) {
-  if (!part.length) return true;
-  if (part.length > list.length) return false;
-  for (let i = 0; i <= list.length - part.length; i += 1) {
-    let ok = true;
-    for (let j = 0; j < part.length; j += 1) {
-      if (list[i + j] !== part[j]) {
-        ok = false;
-        break;
-      }
-    }
-    if (ok) return true;
-  }
-  return false;
-}
-
-function solutionMatchesRequiredParts(solution, requiredParts) {
-  const cleaned = cleanMoves(solution);
-  return requiredParts.every((part) => listContainsSubsequence(cleaned, part));
-}
-
 function parallelGroup(move) {
   return PARALLEL_GROUP[move[0]] || null;
 }
@@ -291,22 +250,6 @@ function effectiveMoveCount(moves) {
   return count;
 }
 
-function hasRedundantWideOuterSandwich(moves) {
-  const cleaned = cleanMoves(moves);
-  const wideToOuter = { r: "R", l: "L", u: "U", d: "D", f: "F", b: "B" };
-  const powerOf = (move) => move.endsWith("2") ? 2 : move.endsWith("'") ? 3 : 1;
-  const inversePower = (a, b) => ((powerOf(a) + powerOf(b)) % 4) === 0;
-  for (let i = 0; i + 2 < cleaned.length; i += 1) {
-    const a = cleaned[i];
-    const b = cleaned[i + 1];
-    const c = cleaned[i + 2];
-    const outer = wideToOuter[a[0]];
-    if (!outer) continue;
-    if (b[0] === outer && c[0] === a[0] && inversePower(a, c)) return true;
-  }
-  return false;
-}
-
 function readabilityPenalty(moves) {
   const cleaned = cleanMoves(moves);
   let penalty = 0;
@@ -357,22 +300,6 @@ function makePattern(faces) {
   return pattern;
 }
 
-function topLayerPattern(u, rTop, fTop, lTop, bTop) {
-  return makePattern({
-    U: u,
-    R: [...rTop, "R", "R", "R", "R", "R", "R"],
-    F: [...fTop, "F", "F", "F", "F", "F", "F"],
-    L: [...lTop, "L", "L", "L", "L", "L", "L"],
-    B: [...bTop, "B", "B", "B", "B", "B", "B"],
-  });
-}
-
-function patternToArray(pattern) {
-  const arr = [];
-  for (const face of FACE_ORDER) arr.push(...pattern[face]);
-  return arr;
-}
-
 function stateStringToPattern(state) {
   const pattern = {};
   let pos = 0;
@@ -402,20 +329,6 @@ function applyAlgToString(state, alg) {
 function patternFromAlg(alg) {
   const inverse = algToString(inverseAlgList(parseAlg(alg)));
   return stateStringToPattern(applyAlgToString(SOLVED_STRING, inverse));
-}
-
-function countPatternColors(pattern) {
-  const counts = { U: 0, R: 0, F: 0, D: 0, L: 0, B: 0, X: 0 };
-  for (const face of FACE_ORDER) for (const color of pattern[face]) counts[color] += 1;
-  return counts;
-}
-
-function validatePattern(pattern) {
-  const counts = countPatternColors(pattern);
-  for (const face of FACE_ORDER) {
-    if (pattern[face][4] !== face) throw new Error(`${face}面の中央ステッカーは${face}色で固定してください。`);
-    if (counts[face] > 9) throw new Error(`${face}色が${counts[face]}枚あります。各色は9枚以内にしてください。`);
-  }
 }
 
 function insertSolutionSorted(list, solution, maxLen = Infinity) {
@@ -494,85 +407,260 @@ const PLL_ALGS = [
 ];
 const PLL_CASES = PLL_ALGS.map(([label, alg], index) => ({ id: `pll-${index + 1}-${label.toLowerCase()}`, label, alg, pattern: patternFromAlg(alg) }));
 
-function makeCollPattern(orientation, permutation) {
+const U_CORNER_CUBIES = [
+  ["U", "R", "F"],
+  ["U", "F", "L"],
+  ["U", "L", "B"],
+  ["U", "B", "R"],
+];
+const U_CORNER_SLOTS = [
+  [["U", 8], ["R", 0], ["F", 2]],
+  [["U", 6], ["F", 0], ["L", 2]],
+  [["U", 0], ["L", 0], ["B", 2]],
+  [["U", 2], ["B", 0], ["R", 2]],
+];
+const U_EDGE_CUBIES = [
+  ["U", "R"],
+  ["U", "F"],
+  ["U", "L"],
+  ["U", "B"],
+];
+const U_EDGE_SLOTS = [
+  [["U", 5], ["R", 1]],
+  [["U", 7], ["F", 1]],
+  [["U", 3], ["L", 1]],
+  [["U", 1], ["B", 1]],
+];
+const LAST_SLOT_CORNER_CUBIE = ["D", "F", "R"];
+const LAST_SLOT_EDGE_CUBIE = ["F", "R"];
+const LAST_SLOT_CORNER_SLOTS = [
+  { id: "URF", stickers: U_CORNER_SLOTS[0], twist: 1 },
+  { id: "UFL", stickers: U_CORNER_SLOTS[1], twist: 1 },
+  { id: "ULB", stickers: U_CORNER_SLOTS[2], twist: 1 },
+  { id: "UBR", stickers: U_CORNER_SLOTS[3], twist: 1 },
+  { id: "DFR", stickers: [["D", 2], ["F", 8], ["R", 6]], twist: 0 },
+];
+const LAST_SLOT_EDGE_SLOTS = [
+  { id: "UR", stickers: U_EDGE_SLOTS[0], flip: 1 },
+  { id: "UF", stickers: U_EDGE_SLOTS[1], flip: 1 },
+  { id: "UL", stickers: U_EDGE_SLOTS[2], flip: 1 },
+  { id: "UB", stickers: U_EDGE_SLOTS[3], flip: 1 },
+  { id: "FR", stickers: [["F", 5], ["R", 3]], flip: 0 },
+];
+const COLL_ORIENTATION_FAMILIES = [
+  ["H", [1, 2, 1, 2]],
+  ["Pi", [1, 1, 2, 2]],
+  ["U", [1, 2, 2, 1]],
+  ["T", [1, 2, 0, 0]],
+  ["L", [1, 0, 2, 0]],
+  ["S", [0, 1, 2, 0]],
+  ["AS", [0, 2, 1, 0]],
+];
+const ZBLS_EDGE_ORIENTATION_FAMILIES = [
+  ["EO", [0, 0, 0, 0]],
+  ["Line", [0, 1, 0, 1]],
+  ["Arrow", [1, 0, 1, 0]],
+  ["L", [0, 0, 1, 1]],
+  ["Dot", [1, 1, 1, 1]],
+];
+
+function permutations(items) {
+  if (items.length <= 1) return [items];
+  const result = [];
+  for (let i = 0; i < items.length; i += 1) {
+    const rest = [...items.slice(0, i), ...items.slice(i + 1)];
+    for (const tail of permutations(rest)) result.push([items[i], ...tail]);
+  }
+  return result;
+}
+
+const LAST_LAYER_PERMUTATIONS = permutations([0, 1, 2, 3]);
+
+function rotateArray(items, amount) {
+  return items.map((_, index) => items[(index + amount) % items.length]);
+}
+
+function permutationParity(permutation) {
+  let inversions = 0;
+  for (let i = 0; i < permutation.length; i += 1) {
+    for (let j = i + 1; j < permutation.length; j += 1) {
+      if (permutation[i] > permutation[j]) inversions += 1;
+    }
+  }
+  return inversions % 2;
+}
+
+function orientedColors(colors, twist) {
+  if (twist === 1) return [colors[1], colors[2], colors[0]];
+  if (twist === 2) return [colors[2], colors[0], colors[1]];
+  return colors;
+}
+
+function flippedColors(colors, flip) {
+  return flip ? [colors[1], colors[0]] : colors;
+}
+
+function fillStickerSet(pattern, slots, colors) {
+  for (let i = 0; i < slots.length; i += 1) {
+    const [face, index] = slots[i];
+    pattern[face][index] = colors[i];
+  }
+}
+
+function clonePatternWithTransforms(pattern, faceMap, colorMap) {
+  const next = solvedPattern();
+  for (const face of FACE_ORDER) next[face] = Array(9).fill(DONT_CARE);
+  for (const face of FACE_ORDER) {
+    const targetFace = faceMap[face] || face;
+    for (let i = 0; i < 9; i += 1) next[targetFace][i] = colorMap[pattern[face][i]] || pattern[face][i];
+  }
+  for (const face of FACE_ORDER) next[face][4] = face;
+  return next;
+}
+
+function mirrorPattern(pattern) {
+  return clonePatternWithTransforms(
+    pattern,
+    { U: "U", R: "L", F: "F", D: "D", L: "R", B: "B" },
+    { U: "U", R: "L", F: "F", D: "D", L: "R", B: "B", X: "X" },
+  );
+}
+
+function inverseVariantPattern(pattern) {
+  return clonePatternWithTransforms(
+    pattern,
+    { U: "U", R: "F", F: "R", D: "D", L: "B", B: "L" },
+    { U: "U", R: "F", F: "R", D: "D", L: "B", B: "L", X: "X" },
+  );
+}
+
+function makeLastLayerPattern({ cornerOrientation, cornerPermutation, edgePermutation = null, includeEdgePermutation = false }) {
   const pattern = solvedPattern();
-  pattern.U = ["X", "X", "X", "X", "U", "X", "X", "X", "X"];
+  pattern.U = ["X", "U", "X", "U", "U", "U", "X", "U", "X"];
   pattern.R = ["X", "X", "X", "R", "R", "R", "R", "R", "R"];
   pattern.F = ["X", "X", "X", "F", "F", "F", "F", "F", "F"];
   pattern.L = ["X", "X", "X", "L", "L", "L", "L", "L", "L"];
   pattern.B = ["X", "X", "X", "B", "B", "B", "B", "B", "B"];
 
-  const cubies = [
-    ["U", "R", "F"],
-    ["U", "F", "L"],
-    ["U", "L", "B"],
-    ["U", "B", "R"],
-  ];
-  const slots = [
-    [["U", 8], ["R", 0], ["F", 2]],
-    [["U", 6], ["F", 0], ["L", 2]],
-    [["U", 0], ["L", 0], ["B", 2]],
-    [["U", 2], ["B", 0], ["R", 2]],
-  ];
-  const orientedColors = (colors, twist) => {
-    if (twist === 1) return [colors[1], colors[2], colors[0]];
-    if (twist === 2) return [colors[2], colors[0], colors[1]];
-    return colors;
-  };
-
   for (let slotIndex = 0; slotIndex < 4; slotIndex += 1) {
-    const colors = orientedColors(cubies[permutation[slotIndex]], orientation[slotIndex]);
-    for (let stickerIndex = 0; stickerIndex < 3; stickerIndex += 1) {
-      const [face, index] = slots[slotIndex][stickerIndex];
-      pattern[face][index] = colors[stickerIndex];
+    const colors = orientedColors(U_CORNER_CUBIES[cornerPermutation[slotIndex]], cornerOrientation[slotIndex]);
+    fillStickerSet(pattern, U_CORNER_SLOTS[slotIndex], colors);
+  }
+
+  if (includeEdgePermutation) {
+    for (let slotIndex = 0; slotIndex < 4; slotIndex += 1) {
+      fillStickerSet(pattern, U_EDGE_SLOTS[slotIndex], U_EDGE_CUBIES[edgePermutation[slotIndex]]);
     }
   }
   return pattern;
 }
 
-const COLL_ORIENTATION_FAMILIES = [
-  ["H", [1, 2, 1, 2], 4],
-  ["Pi", [1, 1, 2, 2], 6],
-  ["U", [1, 2, 2, 1], 6],
-  ["T", [1, 2, 0, 0], 6],
-  ["L", [1, 0, 2, 0], 6],
-  ["S", [0, 1, 2, 0], 6],
-  ["AS", [0, 2, 1, 0], 6],
-];
-const COLL_PERMUTATIONS = [
-  [0, 1, 2, 3],
-  [0, 1, 3, 2],
-  [0, 2, 1, 3],
-  [0, 2, 3, 1],
-  [0, 3, 1, 2],
-  [0, 3, 2, 1],
-];
-const COLL_GROUPS = COLL_ORIENTATION_FAMILIES.map(([family, orientation, count]) => ({
-  id: family,
-  label: family,
-  preview: makeCollPattern(orientation, COLL_PERMUTATIONS[0]),
-  cases: COLL_PERMUTATIONS.slice(0, count).map((permutation, index) => ({
-    id: `coll-${family.toLowerCase()}-${index + 1}`,
-    family,
-    label: `${family}${index + 1}`,
-    pattern: makeCollPattern(orientation, permutation),
-  })),
-}));
+function makeCollGroup(family, orientation) {
+  const cases = LAST_LAYER_PERMUTATIONS
+    .filter((cornerPermutation) => cornerPermutation[0] === 0)
+    .map((cornerPermutation, index) => ({
+      id: `coll-${family.toLowerCase()}-${index + 1}`,
+      family,
+      label: `${family}${index + 1}`,
+      pattern: makeLastLayerPattern({ cornerOrientation: orientation, cornerPermutation }),
+    }));
+  return {
+    id: family,
+    label: `${family} (${cases.length})`,
+    preview: cases[0].pattern,
+    cases,
+  };
+}
+
+function makeZbllGroup(family, orientation) {
+  const targetCount = family === "H" ? 40 : 72;
+  const cases = [];
+  for (const cornerPermutation of LAST_LAYER_PERMUTATIONS.filter((permutation) => permutation[0] === 0)) {
+    for (const edgePermutation of LAST_LAYER_PERMUTATIONS) {
+      if (permutationParity(cornerPermutation) !== permutationParity(edgePermutation)) continue;
+      cases.push({
+        id: `zbll-${family.toLowerCase()}-${cases.length + 1}`,
+        family,
+        label: `${family}${cases.length + 1}`,
+        pattern: makeLastLayerPattern({ cornerOrientation: orientation, cornerPermutation, edgePermutation, includeEdgePermutation: true }),
+      });
+      if (cases.length >= targetCount) return cases;
+    }
+  }
+  for (let rotation = 1; rotation < 4 && cases.length < targetCount; rotation += 1) {
+    for (const cornerPermutation of LAST_LAYER_PERMUTATIONS.filter((permutation) => permutation[0] === 0)) {
+      for (const edgePermutation of LAST_LAYER_PERMUTATIONS) {
+        if (permutationParity(cornerPermutation) !== permutationParity(edgePermutation)) continue;
+        cases.push({
+          id: `zbll-${family.toLowerCase()}-${cases.length + 1}`,
+          family,
+          label: `${family}${cases.length + 1}`,
+          pattern: makeLastLayerPattern({ cornerOrientation: rotateArray(orientation, rotation), cornerPermutation, edgePermutation, includeEdgePermutation: true }),
+        });
+        if (cases.length >= targetCount) return cases;
+      }
+    }
+  }
+  return cases;
+}
+
+const COLL_GROUPS = COLL_ORIENTATION_FAMILIES.map(([family, orientation]) => makeCollGroup(family, orientation));
 const COLL_CASES = COLL_GROUPS.flatMap((group) => group.cases);
+const ZBLL_CASES = [
+  ...PLL_CASES.map((preset) => ({ ...preset, id: `zbll-${preset.id}`, family: "PLL", label: preset.label })),
+  ...COLL_ORIENTATION_FAMILIES.flatMap(([family, orientation]) => makeZbllGroup(family, orientation)),
+];
+
+function makeZblsPattern(cornerSlot, edgeSlot, edgeOrientation) {
+  const pattern = solvedPattern();
+  pattern.U = ["X", edgeOrientation[3] ? "B" : "U", "X", edgeOrientation[2] ? "L" : "U", "U", edgeOrientation[0] ? "R" : "U", "X", edgeOrientation[1] ? "F" : "U", "X"];
+  pattern.R = ["X", edgeOrientation[0] ? "U" : "X", "X", "X", "R", "R", "X", "R", "R"];
+  pattern.F = ["X", edgeOrientation[1] ? "U" : "X", "X", "F", "F", "X", "F", "F", "X"];
+  pattern.L = ["X", edgeOrientation[2] ? "U" : "X", "X", "L", "L", "L", "L", "L", "L"];
+  pattern.B = ["X", edgeOrientation[3] ? "U" : "X", "X", "B", "B", "B", "B", "B", "B"];
+  pattern.D = ["D", "D", "X", "D", "D", "D", "D", "D", "D"];
+  fillStickerSet(pattern, cornerSlot.stickers, orientedColors(LAST_SLOT_CORNER_CUBIE, cornerSlot.twist));
+  fillStickerSet(pattern, edgeSlot.stickers, flippedColors(LAST_SLOT_EDGE_CUBIE, edgeSlot.flip));
+  return pattern;
+}
+
+const ZBLS_REPRESENTATIVE_CASES = ZBLS_EDGE_ORIENTATION_FAMILIES.flatMap(([family, edgeOrientation]) => (
+  LAST_SLOT_CORNER_SLOTS.flatMap((cornerSlot) => (
+    LAST_SLOT_EDGE_SLOTS.map((edgeSlot) => ({
+      id: `zbls-${family.toLowerCase()}-${cornerSlot.id.toLowerCase()}-${edgeSlot.id.toLowerCase()}`,
+      family,
+      label: `${family} ${cornerSlot.id}/${edgeSlot.id}`,
+      pattern: makeZblsPattern(cornerSlot, edgeSlot, edgeOrientation),
+    }))
+  ))
+));
+const ZBLS_CASES = [
+  ...ZBLS_REPRESENTATIVE_CASES.map((preset) => ({ ...preset, label: `${preset.label}` })),
+  ...ZBLS_REPRESENTATIVE_CASES.map((preset) => ({ ...preset, id: `${preset.id}-mirror`, label: `${preset.label} M`, pattern: mirrorPattern(preset.pattern) })),
+  ...ZBLS_REPRESENTATIVE_CASES.slice(0, 52).map((preset) => ({ ...preset, id: `${preset.id}-inverse`, label: `${preset.label} I`, pattern: inverseVariantPattern(preset.pattern) })),
+];
 
 const CASE_PRESETS = {
   OLL: OLL_CASES,
   PLL: PLL_CASES,
   COLL: COLL_CASES,
-  ZBLL: [{ id: "zbll-t", label: "ZBLL", pattern: topLayerPattern(["U", "U", "U", "U", "U", "U", "U", "U", "U"], ["R", "B", "R"], ["F", "R", "F"], ["L", "F", "L"], ["B", "L", "B"]) }],
-  ZBLS: [{ id: "zbls-slot", label: "ZBLS", pattern: makePattern({ U: ["X", "U", "X", "U", "U", "X", "X", "X", "X"], R: ["X", "X", "X", "R", "R", "R", "R", "R", "R"], F: ["X", "X", "X", "F", "F", "F", "F", "F", "F"], L: ["X", "X", "X", "L", "L", "L", "L", "L", "L"], B: ["X", "X", "X", "B", "B", "B", "B", "B", "B"], D: ["D", "D", "D", "D", "D", "D", "D", "D", "D"] }) }],
+  ZBLL: ZBLL_CASES,
+  ZBLS: ZBLS_CASES,
 };
 const CASE_PRESET_CATEGORIES = Object.keys(CASE_PRESETS);
 const STORAGE_KEYS = { favorites: "cube-search-favorites-v1", history: "cube-search-history-v1" };
 function encodeShareState(obj) { const bytes = new TextEncoder().encode(JSON.stringify(obj)); let binary = ""; for (const b of bytes) binary += String.fromCharCode(b); return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", ""); }
 function decodeShareState(text) { const padded = text.replaceAll("-", "+").replaceAll("_", "/") + "===".slice((text.length + 3) % 4); const binary = atob(padded); const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0)); return JSON.parse(new TextDecoder().decode(bytes)); }
 function readStorageList(key) { try { const value = JSON.parse(localStorage.getItem(key) || "[]"); return Array.isArray(value) ? value : []; } catch { return []; } }
-function writeStorageList(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch (_) {} }
+function writeStorageList(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch { return false; } }
+function readInitialShareState() {
+  if (typeof window === "undefined" || !window.location.hash.startsWith("#s=")) return {};
+  try {
+    return decodeShareState(window.location.hash.slice(3));
+  } catch {
+    return {};
+  }
+}
 
 function workerMain() {
   const FACE_ORDER = ["U", "R", "F", "D", "L", "B"];
@@ -643,7 +731,6 @@ function workerMain() {
   function processAlgJob(job) { try { while ((job.frontA.length || job.frontB.length) && !job.stopByLimit) { if (job.frontA.length && (job.frontA.length <= job.frontB.length || !job.frontB.length)) expandAlgLayer(job, "A"); else expandAlgLayer(job, "B"); if (shouldPause(job)) return pauseJob(job); } CURRENT_JOB = null; self.postMessage({ type: "done", completed: !job.stopByLimit }); } catch (e) { CURRENT_JOB = null; self.postMessage({ type: "error", message: e instanceof Error ? e.message : String(e) }); } }
   function startAlgJob(data) { const moves = makeSearchMoves(data.searchMovesText); const maxSymbolDepth = Number(data.maxSymbolDepth) || 1; const start = applyAlg(SOLVED, algToString(inverseAlgList(parseAlg(data.targetAlg)))); const job = { kind: "alg", allowUnsafe: Boolean(data.allowUnsafe), requiredParts: parseRequiredParts(data.requiredPartsText || ""), maxResults: Math.max(1, Number(data.limit) || 1), foundCount: 0, foundKeys: new Set(), stopByLimit: false, moves, maxSymbolDepth, sideSymbolLimitA: Math.ceil(maxSymbolDepth / 2), sideSymbolLimitB: Math.floor(maxSymbolDepth / 2), movePerms: buildMovePerms(moves), storeA: makeStore(start), storeB: makeStore(SOLVED), frontA: [0], frontB: [0] }; CURRENT_JOB = job; if (start === SOLVED) emitSolution(job, []); processAlgJob(job); }
 
-  function patternValueKeyFromState(state, positions) { let key = ""; for (let i = 0; i < positions.length; i += 1) key += state[positions[i]]; return key; }
   function permKey(perm) { let key = ""; for (let i = 0; i < 54; i += 1) key += String.fromCharCode(perm[i] + 35); return key; }
   function allForwardIds(job) { if (job.allForwardIdsVersion === job.forwardStore.states.length) return job.allForwardIds; job.allForwardIds = Array.from({ length: job.forwardStore.states.length }, (_, i) => i); job.allForwardIdsVersion = job.forwardStore.states.length; return job.allForwardIds; }
   function stateMatchesNode(state, node) { for (let i = 0; i < node.positions.length; i += 1) if (state[node.positions[i]] !== node.valueKey[i]) return false; return true; }
@@ -696,30 +783,33 @@ function EmptyCard({ text, className = "" }) { return <ResultSummaryCard text={t
 function NumberInput({ label, value, onChange, min = 1, max = 99 }) { function setClamped(nextValue) { const raw = String(nextValue); if (raw === "") { onChange(""); return; } const numeric = Number(raw); if (!Number.isFinite(numeric)) return; onChange(Math.min(max, Math.max(min, Math.trunc(numeric)))); } return <label className="grid gap-1"><span className="text-sm font-normal">{label}</span><input type="number" inputMode="numeric" pattern="[0-9]*" min={min} max={max} step="1" value={value} onChange={(e) => setClamped(e.target.value)} onBlur={() => { if (value === "") onChange(min); }} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 text-center text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" /></label>; }
 
 export default function App() {
+  const initialShareRef = useRef();
+  if (initialShareRef.current === undefined) initialShareRef.current = readInitialShareState();
+  const initialShare = initialShareRef.current;
   const workerUrlRef = useRef(new WeakMap());
-  const [isDark, setIsDark] = useState(false);
-  const [showMoveCounts, setShowMoveCounts] = useState(false);
-  const [showNetInput, setShowNetInput] = useState(false);
+  const [isDark, setIsDark] = useState(() => typeof initialShare.isDark === "boolean" ? initialShare.isDark : false);
+  const [showMoveCounts, setShowMoveCounts] = useState(() => typeof initialShare.showMoveCounts === "boolean" ? initialShare.showMoveCounts : false);
+  const [showNetInput, setShowNetInput] = useState(() => typeof initialShare.showNetInput === "boolean" ? initialShare.showNetInput : false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [languageOpen, setLanguageOpen] = useState(false);
-  const [language, setLanguage] = useState("ja");
+  const [language, setLanguage] = useState(() => typeof initialShare.language === "string" && TEXT[initialShare.language] ? initialShare.language : "ja");
   const t = TEXT[language] || TEXT.ja;
   const [savedOpen, setSavedOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [favorites, setFavorites] = useState([]);
-  const [history, setHistory] = useState([]);
+  const [favorites, setFavorites] = useState(() => readStorageList(STORAGE_KEYS.favorites));
+  const [history, setHistory] = useState(() => readStorageList(STORAGE_KEYS.history));
   const [shareMessage, setShareMessage] = useState("");
   const shareMessageTimerRef = useRef(null);
-  const [targetAlg, setTargetAlg] = useState("");
-  const [targetPattern, setTargetPattern] = useState(solvedPattern());
-  const [selectedColor, setSelectedColor] = useState("F");
-  const [casePresetCategory, setCasePresetCategory] = useState("OLL");
-  const [casePresetOpen, setCasePresetOpen] = useState(null);
-  const [collGroupOpen, setCollGroupOpen] = useState(null);
-  const [searchMovesText, setSearchMovesText] = useState("");
-  const [requiredPartsText, setRequiredPartsText] = useState("");
-  const [maxSymbolDepth, setMaxSymbolDepth] = useState(15);
-  const [limit, setLimit] = useState(5);
+  const [targetAlg, setTargetAlg] = useState(() => typeof initialShare.targetAlg === "string" ? initialShare.targetAlg : "");
+  const [targetPattern, setTargetPattern] = useState(() => initialShare.targetPattern || solvedPattern());
+  const [selectedColor, setSelectedColor] = useState(() => typeof initialShare.selectedColor === "string" ? initialShare.selectedColor : "F");
+  const [casePresetCategory, setCasePresetCategory] = useState(() => typeof initialShare.casePresetCategory === "string" && CASE_PRESETS[initialShare.casePresetCategory] ? initialShare.casePresetCategory : "OLL");
+  const [casePresetOpen, setCasePresetOpen] = useState(() => typeof initialShare.casePresetCategory === "string" && CASE_PRESETS[initialShare.casePresetCategory] ? initialShare.casePresetCategory : null);
+  const [collGroupOpen, setCollGroupOpen] = useState(() => typeof initialShare.collGroupOpen === "string" ? initialShare.collGroupOpen : null);
+  const [searchMovesText, setSearchMovesText] = useState(() => typeof initialShare.searchMovesText === "string" ? initialShare.searchMovesText : "");
+  const [requiredPartsText, setRequiredPartsText] = useState(() => typeof initialShare.requiredPartsText === "string" ? initialShare.requiredPartsText : "");
+  const [maxSymbolDepth, setMaxSymbolDepth] = useState(() => Number.isFinite(initialShare.maxSymbolDepth) ? initialShare.maxSymbolDepth : 15);
+  const [limit, setLimit] = useState(() => Number.isFinite(initialShare.limit) ? initialShare.limit : 5);
   const [solutions, setSolutions] = useState([]);
   const [error, setError] = useState("");
   const [isSearching, setIsSearching] = useState(false);
@@ -732,14 +822,13 @@ export default function App() {
   function createSearchWorker() { const source = `(${workerMain.toString()})();`; const blob = new Blob([source], { type: "text/javascript" }); const url = URL.createObjectURL(blob); const worker = new Worker(url); workerUrlRef.current.set(worker, url); return worker; }
   function terminateSearchWorker(worker) { if (!worker) return; worker.terminate(); const url = workerUrlRef.current.get(worker); if (url) URL.revokeObjectURL(url); workerUrlRef.current.delete(worker); }
   useEffect(() => () => { if (workerRef.current) terminateSearchWorker(workerRef.current); if (shareMessageTimerRef.current) clearTimeout(shareMessageTimerRef.current); }, []);
-  useEffect(() => { setFavorites(readStorageList(STORAGE_KEYS.favorites)); setHistory(readStorageList(STORAGE_KEYS.history)); const raw = window.location.hash.startsWith("#s=") ? window.location.hash.slice(3) : ""; if (!raw) return; try { const data = decodeShareState(raw); if (typeof data.targetAlg === "string") setTargetAlg(data.targetAlg); if (data.targetPattern) setTargetPattern(data.targetPattern); if (typeof data.selectedColor === "string") setSelectedColor(data.selectedColor); if (typeof data.casePresetCategory === "string" && CASE_PRESETS[data.casePresetCategory]) { setCasePresetCategory(data.casePresetCategory); setCasePresetOpen(data.casePresetCategory); } if (typeof data.collGroupOpen === "string") setCollGroupOpen(data.collGroupOpen); if (typeof data.searchMovesText === "string") setSearchMovesText(data.searchMovesText); if (typeof data.requiredPartsText === "string") setRequiredPartsText(data.requiredPartsText); if (Number.isFinite(data.maxSymbolDepth)) setMaxSymbolDepth(data.maxSymbolDepth); if (Number.isFinite(data.limit)) setLimit(data.limit); if (typeof data.isDark === "boolean") setIsDark(data.isDark); if (typeof data.showMoveCounts === "boolean") setShowMoveCounts(data.showMoveCounts); if (typeof data.showNetInput === "boolean") setShowNetInput(data.showNetInput); if (typeof data.language === "string" && TEXT[data.language]) setLanguage(data.language); } catch (_) {} }, []);
   function currentShareState() { return { targetAlg, targetPattern, selectedColor, casePresetCategory, collGroupOpen, showNetInput, searchMovesText, requiredPartsText, maxSymbolDepth, limit, isDark, showMoveCounts, language }; }
   function showTemporaryMessage(message) { if (shareMessageTimerRef.current) clearTimeout(shareMessageTimerRef.current); setShareMessage(message); shareMessageTimerRef.current = setTimeout(() => { setShareMessage(""); shareMessageTimerRef.current = null; }, 1600); }
   async function shareUrl() { const hash = `#s=${encodeShareState(currentShareState())}`; const url = `${window.location.origin}${window.location.pathname}${hash}`; window.history.replaceState(null, "", hash); try { await navigator.clipboard.writeText(url); showTemporaryMessage(t.copied); } catch { showTemporaryMessage(url); } }
   function saveHistoryItem(mode) { const item = { id: Date.now(), mode, targetAlg, targetPattern, searchMovesText, requiredPartsText, maxSymbolDepth, limit }; const itemKey = JSON.stringify({ mode, targetAlg, targetPattern, searchMovesText, requiredPartsText, maxSymbolDepth, limit }); const next = [item, ...history.filter((x) => JSON.stringify({ mode: x.mode, targetAlg: x.targetAlg, targetPattern: x.targetPattern, searchMovesText: x.searchMovesText, requiredPartsText: x.requiredPartsText || "", maxSymbolDepth: x.maxSymbolDepth, limit: x.limit }) !== itemKey)].slice(0, 12); setHistory(next); writeStorageList(STORAGE_KEYS.history, next); }
   function applyHistoryItem(item) { if (item.targetAlg !== undefined) setTargetAlg(item.targetAlg); if (item.targetPattern) setTargetPattern(item.targetPattern); if (item.searchMovesText !== undefined) setSearchMovesText(item.searchMovesText); if (item.requiredPartsText !== undefined) setRequiredPartsText(item.requiredPartsText || ""); if (item.maxSymbolDepth !== undefined) setMaxSymbolDepth(item.maxSymbolDepth); if (item.limit !== undefined) setLimit(item.limit); setShowNetInput(item.mode === "pattern"); setMenuOpen(false); }
   function saveFavoriteSolution(solution) { const alg = formatWithSimulUD(solution); const item = { id: Date.now(), alg }; const next = [item, ...favorites.filter((x) => x.alg !== alg)].slice(0, 30); setFavorites(next); writeStorageList(STORAGE_KEYS.favorites, next); }
-  async function copyText(text) { try { await navigator.clipboard.writeText(text); showTemporaryMessage(t.copied); } catch (_) {} }
+  async function copyText(text) { try { await navigator.clipboard.writeText(text); showTemporaryMessage(t.copied); } catch { showTemporaryMessage(text); } }
   function applyCasePreset(preset) { setTargetPattern(clonePattern(preset.pattern)); setSelectedColor(DONT_CARE); }
   function stopSearch() { searchSessionRef.current += 1; if (workerRef.current) { terminateSearchWorker(workerRef.current); workerRef.current = null; } setIsSearching(false); setCanContinueUnsafe(false); setSearchExhausted(false); }
   function continuePausedSearch() { if (!workerRef.current) { runSearch(lastSearchModeRef.current, { allowUnsafe: true }); return; } setError(""); setCanContinueUnsafe(false); setIsSearching(true); workerRef.current.postMessage({ command: "continue" }); }
@@ -750,6 +839,7 @@ export default function App() {
       <button
         key={category}
         type="button"
+        data-testid={`preset-category-${category}`}
         onClick={() => {
           setCasePresetCategory(category);
           setCasePresetOpen((prev) => (prev === category ? null : category));
@@ -762,7 +852,7 @@ export default function App() {
     ))}
   </div>
   {casePresetOpen ? (
-    <div className="mt-3 max-h-72 overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-2">
+    <div data-testid="preset-panel" className="mt-3 max-h-72 overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-2">
       {casePresetOpen === "COLL" ? (
         <div className="grid gap-2">
           <div className="flex flex-wrap gap-1.5">
@@ -770,6 +860,7 @@ export default function App() {
               <button
                 key={group.id}
                 type="button"
+                data-testid={`coll-group-${group.id}`}
                 onClick={() => setCollGroupOpen((prev) => (prev === group.id ? null : group.id))}
                 title={group.label}
                 className={`flex h-[88px] w-[78px] flex-col items-center justify-center gap-1 rounded-lg border bg-white p-2 transition hover:bg-slate-50 active:scale-95 ${collGroupOpen === group.id ? "border-slate-900 ring-2 ring-slate-400" : "border-slate-300"}`}
