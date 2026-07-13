@@ -116,6 +116,7 @@ function normalizeAlgText(alg) {
   return String(alg)
     .replaceAll("’", "'")
     .replaceAll("＇", "'")
+    .replace(/2'/g, "2")
     .replace(/([URFDLB])w/g, (_, face) => face.toLowerCase())
     .replaceAll(",", " ");
 }
@@ -433,36 +434,47 @@ const U_EDGE_SLOTS = [
 ];
 const LAST_SLOT_CORNER_CUBIE = ["D", "F", "R"];
 const LAST_SLOT_EDGE_CUBIE = ["F", "R"];
-const LAST_SLOT_CORNER_SLOTS = [
-  { id: "URF", stickers: U_CORNER_SLOTS[0], twist: 1 },
-  { id: "UFL", stickers: U_CORNER_SLOTS[1], twist: 1 },
-  { id: "ULB", stickers: U_CORNER_SLOTS[2], twist: 1 },
-  { id: "UBR", stickers: U_CORNER_SLOTS[3], twist: 1 },
-  { id: "DFR", stickers: [["D", 2], ["F", 8], ["R", 6]], twist: 0 },
+const LAST_SLOT_CORNER_POSITIONS = [
+  { id: "URF", stickers: U_CORNER_SLOTS[0] },
+  { id: "UFL", stickers: U_CORNER_SLOTS[1] },
+  { id: "ULB", stickers: U_CORNER_SLOTS[2] },
+  { id: "UBR", stickers: U_CORNER_SLOTS[3] },
+  { id: "DFR", stickers: [["D", 2], ["F", 8], ["R", 6]] },
 ];
-const LAST_SLOT_EDGE_SLOTS = [
-  { id: "UR", stickers: U_EDGE_SLOTS[0], flip: 1 },
-  { id: "UF", stickers: U_EDGE_SLOTS[1], flip: 1 },
-  { id: "UL", stickers: U_EDGE_SLOTS[2], flip: 1 },
-  { id: "UB", stickers: U_EDGE_SLOTS[3], flip: 1 },
-  { id: "FR", stickers: [["F", 5], ["R", 3]], flip: 0 },
+const LAST_SLOT_EDGE_POSITIONS = [
+  { id: "UR", stickers: U_EDGE_SLOTS[0] },
+  { id: "UF", stickers: U_EDGE_SLOTS[1] },
+  { id: "UL", stickers: U_EDGE_SLOTS[2] },
+  { id: "UB", stickers: U_EDGE_SLOTS[3] },
+  { id: "FR", stickers: [["F", 5], ["R", 3]] },
 ];
-const COLL_ORIENTATION_FAMILIES = [
-  ["H", [1, 2, 1, 2]],
-  ["Pi", [1, 1, 2, 2]],
-  ["U", [1, 2, 2, 1]],
-  ["T", [1, 2, 0, 0]],
-  ["L", [1, 0, 2, 0]],
-  ["S", [0, 1, 2, 0]],
-  ["AS", [0, 2, 1, 0]],
+const COLL_FAMILY_DEFS = [
+  { id: "H", label: "H", orientation: [1, 2, 1, 2], collCount: 4 },
+  { id: "Pi", label: "Pi", orientation: [1, 1, 2, 2], collCount: 6 },
+  { id: "U", label: "U", orientation: [1, 2, 2, 1], collCount: 6 },
+  { id: "T", label: "T", orientation: [1, 2, 0, 0], collCount: 6 },
+  { id: "L", label: "L", orientation: [1, 0, 2, 0], collCount: 6 },
+  { id: "S", label: "Sune", orientation: [0, 1, 2, 0], collCount: 6 },
+  { id: "AS", label: "Anti Sune", orientation: [0, 2, 1, 0], collCount: 6 },
 ];
-const ZBLS_EDGE_ORIENTATION_FAMILIES = [
-  ["EO", [0, 0, 0, 0]],
-  ["Line", [0, 1, 0, 1]],
-  ["Arrow", [1, 0, 1, 0]],
-  ["L", [0, 0, 1, 1]],
-  ["Dot", [1, 1, 1, 1]],
+const ZBLS_EO_MASKS = [
+  [0, 0, 0, 0],
+  [1, 1, 0, 0],
+  [1, 0, 1, 0],
+  [0, 1, 1, 0],
+  [1, 0, 0, 1],
+  [0, 1, 0, 1],
+  [0, 0, 1, 1],
+  [1, 1, 1, 1],
 ];
+const ZBLS_SLOT_EO_COUNTS = {
+  "0-0": 2,
+  "0-1": 2,
+  "1-0": 2,
+  "1-1": 2,
+  "2-0": 3,
+  "2-1": 3,
+};
 
 function permutations(items) {
   if (items.length <= 1) return [items];
@@ -475,10 +487,7 @@ function permutations(items) {
 }
 
 const LAST_LAYER_PERMUTATIONS = permutations([0, 1, 2, 3]);
-
-function rotateArray(items, amount) {
-  return items.map((_, index) => items[(index + amount) % items.length]);
-}
+const COLL_CORNER_PERMUTATIONS = LAST_LAYER_PERMUTATIONS.filter((cornerPermutation) => cornerPermutation[0] === 0);
 
 function permutationParity(permutation) {
   let inversions = 0;
@@ -507,33 +516,6 @@ function fillStickerSet(pattern, slots, colors) {
   }
 }
 
-function clonePatternWithTransforms(pattern, faceMap, colorMap) {
-  const next = solvedPattern();
-  for (const face of FACE_ORDER) next[face] = Array(9).fill(DONT_CARE);
-  for (const face of FACE_ORDER) {
-    const targetFace = faceMap[face] || face;
-    for (let i = 0; i < 9; i += 1) next[targetFace][i] = colorMap[pattern[face][i]] || pattern[face][i];
-  }
-  for (const face of FACE_ORDER) next[face][4] = face;
-  return next;
-}
-
-function mirrorPattern(pattern) {
-  return clonePatternWithTransforms(
-    pattern,
-    { U: "U", R: "L", F: "F", D: "D", L: "R", B: "B" },
-    { U: "U", R: "L", F: "F", D: "D", L: "R", B: "B", X: "X" },
-  );
-}
-
-function inverseVariantPattern(pattern) {
-  return clonePatternWithTransforms(
-    pattern,
-    { U: "U", R: "F", F: "R", D: "D", L: "B", B: "L" },
-    { U: "U", R: "F", F: "R", D: "D", L: "B", B: "L", X: "X" },
-  );
-}
-
 function makeLastLayerPattern({ cornerOrientation, cornerPermutation, edgePermutation = null, includeEdgePermutation = false }) {
   const pattern = solvedPattern();
   pattern.U = ["X", "U", "X", "U", "U", "U", "X", "U", "X"];
@@ -555,63 +537,116 @@ function makeLastLayerPattern({ cornerOrientation, cornerPermutation, edgePermut
   return pattern;
 }
 
-function makeCollGroup(family, orientation) {
-  const cases = LAST_LAYER_PERMUTATIONS
-    .filter((cornerPermutation) => cornerPermutation[0] === 0)
-    .map((cornerPermutation, index) => ({
-      id: `coll-${family.toLowerCase()}-${index + 1}`,
-      family,
-      label: `${family}${index + 1}`,
-      pattern: makeLastLayerPattern({ cornerOrientation: orientation, cornerPermutation }),
-    }));
+function makeCollGroup(def) {
+  const cases = COLL_CORNER_PERMUTATIONS.slice(0, def.collCount).map((cornerPermutation, index) => ({
+    id: `coll-${def.id.toLowerCase()}-${index + 1}`,
+    family: def.id,
+    familyLabel: def.label,
+    index: index + 1,
+    label: `${def.id}${index + 1}`,
+    cornerOrientation: def.orientation,
+    cornerPermutation,
+    pattern: makeLastLayerPattern({ cornerOrientation: def.orientation, cornerPermutation }),
+  }));
   return {
-    id: family,
-    label: `${family} (${cases.length})`,
+    id: def.id,
+    label: `${def.id} (${cases.length})`,
     preview: cases[0].pattern,
     cases,
   };
 }
 
-function makeZbllGroup(family, orientation) {
-  const targetCount = family === "H" ? 40 : 72;
-  const cases = [];
-  for (const cornerPermutation of LAST_LAYER_PERMUTATIONS.filter((permutation) => permutation[0] === 0)) {
-    for (const edgePermutation of LAST_LAYER_PERMUTATIONS) {
-      if (permutationParity(cornerPermutation) !== permutationParity(edgePermutation)) continue;
-      cases.push({
-        id: `zbll-${family.toLowerCase()}-${cases.length + 1}`,
-        family,
-        label: `${family}${cases.length + 1}`,
-        pattern: makeLastLayerPattern({ cornerOrientation: orientation, cornerPermutation, edgePermutation, includeEdgePermutation: true }),
-      });
-      if (cases.length >= targetCount) return cases;
-    }
+function makeZbllCasesForCollCase(collCase, collIndex) {
+  const validEdges = LAST_LAYER_PERMUTATIONS.filter((edgePermutation) => (
+    permutationParity(collCase.cornerPermutation) === permutationParity(edgePermutation)
+  ));
+  const targetCount = collCase.family === "H" && collIndex >= 2 ? 8 : 12;
+  return validEdges.slice(0, targetCount).map((edgePermutation, index) => ({
+    id: `zbll-${collCase.family.toLowerCase()}-${collCase.index}-${index + 1}`,
+    family: collCase.family,
+    collId: collCase.id,
+    label: `${collCase.label}-${String(index + 1).padStart(2, "0")}`,
+    pattern: makeLastLayerPattern({
+      cornerOrientation: collCase.cornerOrientation,
+      cornerPermutation: collCase.cornerPermutation,
+      edgePermutation,
+      includeEdgePermutation: true,
+    }),
+  }));
+}
+
+const COLL_GROUPS = COLL_FAMILY_DEFS.map(makeCollGroup);
+const COLL_CASES = COLL_GROUPS.flatMap((group) => group.cases);
+const ZBLL_GROUPS = COLL_GROUPS.map((group) => ({
+  ...group,
+  cases: group.cases.map((collCase, collIndex) => ({
+    ...collCase,
+    zbllCases: makeZbllCasesForCollCase(collCase, collIndex),
+  })),
+}));
+const ZBLL_CASES = ZBLL_GROUPS.flatMap((group) => group.cases.flatMap((collCase) => collCase.zbllCases));
+
+function rotateCornerSlotId(slotId) {
+  return { URF: "UBR", UBR: "ULB", ULB: "UFL", UFL: "URF", DFR: "DFR" }[slotId];
+}
+
+function rotateEdgeSlotId(slotId) {
+  return { UR: "UB", UB: "UL", UL: "UF", UF: "UR", FR: "FR" }[slotId];
+}
+
+function canonicalF2lKey(cornerSlotId, cornerTwist, edgeSlotId, edgeFlip) {
+  const keys = [];
+  let currentCornerSlotId = cornerSlotId;
+  let currentEdgeSlotId = edgeSlotId;
+  for (let i = 0; i < 4; i += 1) {
+    keys.push(`${currentCornerSlotId}:${cornerTwist}|${currentEdgeSlotId}:${edgeFlip}`);
+    currentCornerSlotId = rotateCornerSlotId(currentCornerSlotId);
+    currentEdgeSlotId = rotateEdgeSlotId(currentEdgeSlotId);
   }
-  for (let rotation = 1; rotation < 4 && cases.length < targetCount; rotation += 1) {
-    for (const cornerPermutation of LAST_LAYER_PERMUTATIONS.filter((permutation) => permutation[0] === 0)) {
-      for (const edgePermutation of LAST_LAYER_PERMUTATIONS) {
-        if (permutationParity(cornerPermutation) !== permutationParity(edgePermutation)) continue;
-        cases.push({
-          id: `zbll-${family.toLowerCase()}-${cases.length + 1}`,
-          family,
-          label: `${family}${cases.length + 1}`,
-          pattern: makeLastLayerPattern({ cornerOrientation: rotateArray(orientation, rotation), cornerPermutation, edgePermutation, includeEdgePermutation: true }),
-        });
-        if (cases.length >= targetCount) return cases;
+  return keys.sort()[0];
+}
+
+function f2lKind(cornerSlotId, edgeSlotId) {
+  const cornerInSlot = cornerSlotId === "DFR";
+  const edgeInSlot = edgeSlotId === "FR";
+  if (!cornerInSlot && !edgeInSlot) return "top";
+  if (!cornerInSlot) return "edge";
+  if (!edgeInSlot) return "corner";
+  return "slot";
+}
+
+function makeF2lGroups() {
+  const groupsByKey = new Map();
+  for (const cornerSlot of LAST_SLOT_CORNER_POSITIONS) {
+    for (let cornerTwist = 0; cornerTwist < 3; cornerTwist += 1) {
+      for (const edgeSlot of LAST_SLOT_EDGE_POSITIONS) {
+        for (let edgeFlip = 0; edgeFlip < 2; edgeFlip += 1) {
+          const key = canonicalF2lKey(cornerSlot.id, cornerTwist, edgeSlot.id, edgeFlip);
+          if (!groupsByKey.has(key)) {
+            groupsByKey.set(key, {
+              key,
+              cornerSlot,
+              cornerTwist,
+              edgeSlot,
+              edgeFlip,
+              kind: f2lKind(cornerSlot.id, edgeSlot.id),
+            });
+          }
+        }
       }
     }
   }
-  return cases;
+  return [...groupsByKey.values()]
+    .sort((a, b) => a.key.localeCompare(b.key))
+    .map((group, index) => ({
+      ...group,
+      id: `f2l-${index + 1}`,
+      label: `F${String(index + 1).padStart(2, "0")}`,
+      title: `${group.cornerSlot.id}/${group.cornerTwist} ${group.edgeSlot.id}/${group.edgeFlip}`,
+    }));
 }
 
-const COLL_GROUPS = COLL_ORIENTATION_FAMILIES.map(([family, orientation]) => makeCollGroup(family, orientation));
-const COLL_CASES = COLL_GROUPS.flatMap((group) => group.cases);
-const ZBLL_CASES = [
-  ...PLL_CASES.map((preset) => ({ ...preset, id: `zbll-${preset.id}`, family: "PLL", label: preset.label })),
-  ...COLL_ORIENTATION_FAMILIES.flatMap(([family, orientation]) => makeZbllGroup(family, orientation)),
-];
-
-function makeZblsPattern(cornerSlot, edgeSlot, edgeOrientation) {
+function makeZblsPattern(f2lCase, edgeOrientation) {
   const pattern = solvedPattern();
   pattern.U = ["X", edgeOrientation[3] ? "B" : "U", "X", edgeOrientation[2] ? "L" : "U", "U", edgeOrientation[0] ? "R" : "U", "X", edgeOrientation[1] ? "F" : "U", "X"];
   pattern.R = ["X", edgeOrientation[0] ? "U" : "X", "X", "X", "R", "R", "X", "R", "R"];
@@ -619,26 +654,32 @@ function makeZblsPattern(cornerSlot, edgeSlot, edgeOrientation) {
   pattern.L = ["X", edgeOrientation[2] ? "U" : "X", "X", "L", "L", "L", "L", "L", "L"];
   pattern.B = ["X", edgeOrientation[3] ? "U" : "X", "X", "B", "B", "B", "B", "B", "B"];
   pattern.D = ["D", "D", "X", "D", "D", "D", "D", "D", "D"];
-  fillStickerSet(pattern, cornerSlot.stickers, orientedColors(LAST_SLOT_CORNER_CUBIE, cornerSlot.twist));
-  fillStickerSet(pattern, edgeSlot.stickers, flippedColors(LAST_SLOT_EDGE_CUBIE, edgeSlot.flip));
+  fillStickerSet(pattern, f2lCase.cornerSlot.stickers, orientedColors(LAST_SLOT_CORNER_CUBIE, f2lCase.cornerTwist));
+  fillStickerSet(pattern, f2lCase.edgeSlot.stickers, flippedColors(LAST_SLOT_EDGE_CUBIE, f2lCase.edgeFlip));
   return pattern;
 }
 
-const ZBLS_REPRESENTATIVE_CASES = ZBLS_EDGE_ORIENTATION_FAMILIES.flatMap(([family, edgeOrientation]) => (
-  LAST_SLOT_CORNER_SLOTS.flatMap((cornerSlot) => (
-    LAST_SLOT_EDGE_SLOTS.map((edgeSlot) => ({
-      id: `zbls-${family.toLowerCase()}-${cornerSlot.id.toLowerCase()}-${edgeSlot.id.toLowerCase()}`,
-      family,
-      label: `${family} ${cornerSlot.id}/${edgeSlot.id}`,
-      pattern: makeZblsPattern(cornerSlot, edgeSlot, edgeOrientation),
-    }))
-  ))
-));
-const ZBLS_CASES = [
-  ...ZBLS_REPRESENTATIVE_CASES.map((preset) => ({ ...preset, label: `${preset.label}` })),
-  ...ZBLS_REPRESENTATIVE_CASES.map((preset) => ({ ...preset, id: `${preset.id}-mirror`, label: `${preset.label} M`, pattern: mirrorPattern(preset.pattern) })),
-  ...ZBLS_REPRESENTATIVE_CASES.slice(0, 52).map((preset) => ({ ...preset, id: `${preset.id}-inverse`, label: `${preset.label} I`, pattern: inverseVariantPattern(preset.pattern) })),
-];
+function zblsEoMasksForF2lCase(f2lCase) {
+  if (f2lCase.kind !== "slot") return ZBLS_EO_MASKS;
+  const count = ZBLS_SLOT_EO_COUNTS[`${f2lCase.cornerTwist}-${f2lCase.edgeFlip}`] || 2;
+  return ZBLS_EO_MASKS.slice(0, count);
+}
+
+const ZBLS_GROUPS = makeF2lGroups().map((f2lCase) => {
+  const cases = zblsEoMasksForF2lCase(f2lCase).map((edgeOrientation, index) => ({
+    id: `zbls-${f2lCase.id}-${index + 1}`,
+    f2lId: f2lCase.id,
+    family: f2lCase.kind,
+    label: `EO${index + 1}`,
+    pattern: makeZblsPattern(f2lCase, edgeOrientation),
+  }));
+  return {
+    ...f2lCase,
+    preview: makeZblsPattern(f2lCase, ZBLS_EO_MASKS[0]),
+    cases,
+  };
+});
+const ZBLS_CASES = ZBLS_GROUPS.flatMap((group) => group.cases);
 
 const CASE_PRESETS = {
   OLL: OLL_CASES,
@@ -687,7 +728,7 @@ function workerMain() {
   const BASE = { U: makePerm("y", [1], -1), D: makePerm("y", [-1], 1), R: makePerm("x", [1], -1), L: makePerm("x", [-1], 1), F: makePerm("z", [1], -1), B: makePerm("z", [-1], 1), M: makePerm("x", [0], 1), E: makePerm("y", [0], 1), S: makePerm("z", [0], -1), x: makePerm("x", [-1, 0, 1], -1), y: makePerm("y", [-1, 0, 1], -1), z: makePerm("z", [-1, 0, 1], -1), u: makePerm("y", [0, 1], -1), d: makePerm("y", [-1, 0], 1), r: makePerm("x", [0, 1], -1), l: makePerm("x", [-1, 0], 1), f: makePerm("z", [0, 1], -1), b: makePerm("z", [-1, 0], 1) };
   const MOVE_PERM_CACHE = new Map();
 
-  function normalizeAlgText(alg) { return String(alg).replaceAll("’", "'").replaceAll("＇", "'").replace(/([URFDLB])w/g, (_, face) => face.toLowerCase()).replaceAll(",", " "); }
+  function normalizeAlgText(alg) { return String(alg).replaceAll("’", "'").replaceAll("＇", "'").replace(/2'/g, "2").replace(/([URFDLB])w/g, (_, face) => face.toLowerCase()).replaceAll(",", " "); }
   function parseAlg(alg) { const text = normalizeAlgText(alg); const moves = []; let pos = 0; TOKEN_RE.lastIndex = 0; for (;;) { const match = TOKEN_RE.exec(text); if (!match) break; if (text.slice(pos, match.index).trim()) throw new Error("入力に読み取れない部分があります: " + text.slice(pos, match.index)); moves.push(match[1] + (match[2] || "")); pos = TOKEN_RE.lastIndex; } if (text.slice(pos).trim()) throw new Error("入力に読み取れない部分があります: " + text.slice(pos)); return moves; }
   function moveToPerm(move) { if (MOVE_PERM_CACHE.has(move)) return MOVE_PERM_CACHE.get(move); const base = move[0]; if (!BASE[base]) throw new Error("対応していない記号です: " + base); const perm = move.endsWith("2") ? permPower(BASE[base], 2) : move.endsWith("'") ? permPower(BASE[base], 3) : BASE[base]; MOVE_PERM_CACHE.set(move, perm); return perm; }
   function applyPerm(state, perm) { let next = ""; for (let i = 0; i < 54; i += 1) next += state[perm[i]]; return next; }
@@ -754,8 +795,8 @@ function workerMain() {
   self.onmessage = function (event) { const data = event.data || {}; if (data.command === "continue") { if (CURRENT_JOB) { CURRENT_JOB.allowUnsafe = true; if (CURRENT_JOB.kind === "alg") processAlgJob(CURRENT_JOB); else processBidirectionalPatternJob(CURRENT_JOB); } return; } try { if (data.mode === "alg") startAlgJob(data); else startPatternJob(data); } catch (e) { self.postMessage({ type: "error", message: e instanceof Error ? e.message : String(e) }); } };
 }
 
-function Sticker({ color, onClick, locked = false }) { return <button type="button" onClick={onClick} disabled={locked} className={["aspect-square w-full rounded-md border transition duration-150", locked ? "cursor-not-allowed ring-2 ring-slate-500" : "hover:scale-105 active:scale-95"].join(" ")} style={{ background: FACE_COLOR_STYLE[color], borderColor: "#64748b" }} title={FACE_LABEL[color] || color}>{color === DONT_CARE ? <span className="text-xs font-normal text-white">?</span> : null}</button>; }
-function FaceGrid({ stickers, onStickerClick }) { return <div className="grid w-full grid-cols-3 gap-1">{stickers.map((color, idx) => <Sticker key={idx} color={color} locked={idx === 4} onClick={() => onStickerClick(idx)} />)}</div>; }
+function Sticker({ color, onClick, locked = false, testId }) { return <button type="button" data-testid={testId} data-color={color} onClick={onClick} disabled={locked} className={["aspect-square w-full rounded-md border transition duration-150", locked ? "cursor-not-allowed ring-2 ring-slate-500" : "hover:scale-105 active:scale-95"].join(" ")} style={{ background: FACE_COLOR_STYLE[color], borderColor: "#64748b" }} title={FACE_LABEL[color] || color}>{color === DONT_CARE ? <span className="text-xs font-normal text-white">?</span> : null}</button>; }
+function FaceGrid({ face, stickers, onStickerClick }) { return <div className="grid w-full grid-cols-3 gap-1">{stickers.map((color, idx) => <Sticker key={idx} testId={face ? `net-${face}-${idx}` : undefined} color={color} locked={idx === 4} onClick={() => onStickerClick(idx)} />)}</div>; }
 function MiniSticker({ filled, corner = false }) { if (corner) return <div className="h-2.5 w-2.5 sm:h-3 sm:w-3" />; return <div className="h-2.5 w-2.5 rounded-[2px] border border-slate-500/70 sm:h-3 sm:w-3" style={{ background: filled ? "#f8fafc" : "#374151" }} />; }
 function MiniColorSticker({ color, corner = false }) { if (corner) return <div className="h-2.5 w-2.5 sm:h-3 sm:w-3" />; return <div className="h-2.5 w-2.5 rounded-[2px] border border-slate-500/70 sm:h-3 sm:w-3" style={{ background: FACE_COLOR_STYLE[color] || FACE_COLOR_STYLE.X }} />; }
 function fallbackPreviewMask(pattern) { const u = pattern.U; const bit = (idx) => (u[idx] === "U" ? "1" : "0"); return [`x${bit(0)}${bit(1)}${bit(2)}x`, `0${bit(0)}${bit(1)}${bit(2)}0`, `0${bit(3)}${bit(4)}${bit(5)}0`, `0${bit(6)}${bit(7)}${bit(8)}0`, `x${bit(6)}${bit(7)}${bit(8)}x`].join(""); }
@@ -769,18 +810,179 @@ function pllPreviewCells(pattern) {
   ];
 }
 function MiniPatternPreview({ pattern, previewMask }) {
-  if (!previewMask && pattern.U.every((x) => x === "U")) {
+  if (!previewMask) {
     return <div className="grid grid-cols-5 gap-[2px]">{pllPreviewCells(pattern).map((cell, idx) => <MiniColorSticker key={idx} corner={!cell} color={cell || "X"} />)}</div>;
   }
   const mask = previewMask || fallbackPreviewMask(pattern);
   return <div className="grid grid-cols-5 gap-[2px]">{mask.split("").map((cell, idx) => <MiniSticker key={idx} corner={cell === "x" || idx === 0 || idx === 4 || idx === 20 || idx === 24} filled={cell === "1"} />)}</div>;
 }
-function NetEditor({ pattern, setPattern, selectedColor }) { function setSticker(face, idx) { if (idx === 4) return; setPattern((prev) => { const next = {}; for (const f of FACE_ORDER) next[f] = [...prev[f]]; next[face][idx] = selectedColor; return next; }); } const spacer = <div />; return <div className="mx-auto grid w-full max-w-[520px] grid-cols-4 gap-1.5 py-2 sm:gap-3">{spacer}<FaceGrid stickers={pattern.U} onStickerClick={(idx) => setSticker("U", idx)} />{spacer}{spacer}<FaceGrid stickers={pattern.L} onStickerClick={(idx) => setSticker("L", idx)} /><FaceGrid stickers={pattern.F} onStickerClick={(idx) => setSticker("F", idx)} /><FaceGrid stickers={pattern.R} onStickerClick={(idx) => setSticker("R", idx)} /><FaceGrid stickers={pattern.B} onStickerClick={(idx) => setSticker("B", idx)} />{spacer}<FaceGrid stickers={pattern.D} onStickerClick={(idx) => setSticker("D", idx)} />{spacer}{spacer}</div>; }
+function NetEditor({ pattern, setPattern, selectedColor }) { function setSticker(face, idx) { if (idx === 4) return; setPattern((prev) => { const next = {}; for (const f of FACE_ORDER) next[f] = [...prev[f]]; next[face][idx] = selectedColor; return next; }); } const spacer = <div />; return <div className="mx-auto grid w-full max-w-[520px] grid-cols-4 gap-1.5 py-2 sm:gap-3">{spacer}<FaceGrid face="U" stickers={pattern.U} onStickerClick={(idx) => setSticker("U", idx)} />{spacer}{spacer}<FaceGrid face="L" stickers={pattern.L} onStickerClick={(idx) => setSticker("L", idx)} /><FaceGrid face="F" stickers={pattern.F} onStickerClick={(idx) => setSticker("F", idx)} /><FaceGrid face="R" stickers={pattern.R} onStickerClick={(idx) => setSticker("R", idx)} /><FaceGrid face="B" stickers={pattern.B} onStickerClick={(idx) => setSticker("B", idx)} />{spacer}<FaceGrid face="D" stickers={pattern.D} onStickerClick={(idx) => setSticker("D", idx)} />{spacer}{spacer}</div>; }
 function SolutionCard({ solution, t, showMoveCounts, onSave, onCopy }) { const displayAlg = formatWithSimulUD(solution); return <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md"><div className="mb-3 flex justify-end gap-2"><button onClick={() => onCopy(displayAlg)} className="rounded-xl border border-slate-300 bg-white px-3 py-1 text-xs font-normal text-slate-700 transition hover:bg-slate-50 active:scale-95">{t.copy}</button><button onClick={() => onSave(solution)} className="rounded-xl border border-slate-300 bg-white px-3 py-1 text-xs font-normal text-slate-700 transition hover:bg-slate-50 active:scale-95">{t.favorite}</button></div><div className="break-words font-mono text-base font-normal text-slate-900">{displayAlg || "(空)"}</div>{showMoveCounts ? <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs"><div className="rounded-xl bg-slate-100 p-2"><div className="text-slate-500">{t.simultaneous}</div><div className="text-lg font-normal">{effectiveMoveCount(solution)}</div></div><div className="rounded-xl bg-slate-100 p-2"><div className="text-slate-500">{t.symbolMoves}</div><div className="text-lg font-normal">{symbolMoveCount(solution)}</div></div><div className="rounded-xl bg-slate-100 p-2"><div className="text-slate-500">{t.quarterTurns}</div><div className="text-lg font-normal">{quarterTurnCount(solution)}</div></div></div> : null}</div>; }
 function ThinkingCard({ foundCount, t }) { return <div className="rounded-2xl border border-slate-300 bg-white p-4 shadow-sm"><div className="flex items-center gap-3"><div className="flex gap-1"><span className="h-2.5 w-2.5 animate-bounce rounded-full bg-slate-500 [animation-delay:0ms]" /><span className="h-2.5 w-2.5 animate-bounce rounded-full bg-slate-500 [animation-delay:120ms]" /><span className="h-2.5 w-2.5 animate-bounce rounded-full bg-slate-500 [animation-delay:240ms]" /></div><div><div className="font-normal text-slate-900">{t.thinkingTitle}</div><div className="text-sm text-slate-600">{t.thinkingBody(foundCount)}</div></div></div></div>; }
 function ResultSummaryCard({ text, className = "" }) { return <div className={`rounded-2xl border border-slate-300 bg-white p-4 shadow-sm ${className}`}><div className="flex min-h-[34px] items-center justify-center text-sm text-slate-600">{text}</div></div>; }
 function EmptyCard({ text, className = "" }) { return <ResultSummaryCard text={text} className={className} />; }
 function NumberInput({ label, value, onChange, min = 1, max = 99 }) { function setClamped(nextValue) { const raw = String(nextValue); if (raw === "") { onChange(""); return; } const numeric = Number(raw); if (!Number.isFinite(numeric)) return; onChange(Math.min(max, Math.max(min, Math.trunc(numeric)))); } return <label className="grid gap-1"><span className="text-sm font-normal">{label}</span><input type="number" inputMode="numeric" pattern="[0-9]*" min={min} max={max} step="1" value={value} onChange={(e) => setClamped(e.target.value)} onBlur={() => { if (value === "") onChange(min); }} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 text-center text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" /></label>; }
+function PresetTile({ label, pattern, previewMask, title, testId, selected = false, onClick }) {
+  return (
+    <button
+      type="button"
+      data-testid={testId}
+      onClick={onClick}
+      title={title || label}
+      className={`flex h-[88px] w-[78px] flex-col items-center justify-center gap-1 rounded-lg border bg-white p-2 transition hover:bg-slate-50 active:scale-95 ${selected ? "border-slate-900 ring-2 ring-slate-400" : "border-slate-300"}`}
+    >
+      <MiniPatternPreview pattern={pattern} previewMask={previewMask} />
+      <span className="h-4 max-w-full truncate text-[11px] font-normal leading-4 text-slate-700">{label}</span>
+    </button>
+  );
+}
+function PresetTileList({ children, withDivider = false }) {
+  return <div className={`flex flex-wrap gap-1.5 ${withDivider ? "border-t border-slate-200 pt-2" : ""}`}>{children}</div>;
+}
+function DirectPresetPanel({ category, applyCasePreset }) {
+  return (
+    <PresetTileList>
+      {CASE_PRESETS[category].map((preset) => (
+        <PresetTile
+          key={preset.id}
+          testId={`preset-case-${preset.id}`}
+          onClick={() => applyCasePreset(preset)}
+          title={category === "OLL" ? `OLL ${preset.number}` : preset.label || preset.id}
+          label={category === "OLL" ? preset.number : preset.label || ""}
+          pattern={preset.pattern}
+          previewMask={preset.previewMask}
+        />
+      ))}
+    </PresetTileList>
+  );
+}
+function CollPresetPanel({ activeGroup, setActiveGroup, applyCasePreset }) {
+  const group = COLL_GROUPS.find((item) => item.id === activeGroup);
+  return (
+    <div className="grid gap-2">
+      <PresetTileList>
+        {COLL_GROUPS.map((item) => (
+          <PresetTile
+            key={item.id}
+            testId={`coll-group-${item.id}`}
+            selected={activeGroup === item.id}
+            onClick={() => setActiveGroup((prev) => (prev === item.id ? null : item.id))}
+            title={item.label}
+            label={item.label}
+            pattern={item.preview}
+          />
+        ))}
+      </PresetTileList>
+      {group ? (
+        <PresetTileList withDivider>
+          {group.cases.map((preset) => (
+            <PresetTile
+              key={preset.id}
+              testId={`preset-case-${preset.id}`}
+              onClick={() => applyCasePreset(preset)}
+              title={preset.label}
+              label={preset.label}
+              pattern={preset.pattern}
+            />
+          ))}
+        </PresetTileList>
+      ) : null}
+    </div>
+  );
+}
+function ZbllPresetPanel({ activeFamily, setActiveFamily, activeColl, setActiveColl, applyCasePreset }) {
+  const family = ZBLL_GROUPS.find((item) => item.id === activeFamily);
+  const collCase = family?.cases.find((item) => item.id === activeColl);
+  return (
+    <div className="grid gap-2">
+      <PresetTileList>
+        {ZBLL_GROUPS.map((group) => (
+          <PresetTile
+            key={group.id}
+            testId={`zbll-family-${group.id}`}
+            selected={activeFamily === group.id}
+            onClick={() => {
+              setActiveFamily((prev) => (prev === group.id ? null : group.id));
+              setActiveColl(null);
+            }}
+            title={group.label}
+            label={group.label}
+            pattern={group.preview}
+          />
+        ))}
+      </PresetTileList>
+      {family ? (
+        <PresetTileList withDivider>
+          {family.cases.map((preset) => (
+            <PresetTile
+              key={preset.id}
+              testId={`zbll-coll-${preset.id}`}
+              selected={activeColl === preset.id}
+              onClick={() => setActiveColl((prev) => (prev === preset.id ? null : preset.id))}
+              title={preset.label}
+              label={preset.label}
+              pattern={preset.pattern}
+            />
+          ))}
+        </PresetTileList>
+      ) : null}
+      {collCase ? (
+        <PresetTileList withDivider>
+          {collCase.zbllCases.map((preset) => (
+            <PresetTile
+              key={preset.id}
+              testId={`preset-case-${preset.id}`}
+              onClick={() => applyCasePreset(preset)}
+              title={preset.label}
+              label={preset.label}
+              pattern={preset.pattern}
+            />
+          ))}
+        </PresetTileList>
+      ) : null}
+    </div>
+  );
+}
+function ZblsPresetPanel({ activeF2l, setActiveF2l, applyCasePreset }) {
+  const group = ZBLS_GROUPS.find((item) => item.id === activeF2l);
+  return (
+    <div className="grid gap-2">
+      <PresetTileList>
+        {ZBLS_GROUPS.map((item) => (
+          <PresetTile
+            key={item.id}
+            testId={`zbls-f2l-${item.id}`}
+            selected={activeF2l === item.id}
+            onClick={() => setActiveF2l((prev) => (prev === item.id ? null : item.id))}
+            title={item.title}
+            label={`${item.label} (${item.cases.length})`}
+            pattern={item.preview}
+          />
+        ))}
+      </PresetTileList>
+      {group ? (
+        <PresetTileList withDivider>
+          {group.cases.map((preset) => (
+            <PresetTile
+              key={preset.id}
+              testId={`preset-case-${preset.id}`}
+              onClick={() => applyCasePreset(preset)}
+              title={`${group.label} ${preset.label}`}
+              label={preset.label}
+              pattern={preset.pattern}
+            />
+          ))}
+        </PresetTileList>
+      ) : null}
+    </div>
+  );
+}
+function CasePresetPanel({ category, collGroupOpen, setCollGroupOpen, zbllFamilyOpen, setZbllFamilyOpen, zbllCollOpen, setZbllCollOpen, zblsF2lOpen, setZblsF2lOpen, applyCasePreset }) {
+  if (category === "COLL") return <CollPresetPanel activeGroup={collGroupOpen} setActiveGroup={setCollGroupOpen} applyCasePreset={applyCasePreset} />;
+  if (category === "ZBLL") return <ZbllPresetPanel activeFamily={zbllFamilyOpen} setActiveFamily={setZbllFamilyOpen} activeColl={zbllCollOpen} setActiveColl={setZbllCollOpen} applyCasePreset={applyCasePreset} />;
+  if (category === "ZBLS") return <ZblsPresetPanel activeF2l={zblsF2lOpen} setActiveF2l={setZblsF2lOpen} applyCasePreset={applyCasePreset} />;
+  return <DirectPresetPanel category={category} applyCasePreset={applyCasePreset} />;
+}
 
 export default function App() {
   const initialShareRef = useRef();
@@ -806,6 +1008,9 @@ export default function App() {
   const [casePresetCategory, setCasePresetCategory] = useState(() => typeof initialShare.casePresetCategory === "string" && CASE_PRESETS[initialShare.casePresetCategory] ? initialShare.casePresetCategory : "OLL");
   const [casePresetOpen, setCasePresetOpen] = useState(() => typeof initialShare.casePresetCategory === "string" && CASE_PRESETS[initialShare.casePresetCategory] ? initialShare.casePresetCategory : null);
   const [collGroupOpen, setCollGroupOpen] = useState(() => typeof initialShare.collGroupOpen === "string" ? initialShare.collGroupOpen : null);
+  const [zbllFamilyOpen, setZbllFamilyOpen] = useState(() => typeof initialShare.zbllFamilyOpen === "string" ? initialShare.zbllFamilyOpen : null);
+  const [zbllCollOpen, setZbllCollOpen] = useState(() => typeof initialShare.zbllCollOpen === "string" ? initialShare.zbllCollOpen : null);
+  const [zblsF2lOpen, setZblsF2lOpen] = useState(() => typeof initialShare.zblsF2lOpen === "string" ? initialShare.zblsF2lOpen : null);
   const [searchMovesText, setSearchMovesText] = useState(() => typeof initialShare.searchMovesText === "string" ? initialShare.searchMovesText : "");
   const [requiredPartsText, setRequiredPartsText] = useState(() => typeof initialShare.requiredPartsText === "string" ? initialShare.requiredPartsText : "");
   const [maxSymbolDepth, setMaxSymbolDepth] = useState(() => Number.isFinite(initialShare.maxSymbolDepth) ? initialShare.maxSymbolDepth : 15);
@@ -822,7 +1027,7 @@ export default function App() {
   function createSearchWorker() { const source = `(${workerMain.toString()})();`; const blob = new Blob([source], { type: "text/javascript" }); const url = URL.createObjectURL(blob); const worker = new Worker(url); workerUrlRef.current.set(worker, url); return worker; }
   function terminateSearchWorker(worker) { if (!worker) return; worker.terminate(); const url = workerUrlRef.current.get(worker); if (url) URL.revokeObjectURL(url); workerUrlRef.current.delete(worker); }
   useEffect(() => () => { if (workerRef.current) terminateSearchWorker(workerRef.current); if (shareMessageTimerRef.current) clearTimeout(shareMessageTimerRef.current); }, []);
-  function currentShareState() { return { targetAlg, targetPattern, selectedColor, casePresetCategory, collGroupOpen, showNetInput, searchMovesText, requiredPartsText, maxSymbolDepth, limit, isDark, showMoveCounts, language }; }
+  function currentShareState() { return { targetAlg, targetPattern, selectedColor, casePresetCategory, collGroupOpen, zbllFamilyOpen, zbllCollOpen, zblsF2lOpen, showNetInput, searchMovesText, requiredPartsText, maxSymbolDepth, limit, isDark, showMoveCounts, language }; }
   function showTemporaryMessage(message) { if (shareMessageTimerRef.current) clearTimeout(shareMessageTimerRef.current); setShareMessage(message); shareMessageTimerRef.current = setTimeout(() => { setShareMessage(""); shareMessageTimerRef.current = null; }, 1600); }
   async function shareUrl() { const hash = `#s=${encodeShareState(currentShareState())}`; const url = `${window.location.origin}${window.location.pathname}${hash}`; window.history.replaceState(null, "", hash); try { await navigator.clipboard.writeText(url); showTemporaryMessage(t.copied); } catch { showTemporaryMessage(url); } }
   function saveHistoryItem(mode) { const item = { id: Date.now(), mode, targetAlg, targetPattern, searchMovesText, requiredPartsText, maxSymbolDepth, limit }; const itemKey = JSON.stringify({ mode, targetAlg, targetPattern, searchMovesText, requiredPartsText, maxSymbolDepth, limit }); const next = [item, ...history.filter((x) => JSON.stringify({ mode: x.mode, targetAlg: x.targetAlg, targetPattern: x.targetPattern, searchMovesText: x.searchMovesText, requiredPartsText: x.requiredPartsText || "", maxSymbolDepth: x.maxSymbolDepth, limit: x.limit }) !== itemKey)].slice(0, 12); setHistory(next); writeStorageList(STORAGE_KEYS.history, next); }
@@ -833,7 +1038,7 @@ export default function App() {
   function stopSearch() { searchSessionRef.current += 1; if (workerRef.current) { terminateSearchWorker(workerRef.current); workerRef.current = null; } setIsSearching(false); setCanContinueUnsafe(false); setSearchExhausted(false); }
   function continuePausedSearch() { if (!workerRef.current) { runSearch(lastSearchModeRef.current, { allowUnsafe: true }); return; } setError(""); setCanContinueUnsafe(false); setIsSearching(true); workerRef.current.postMessage({ command: "continue" }); }
   async function runSearch(mode, options = {}) { const currentSession = searchSessionRef.current + 1; lastSearchModeRef.current = mode; searchSessionRef.current = currentSession; if (workerRef.current) { terminateSearchWorker(workerRef.current); workerRef.current = null; } setError(""); setCanContinueUnsafe(false); setHasSearched(true); setIsSearching(true); setSearchExhausted(false); setSolutions([]); saveHistoryItem(mode); const worker = createSearchWorker(); workerRef.current = worker; let receivedAnySolution = false; worker.onmessage = (event) => { if (searchSessionRef.current !== currentSession) return; const data = event.data; if (data.type === "solution") { const maxResults = Math.max(1, Number(limit) || 1); if (!receivedAnySolution) { receivedAnySolution = true; setSolutions(insertSolutionSorted([], data.solution, maxResults)); } else setSolutions((prev) => insertSolutionSorted(prev, data.solution, maxResults)); return; } if (data.type === "paused") { setError(data.message); setCanContinueUnsafe(true); setIsSearching(false); return; } if (data.type === "error") { setError(data.message); setCanContinueUnsafe(String(data.message || "").includes("探索が大きすぎ")); setIsSearching(false); terminateSearchWorker(worker); if (workerRef.current === worker) workerRef.current = null; return; } if (data.type === "done") { if (!receivedAnySolution) setSolutions([]); setSearchExhausted(Boolean(data.completed)); setIsSearching(false); terminateSearchWorker(worker); if (workerRef.current === worker) workerRef.current = null; } }; worker.onerror = (event) => { if (searchSessionRef.current !== currentSession) return; setError(event.message || "Worker error"); setCanContinueUnsafe(String(event.message || "").includes("探索が大きすぎ")); setIsSearching(false); terminateSearchWorker(worker); if (workerRef.current === worker) workerRef.current = null; }; worker.postMessage({ mode, targetAlg, targetPattern, searchMovesText, requiredPartsText, maxSymbolDepth: Number(maxSymbolDepth), limit: Math.max(1, Number(limit) || 1), allowUnsafe: Boolean(options.allowUnsafe) }); }
-  return <div className={`${isDark ? "dark-mode" : "light-shell"} min-h-screen px-4 pb-4 pt-16 text-slate-900 md:px-8 md:pb-8 md:pt-16`}><style>{`body{background:#e2e8f0}.light-shell{background:#e2e8f0!important}.light-panel{background-color:#f8fafc!important}.light-inner{background-color:#e2e8f0!important}.dark-mode{background:#27272a!important;color:#f4f4f5!important}.dark-mode .bg-white,.dark-mode .light-panel{background-color:#3f3f46!important}.dark-mode .bg-slate-50,.dark-mode .light-inner{background-color:#34343a!important}.dark-mode .bg-slate-100{background-color:#52525b!important}.dark-mode .text-slate-900{color:#fafafa!important}.dark-mode .text-slate-700,.dark-mode .text-slate-600{color:#e5e7eb!important}.dark-mode .text-slate-500{color:#d4d4d8!important}.dark-mode .border-slate-200,.dark-mode .border-slate-300{border-color:#71717a!important}.dark-mode input,.dark-mode textarea{background-color:#52525b!important;color:#fff!important;border-color:#71717a!important}.dark-mode input::placeholder,.dark-mode textarea::placeholder{color:#d4d4d8!important}.dark-mode button.bg-white{background-color:#52525b!important;color:#fff!important}.dark-mode button.bg-white:hover{background-color:#60606a!important}.dark-mode .menu-button{background-color:#52525b!important;color:#fff!important;border-color:#a1a1aa!important}.dark-mode .menu-panel{background-color:#3f3f46!important;border-color:#a1a1aa!important}.dark-mode .menu-item{background-color:#52525b!important;color:#fff!important;border:1px solid #a1a1aa!important}.dark-mode .menu-item:hover{background-color:#63636d!important}.dark-mode .menu-item span{color:#fff!important}`}</style>{menuOpen ? <button type="button" aria-label="close menu" onClick={() => { setMenuOpen(false); setLanguageOpen(false); }} className="fixed inset-0 z-40 cursor-default bg-transparent" /> : null}<div className="fixed left-4 top-4 z-50"><button onClick={() => setMenuOpen((v) => !v)} className="menu-button flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-300 bg-white text-xl font-normal text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95" aria-label="menu">☰</button>{menuOpen ? <div className="menu-panel mt-2 w-48 rounded-2xl border border-slate-200 bg-white p-2 shadow-lg" onClick={(e) => e.stopPropagation()}><button onClick={() => setIsDark((v) => !v)} className="menu-item flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"><span>{t.darkMode}</span><span>{isDark ? "ON" : "OFF"}</span></button><button onClick={() => setShowMoveCounts((v) => !v)} className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"><span>{t.showMoveCounts}</span><span>{showMoveCounts ? "ON" : "OFF"}</span></button><button onClick={() => setShowNetInput((v) => !v)} className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"><span>{t.netInput}</span><span>{showNetInput ? t.netMode : t.algMode}</span></button><button onClick={shareUrl} className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"><span>{t.shareUrl}</span><span>↗</span></button><button onClick={() => setSavedOpen((v) => !v)} className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"><span>{t.saved}</span><span>{savedOpen ? "▴" : favorites.length}</span></button>{savedOpen ? <div className="mt-2 max-h-52 overflow-auto rounded-xl border border-slate-200 p-2">{favorites.length ? favorites.map((item) => <button key={item.id} onClick={() => copyText(item.alg)} className="menu-item mb-1 block w-full rounded-xl px-3 py-2 text-left font-mono text-xs text-slate-900 transition hover:bg-slate-50 active:scale-95">{item.alg}</button>) : <div className="px-3 py-2 text-xs text-slate-500">0</div>}{favorites.length ? <button onClick={() => { setFavorites([]); writeStorageList(STORAGE_KEYS.favorites, []); }} className="menu-item mt-2 w-full rounded-xl px-3 py-2 text-xs text-slate-900">{t.clear}</button> : null}</div> : null}<button onClick={() => setHistoryOpen((v) => !v)} className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"><span>{t.history}</span><span>{historyOpen ? "▴" : history.length}</span></button>{historyOpen ? <div className="mt-2 max-h-52 overflow-auto rounded-xl border border-slate-200 p-2">{history.length ? history.map((item) => <button key={item.id} onClick={() => applyHistoryItem(item)} className="menu-item mb-1 block w-full rounded-xl px-3 py-2 text-left text-xs text-slate-900 transition hover:bg-slate-50 active:scale-95"><div className="font-mono">{item.searchMovesText}</div><div className="truncate text-slate-500">{item.mode === "alg" ? item.targetAlg : t.searchFromNet}</div></button>) : <div className="px-3 py-2 text-xs text-slate-500">0</div>}{history.length ? <button onClick={() => { setHistory([]); writeStorageList(STORAGE_KEYS.history, []); }} className="menu-item mt-2 w-full rounded-xl px-3 py-2 text-xs text-slate-900">{t.clear}</button> : null}</div> : null}<button onClick={() => setLanguageOpen((v) => !v)} className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"><span>{t.language}</span><span>{languageOpen ? "▴" : LANGUAGE_LABEL[language]}</span></button>{languageOpen ? <div className="mt-2 rounded-xl border border-slate-200 p-2">{Object.keys(TEXT).map((lang) => <button key={lang} onClick={() => { setLanguage(lang); setLanguageOpen(false); }} className={`menu-item mb-1 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95 ${language === lang ? "ring-2 ring-slate-400" : ""}`}><span>{LANGUAGE_LABEL[lang]}</span><span>{language === lang ? "✓" : ""}</span></button>)}</div> : null}</div> : null}</div><div className="mx-auto max-w-6xl"><h1 className="mb-6 text-center text-4xl font-normal tracking-tight text-slate-900 sm:text-5xl">{t.title}</h1><div className="light-panel mb-6 rounded-3xl p-6 shadow-sm ring-1 ring-slate-200"><div className="grid gap-4">{!showNetInput ? <div className="light-inner rounded-3xl border border-slate-200 p-4 shadow-sm"><textarea value={targetAlg} onChange={(e) => setTargetAlg(e.target.value)} placeholder={t.inputPlaceholder} className="h-14 w-full resize-none rounded-2xl border border-slate-300 bg-white px-3 py-4 font-mono text-sm leading-5 outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-slate-400" /><div className="mt-3 flex flex-wrap justify-end gap-2"><button onClick={() => isSearching ? stopSearch() : runSearch("alg")} className={`rounded-xl border px-4 py-2 text-sm font-normal shadow-sm transition hover:bg-slate-50 active:scale-95 ${isSearching ? "border-slate-500 bg-slate-800 text-white hover:bg-slate-700" : "border-slate-300 bg-white text-slate-900"}`}>{isSearching ? "停止" : t.searchFromAlg}</button></div></div> : <div className="light-inner overflow-hidden rounded-3xl border border-slate-200 p-3 sm:p-4"><div className="mb-4 rounded-2xl border border-slate-300 bg-white p-3">
+  return <div className={`${isDark ? "dark-mode" : "light-shell"} min-h-screen px-4 pb-4 pt-16 text-slate-900 md:px-8 md:pb-8 md:pt-16`}><style>{`body{background:#e2e8f0}.light-shell{background:#e2e8f0!important}.light-panel{background-color:#f8fafc!important}.light-inner{background-color:#e2e8f0!important}.dark-mode{background:#27272a!important;color:#f4f4f5!important}.dark-mode .bg-white,.dark-mode .light-panel{background-color:#3f3f46!important}.dark-mode .bg-slate-50,.dark-mode .light-inner{background-color:#34343a!important}.dark-mode .bg-slate-100{background-color:#52525b!important}.dark-mode .text-slate-900{color:#fafafa!important}.dark-mode .text-slate-700,.dark-mode .text-slate-600{color:#e5e7eb!important}.dark-mode .text-slate-500{color:#d4d4d8!important}.dark-mode .border-slate-200,.dark-mode .border-slate-300{border-color:#71717a!important}.dark-mode input,.dark-mode textarea{background-color:#52525b!important;color:#fff!important;border-color:#71717a!important}.dark-mode input::placeholder,.dark-mode textarea::placeholder{color:#d4d4d8!important}.dark-mode button.bg-white{background-color:#52525b!important;color:#fff!important}.dark-mode button.bg-white:hover{background-color:#60606a!important}.dark-mode .menu-button{background-color:#52525b!important;color:#fff!important;border-color:#a1a1aa!important}.dark-mode .menu-panel{background-color:#3f3f46!important;border-color:#a1a1aa!important}.dark-mode .menu-item{background-color:#52525b!important;color:#fff!important;border:1px solid #a1a1aa!important}.dark-mode .menu-item:hover{background-color:#63636d!important}.dark-mode .menu-item span{color:#fff!important}`}</style>{menuOpen ? <button type="button" aria-label="close menu" onClick={() => { setMenuOpen(false); setLanguageOpen(false); }} className="fixed inset-0 z-40 cursor-default bg-transparent" /> : null}<div className="fixed left-4 top-4 z-50"><button onClick={() => setMenuOpen((v) => !v)} className="menu-button flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-300 bg-white text-xl font-normal text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95" aria-label="menu">☰</button>{menuOpen ? <div className="menu-panel mt-2 w-48 rounded-2xl border border-slate-200 bg-white p-2 shadow-lg" onClick={(e) => e.stopPropagation()}><button onClick={() => setIsDark((v) => !v)} className="menu-item flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"><span>{t.darkMode}</span><span>{isDark ? "ON" : "OFF"}</span></button><button onClick={() => setShowMoveCounts((v) => !v)} className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"><span>{t.showMoveCounts}</span><span>{showMoveCounts ? "ON" : "OFF"}</span></button><button data-testid="toggle-net-input" onClick={() => setShowNetInput((v) => !v)} className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"><span>{t.netInput}</span><span>{showNetInput ? t.netMode : t.algMode}</span></button><button onClick={shareUrl} className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"><span>{t.shareUrl}</span><span>↗</span></button><button onClick={() => setSavedOpen((v) => !v)} className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"><span>{t.saved}</span><span>{savedOpen ? "▴" : favorites.length}</span></button>{savedOpen ? <div className="mt-2 max-h-52 overflow-auto rounded-xl border border-slate-200 p-2">{favorites.length ? favorites.map((item) => <button key={item.id} onClick={() => copyText(item.alg)} className="menu-item mb-1 block w-full rounded-xl px-3 py-2 text-left font-mono text-xs text-slate-900 transition hover:bg-slate-50 active:scale-95">{item.alg}</button>) : <div className="px-3 py-2 text-xs text-slate-500">0</div>}{favorites.length ? <button onClick={() => { setFavorites([]); writeStorageList(STORAGE_KEYS.favorites, []); }} className="menu-item mt-2 w-full rounded-xl px-3 py-2 text-xs text-slate-900">{t.clear}</button> : null}</div> : null}<button onClick={() => setHistoryOpen((v) => !v)} className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"><span>{t.history}</span><span>{historyOpen ? "▴" : history.length}</span></button>{historyOpen ? <div className="mt-2 max-h-52 overflow-auto rounded-xl border border-slate-200 p-2">{history.length ? history.map((item) => <button key={item.id} onClick={() => applyHistoryItem(item)} className="menu-item mb-1 block w-full rounded-xl px-3 py-2 text-left text-xs text-slate-900 transition hover:bg-slate-50 active:scale-95"><div className="font-mono">{item.searchMovesText}</div><div className="truncate text-slate-500">{item.mode === "alg" ? item.targetAlg : t.searchFromNet}</div></button>) : <div className="px-3 py-2 text-xs text-slate-500">0</div>}{history.length ? <button onClick={() => { setHistory([]); writeStorageList(STORAGE_KEYS.history, []); }} className="menu-item mt-2 w-full rounded-xl px-3 py-2 text-xs text-slate-900">{t.clear}</button> : null}</div> : null}<button onClick={() => setLanguageOpen((v) => !v)} className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"><span>{t.language}</span><span>{languageOpen ? "▴" : LANGUAGE_LABEL[language]}</span></button>{languageOpen ? <div className="mt-2 rounded-xl border border-slate-200 p-2">{Object.keys(TEXT).map((lang) => <button key={lang} onClick={() => { setLanguage(lang); setLanguageOpen(false); }} className={`menu-item mb-1 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95 ${language === lang ? "ring-2 ring-slate-400" : ""}`}><span>{LANGUAGE_LABEL[lang]}</span><span>{language === lang ? "✓" : ""}</span></button>)}</div> : null}</div> : null}</div><div className="mx-auto max-w-6xl"><h1 className="mb-6 text-center text-4xl font-normal tracking-tight text-slate-900 sm:text-5xl">{t.title}</h1><div className="light-panel mb-6 rounded-3xl p-6 shadow-sm ring-1 ring-slate-200"><div className="grid gap-4">{!showNetInput ? <div className="light-inner rounded-3xl border border-slate-200 p-4 shadow-sm"><textarea value={targetAlg} onChange={(e) => setTargetAlg(e.target.value)} placeholder={t.inputPlaceholder} className="h-14 w-full resize-none rounded-2xl border border-slate-300 bg-white px-3 py-4 font-mono text-sm leading-5 outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-slate-400" /><div className="mt-3 flex flex-wrap justify-end gap-2"><button onClick={() => isSearching ? stopSearch() : runSearch("alg")} className={`rounded-xl border px-4 py-2 text-sm font-normal shadow-sm transition hover:bg-slate-50 active:scale-95 ${isSearching ? "border-slate-500 bg-slate-800 text-white hover:bg-slate-700" : "border-slate-300 bg-white text-slate-900"}`}>{isSearching ? "停止" : t.searchFromAlg}</button></div></div> : <div className="light-inner overflow-hidden rounded-3xl border border-slate-200 p-3 sm:p-4"><div className="mb-4 rounded-2xl border border-slate-300 bg-white p-3">
   <div className="flex flex-wrap gap-2">
     {CASE_PRESET_CATEGORIES.map((category) => (
       <button
@@ -853,56 +1058,18 @@ export default function App() {
   </div>
   {casePresetOpen ? (
     <div data-testid="preset-panel" className="mt-3 max-h-72 overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-2">
-      {casePresetOpen === "COLL" ? (
-        <div className="grid gap-2">
-          <div className="flex flex-wrap gap-1.5">
-            {COLL_GROUPS.map((group) => (
-              <button
-                key={group.id}
-                type="button"
-                data-testid={`coll-group-${group.id}`}
-                onClick={() => setCollGroupOpen((prev) => (prev === group.id ? null : group.id))}
-                title={group.label}
-                className={`flex h-[88px] w-[78px] flex-col items-center justify-center gap-1 rounded-lg border bg-white p-2 transition hover:bg-slate-50 active:scale-95 ${collGroupOpen === group.id ? "border-slate-900 ring-2 ring-slate-400" : "border-slate-300"}`}
-              >
-                <MiniPatternPreview pattern={group.preview} />
-                <span className="h-4 text-[11px] font-normal leading-4 text-slate-700">{group.label}</span>
-              </button>
-            ))}
-          </div>
-          {collGroupOpen ? (
-            <div className="flex flex-wrap gap-1.5 border-t border-slate-200 pt-2">
-              {(COLL_GROUPS.find((group) => group.id === collGroupOpen)?.cases || []).map((preset) => (
-                <button
-                  key={preset.id}
-                  type="button"
-                  onClick={() => applyCasePreset(preset)}
-                  title={preset.label}
-                  className="flex h-[88px] w-[78px] flex-col items-center justify-center gap-1 rounded-lg border border-slate-300 bg-white p-2 transition hover:bg-slate-50 active:scale-95"
-                >
-                  <MiniPatternPreview pattern={preset.pattern} />
-                  <span className="h-4 text-[11px] font-normal leading-4 text-slate-700">{preset.label}</span>
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      ) : (
-        <div className="flex flex-wrap gap-1.5">
-          {CASE_PRESETS[casePresetOpen].map((preset) => (
-            <button
-              key={preset.id}
-              type="button"
-              onClick={() => applyCasePreset(preset)}
-              title={casePresetOpen === "OLL" ? `OLL ${preset.number}` : preset.label || preset.id}
-              className="flex h-[88px] w-[78px] flex-col items-center justify-center gap-1 rounded-lg border border-slate-300 bg-white p-2 transition hover:bg-slate-50 active:scale-95"
-            >
-              <MiniPatternPreview pattern={preset.pattern} previewMask={preset.previewMask} />
-              <span className="h-4 text-[11px] font-normal leading-4 text-slate-700">{casePresetOpen === "OLL" ? preset.number : preset.label || ""}</span>
-            </button>
-          ))}
-        </div>
-      )}
+      <CasePresetPanel
+        category={casePresetOpen}
+        collGroupOpen={collGroupOpen}
+        setCollGroupOpen={setCollGroupOpen}
+        zbllFamilyOpen={zbllFamilyOpen}
+        setZbllFamilyOpen={setZbllFamilyOpen}
+        zbllCollOpen={zbllCollOpen}
+        setZbllCollOpen={setZbllCollOpen}
+        zblsF2lOpen={zblsF2lOpen}
+        setZblsF2lOpen={setZblsF2lOpen}
+        applyCasePreset={applyCasePreset}
+      />
     </div>
   ) : null}
 </div><div className="mb-4 flex flex-wrap gap-2">{[...FACE_ORDER, DONT_CARE].map((face) => <button key={face} onClick={() => setSelectedColor(face)} className={`flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-normal transition active:scale-95 ${selectedColor === face ? "border-slate-900 bg-white shadow-md ring-2 ring-slate-400" : "border-slate-300 bg-white hover:bg-slate-50"}`}><span className="inline-flex h-5 w-5 items-center justify-center rounded border text-[10px] font-normal text-white" style={{ background: FACE_COLOR_STYLE[face], borderColor: "#64748b" }}>{face === DONT_CARE ? "?" : ""}</span></button>)}</div><NetEditor pattern={targetPattern} setPattern={setTargetPattern} selectedColor={selectedColor} /><div className="mt-4 flex justify-end"><button onClick={() => isSearching ? stopSearch() : runSearch("pattern")} className={`w-fit whitespace-nowrap rounded-xl border px-4 py-2 text-sm font-normal shadow-sm transition hover:bg-slate-50 active:scale-95 ${isSearching ? "border-slate-500 bg-slate-800 text-white hover:bg-slate-700" : "border-slate-300 bg-white text-slate-900"}`}>{isSearching ? "停止" : t.searchFromNet}</button></div></div>}<div className="grid items-start gap-4 sm:grid-cols-4"><label className="grid gap-1"><span className="text-sm font-normal">{t.generator}</span><input value={searchMovesText} onChange={(e) => setSearchMovesText(e.target.value)} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" placeholder="例: R U D / R U f / R U S / R U x" /><div className="mt-2 flex flex-wrap gap-1.5">{PRESET_GENS.map((preset) => <button key={preset} type="button" onClick={() => setSearchMovesText(preset)} className="rounded-lg border border-slate-300 bg-white px-2 py-1 font-mono text-xs text-slate-700 transition hover:bg-slate-50 active:scale-95">{preset}</button>)}</div></label><label className="grid gap-1"><span className="text-sm font-normal">{t.requiredParts}</span><input value={requiredPartsText} onChange={(e) => setRequiredPartsText(e.target.value)} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" placeholder={t.requiredPartsPlaceholder} /><div className="mt-2 flex flex-wrap gap-1.5">{REQUIRED_PART_PRESETS.map((preset) => <button key={preset} type="button" onClick={() => setRequiredPartsText((prev) => prev.trim() ? `${prev.trim()}${NL}${preset}` : preset)} className="rounded-lg border border-slate-300 bg-white px-2 py-1 font-mono text-xs text-slate-700 transition hover:bg-slate-50 active:scale-95">{preset}</button>)}</div></label><NumberInput label={t.depthLimit} value={maxSymbolDepth} onChange={setMaxSymbolDepth} min={1} max={30} /><NumberInput label={t.resultLimit} value={limit} onChange={setLimit} min={1} max={50} /></div></div></div>{error ? <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-300 bg-white p-4 text-sm text-slate-700"><span>{error}</span>{canContinueUnsafe ? <button type="button" onClick={continuePausedSearch} className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-normal text-slate-700 transition hover:bg-slate-50 active:scale-95">{t.unsafeContinue}</button> : null}</div> : null}{shareMessage ? <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-3 text-sm text-slate-600">{shareMessage}</div> : null}<div className="mb-4">{isSearching ? <ThinkingCard foundCount={solutions.length} t={t} /> : !error && hasSearched && searchExhausted && solutions.length > 0 && solutions.length < Math.max(1, Number(limit) || 1) ? <ResultSummaryCard text={typeof t.searchFinished === "function" ? t.searchFinished(solutions.length) : t.searchFinished} /> : null}</div><div className="grid gap-4 md:grid-cols-2">{solutions.map((solution, i) => <SolutionCard key={`${i}-${algToString(solution)}`} solution={solution} t={t} showMoveCounts={showMoveCounts} onSave={saveFavoriteSolution} onCopy={copyText} />)}</div>{!isSearching && !error && hasSearched && solutions.length === 0 ? <div className="mt-4"><EmptyCard text={t.noResults} /></div> : null}{!hasSearched && !isSearching ? <div className="mt-4"><EmptyCard text={t.initialHelp} /></div> : null}</div></div>;
