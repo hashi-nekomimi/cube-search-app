@@ -1,4 +1,12 @@
 import { expect, test } from "@playwright/test";
+import {
+  COLL_PRESET_DATA,
+  ZBLL_PRESET_DATA,
+  ZBLS_F2L_PRESET_DATA,
+  ZBLS_PRESET_DATA,
+} from "../../src/presetData.generated.js";
+
+const FACE_ORDER = ["U", "R", "F", "D", "L", "B"];
 
 async function openNetInput(page) {
   await page.goto("/");
@@ -20,9 +28,9 @@ async function visibleCaseCount(page) {
 
 async function sumCollCases(page) {
   let total = 0;
-  for (const group of ["H", "Pi", "U", "T", "L", "S", "AS"]) {
-    await page.getByTestId(`coll-group-${group}`).click();
-    const expected = group === "H" ? 4 : 6;
+  for (const family of ["H", "Pi", "U", "T", "L", "S", "AS"]) {
+    await page.getByTestId(`coll-group-${family}`).click();
+    const expected = COLL_PRESET_DATA.filter((record) => record.family === family).length;
     await expect(page.locator('[data-testid^="preset-case-coll-"]')).toHaveCount(expected);
     total += expected;
   }
@@ -33,12 +41,11 @@ async function sumZbllCases(page) {
   let total = 0;
   for (const family of ["H", "Pi", "U", "T", "L", "S", "AS"]) {
     await page.getByTestId(`zbll-family-${family}`).click();
-    const collButtons = page.locator(`[data-testid^="zbll-coll-coll-${family.toLowerCase()}-"]`);
-    const collCount = family === "H" ? 4 : 6;
-    await expect(collButtons).toHaveCount(collCount);
-    for (let i = 0; i < collCount; i += 1) {
-      await collButtons.nth(i).click();
-      const expected = family === "H" && i >= 2 ? 8 : 12;
+    const collCases = COLL_PRESET_DATA.filter((record) => record.family === family);
+    await expect(page.locator('[data-testid^="zbll-coll-"]')).toHaveCount(collCases.length);
+    for (const coll of collCases) {
+      await page.getByTestId(`zbll-coll-${coll.id}`).click();
+      const expected = ZBLL_PRESET_DATA.filter((record) => record.coll === coll.name).length;
       await expect(page.locator('[data-testid^="preset-case-zbll-"]')).toHaveCount(expected);
       total += expected;
     }
@@ -48,19 +55,57 @@ async function sumZbllCases(page) {
 
 async function sumZblsCases(page) {
   let total = 0;
-  const f2lButtons = page.locator('[data-testid^="zbls-f2l-"]');
-  await expect(f2lButtons).toHaveCount(42);
-  for (let i = 0; i < 42; i += 1) {
-    await f2lButtons.nth(i).scrollIntoViewIfNeeded();
-    await f2lButtons.nth(i).click();
+  await expect(page.locator('[data-testid^="zbls-f2l-"]')).toHaveCount(42);
+  for (const group of ZBLS_F2L_PRESET_DATA) {
+    const button = page.getByTestId(`zbls-f2l-${group.id}`);
+    await button.scrollIntoViewIfNeeded();
+    await button.click();
     const count = await visibleCaseCount(page);
-    expect(count).toBeGreaterThan(0);
+    expect(count, group.id).toBe(group.caseCount);
     total += count;
+    await button.click();
   }
   return total;
 }
 
-test("case preset hierarchy exposes the expected sets", async ({ page }) => {
+function stateToPattern(state) {
+  return Object.fromEntries(FACE_ORDER.map((face, faceIndex) => [
+    face,
+    state.slice(faceIndex * 9, faceIndex * 9 + 9).split(""),
+  ]));
+}
+
+async function expectNetState(page, state) {
+  const actual = await page.locator('[data-testid^="net-"]').evaluateAll((elements) => Object.fromEntries(
+    elements.map((element) => [element.dataset.testid, element.dataset.color]),
+  ));
+  const expected = {};
+  const pattern = stateToPattern(state);
+  for (const face of FACE_ORDER) {
+    pattern[face].forEach((color, index) => {
+      expected[`net-${face}-${index}`] = color;
+    });
+  }
+  expect(actual).toEqual(expected);
+}
+
+function lastLayerPreviewColors(state) {
+  const pattern = stateToPattern(state);
+  return [
+    pattern.B[2], pattern.B[1], pattern.B[0],
+    pattern.L[0], pattern.U[0], pattern.U[1], pattern.U[2], pattern.R[2],
+    pattern.L[1], pattern.U[3], pattern.U[4], pattern.U[5], pattern.R[1],
+    pattern.L[2], pattern.U[6], pattern.U[7], pattern.U[8], pattern.R[0],
+    pattern.F[0], pattern.F[1], pattern.F[2],
+  ];
+}
+
+async function expectPreviewColors(tile, expected) {
+  await expect(tile.locator("[data-color]")).toHaveCount(expected.length);
+  expect(await tile.locator("[data-color]").evaluateAll((elements) => elements.map((element) => element.dataset.color))).toEqual(expected);
+}
+
+test("case preset hierarchy exposes all exact sets", async ({ page }) => {
   await openPresetPanel(page, "OLL");
   await expect(page.locator('[data-testid^="preset-case-oll-"]')).toHaveCount(57);
 
@@ -77,20 +122,31 @@ test("case preset hierarchy exposes the expected sets", async ({ page }) => {
   expect(await sumZblsCases(page)).toBe(302);
 });
 
-test("nested presets apply their color arrays to the net", async ({ page }) => {
+test("nested preset icons and applied nets use the generated color arrays", async ({ page }) => {
+  const coll = COLL_PRESET_DATA[0];
   await openPresetPanel(page, "COLL");
-  await page.getByTestId("coll-group-H").click();
-  await page.locator('[data-testid^="preset-case-coll-h-"]').first().click();
-  await expect(page.getByTestId("net-U-0")).toHaveAttribute("data-color", /[RFLB]/);
+  await page.getByTestId(`coll-group-${coll.family}`).click();
+  const collTile = page.getByTestId(`preset-case-${coll.id}`);
+  await expectPreviewColors(collTile, lastLayerPreviewColors(coll.state));
+  await collTile.click();
+  await expectNetState(page, coll.state);
 
+  const zbll = ZBLL_PRESET_DATA[0];
+  const zbllColl = COLL_PRESET_DATA.find((record) => record.name === zbll.coll);
   await openPresetPanel(page, "ZBLL");
-  await page.getByTestId("zbll-family-U").click();
-  await page.getByTestId("zbll-coll-coll-u-1").click();
-  await page.locator('[data-testid^="preset-case-zbll-u-1-"]').first().click();
-  await expect(page.getByTestId("net-U-1")).toHaveAttribute("data-color", /[URFLB]/);
+  await page.getByTestId(`zbll-family-${zbll.family}`).click();
+  await page.getByTestId(`zbll-coll-${zbllColl.id}`).click();
+  const zbllTile = page.getByTestId(`preset-case-${zbll.id}`);
+  await expectPreviewColors(zbllTile, lastLayerPreviewColors(zbll.state));
+  await zbllTile.click();
+  await expectNetState(page, zbll.state);
 
+  const zbls = ZBLS_PRESET_DATA[0];
   await openPresetPanel(page, "ZBLS");
-  await page.getByTestId("zbls-f2l-f2l-1").click();
-  await page.locator('[data-testid^="preset-case-zbls-f2l-1-"]').first().click();
-  await expect(page.getByTestId("net-F-8")).toHaveAttribute("data-color", /[DFR]/);
+  await page.getByTestId(`zbls-f2l-${zbls.f2l}`).click();
+  const zblsTile = page.getByTestId(`preset-case-${zbls.id}`);
+  const zblsPattern = stateToPattern(zbls.state);
+  await expectPreviewColors(zblsTile, [...zblsPattern.U, ...zblsPattern.F, ...zblsPattern.R]);
+  await zblsTile.click();
+  await expectNetState(page, zbls.state);
 });

@@ -1,4 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import {
+  COLL_PRESET_DATA,
+  ZBLL_PRESET_DATA,
+  ZBLS_F2L_PRESET_DATA,
+  ZBLS_PRESET_DATA,
+} from "./presetData.generated.js";
 
 const FACE_ORDER = ["U", "R", "F", "D", "L", "B"];
 const DONT_CARE = "X";
@@ -408,278 +414,73 @@ const PLL_ALGS = [
 ];
 const PLL_CASES = PLL_ALGS.map(([label, alg], index) => ({ id: `pll-${index + 1}-${label.toLowerCase()}`, label, alg, pattern: patternFromAlg(alg) }));
 
-const U_CORNER_CUBIES = [
-  ["U", "R", "F"],
-  ["U", "F", "L"],
-  ["U", "L", "B"],
-  ["U", "B", "R"],
+const COLL_FAMILY_META = [
+  { id: "H", label: "H" },
+  { id: "Pi", label: "Pi" },
+  { id: "U", label: "U" },
+  { id: "T", label: "T" },
+  { id: "L", label: "L" },
+  { id: "S", label: "Sune" },
+  { id: "AS", label: "Anti Sune" },
 ];
-const U_CORNER_SLOTS = [
-  [["U", 8], ["R", 0], ["F", 2]],
-  [["U", 6], ["F", 0], ["L", 2]],
-  [["U", 0], ["L", 0], ["B", 2]],
-  [["U", 2], ["B", 0], ["R", 2]],
-];
-const U_EDGE_CUBIES = [
-  ["U", "R"],
-  ["U", "F"],
-  ["U", "L"],
-  ["U", "B"],
-];
-const U_EDGE_SLOTS = [
-  [["U", 5], ["R", 1]],
-  [["U", 7], ["F", 1]],
-  [["U", 3], ["L", 1]],
-  [["U", 1], ["B", 1]],
-];
-const LAST_SLOT_CORNER_CUBIE = ["D", "F", "R"];
-const LAST_SLOT_EDGE_CUBIE = ["F", "R"];
-const LAST_SLOT_CORNER_POSITIONS = [
-  { id: "URF", stickers: U_CORNER_SLOTS[0] },
-  { id: "UFL", stickers: U_CORNER_SLOTS[1] },
-  { id: "ULB", stickers: U_CORNER_SLOTS[2] },
-  { id: "UBR", stickers: U_CORNER_SLOTS[3] },
-  { id: "DFR", stickers: [["D", 2], ["F", 8], ["R", 6]] },
-];
-const LAST_SLOT_EDGE_POSITIONS = [
-  { id: "UR", stickers: U_EDGE_SLOTS[0] },
-  { id: "UF", stickers: U_EDGE_SLOTS[1] },
-  { id: "UL", stickers: U_EDGE_SLOTS[2] },
-  { id: "UB", stickers: U_EDGE_SLOTS[3] },
-  { id: "FR", stickers: [["F", 5], ["R", 3]] },
-];
-const COLL_FAMILY_DEFS = [
-  { id: "H", label: "H", orientation: [1, 2, 1, 2], collCount: 4 },
-  { id: "Pi", label: "Pi", orientation: [1, 1, 2, 2], collCount: 6 },
-  { id: "U", label: "U", orientation: [1, 2, 2, 1], collCount: 6 },
-  { id: "T", label: "T", orientation: [1, 2, 0, 0], collCount: 6 },
-  { id: "L", label: "L", orientation: [1, 0, 2, 0], collCount: 6 },
-  { id: "S", label: "Sune", orientation: [0, 1, 2, 0], collCount: 6 },
-  { id: "AS", label: "Anti Sune", orientation: [0, 2, 1, 0], collCount: 6 },
-];
-const ZBLS_EO_MASKS = [
-  [0, 0, 0, 0],
-  [1, 1, 0, 0],
-  [1, 0, 1, 0],
-  [0, 1, 1, 0],
-  [1, 0, 0, 1],
-  [0, 1, 0, 1],
-  [0, 0, 1, 1],
-  [1, 1, 1, 1],
-];
-const ZBLS_SLOT_EO_COUNTS = {
-  "0-0": 2,
-  "0-1": 2,
-  "1-0": 2,
-  "1-1": 2,
-  "2-0": 3,
-  "2-1": 3,
-};
 
-function permutations(items) {
-  if (items.length <= 1) return [items];
-  const result = [];
-  for (let i = 0; i < items.length; i += 1) {
-    const rest = [...items.slice(0, i), ...items.slice(i + 1)];
-    for (const tail of permutations(rest)) result.push([items[i], ...tail]);
-  }
-  return result;
+function patternFromPresetState(state) {
+  return stateStringToPattern(state);
 }
 
-const LAST_LAYER_PERMUTATIONS = permutations([0, 1, 2, 3]);
-const COLL_CORNER_PERMUTATIONS = LAST_LAYER_PERMUTATIONS.filter((cornerPermutation) => cornerPermutation[0] === 0);
+const COLL_CASES = COLL_PRESET_DATA.map((record) => ({
+  id: record.id,
+  family: record.family,
+  label: record.name,
+  pattern: patternFromPresetState(record.state),
+}));
 
-function permutationParity(permutation) {
-  let inversions = 0;
-  for (let i = 0; i < permutation.length; i += 1) {
-    for (let j = i + 1; j < permutation.length; j += 1) {
-      if (permutation[i] > permutation[j]) inversions += 1;
-    }
-  }
-  return inversions % 2;
-}
-
-function orientedColors(colors, twist) {
-  if (twist === 1) return [colors[1], colors[2], colors[0]];
-  if (twist === 2) return [colors[2], colors[0], colors[1]];
-  return colors;
-}
-
-function flippedColors(colors, flip) {
-  return flip ? [colors[1], colors[0]] : colors;
-}
-
-function fillStickerSet(pattern, slots, colors) {
-  for (let i = 0; i < slots.length; i += 1) {
-    const [face, index] = slots[i];
-    pattern[face][index] = colors[i];
-  }
-}
-
-function makeLastLayerPattern({ cornerOrientation, cornerPermutation, edgePermutation = null, includeEdgePermutation = false }) {
-  const pattern = solvedPattern();
-  pattern.U = ["X", "U", "X", "U", "U", "U", "X", "U", "X"];
-  pattern.R = ["X", "X", "X", "R", "R", "R", "R", "R", "R"];
-  pattern.F = ["X", "X", "X", "F", "F", "F", "F", "F", "F"];
-  pattern.L = ["X", "X", "X", "L", "L", "L", "L", "L", "L"];
-  pattern.B = ["X", "X", "X", "B", "B", "B", "B", "B", "B"];
-
-  for (let slotIndex = 0; slotIndex < 4; slotIndex += 1) {
-    const colors = orientedColors(U_CORNER_CUBIES[cornerPermutation[slotIndex]], cornerOrientation[slotIndex]);
-    fillStickerSet(pattern, U_CORNER_SLOTS[slotIndex], colors);
-  }
-
-  if (includeEdgePermutation) {
-    for (let slotIndex = 0; slotIndex < 4; slotIndex += 1) {
-      fillStickerSet(pattern, U_EDGE_SLOTS[slotIndex], U_EDGE_CUBIES[edgePermutation[slotIndex]]);
-    }
-  }
-  return pattern;
-}
-
-function makeCollGroup(def) {
-  const cases = COLL_CORNER_PERMUTATIONS.slice(0, def.collCount).map((cornerPermutation, index) => ({
-    id: `coll-${def.id.toLowerCase()}-${index + 1}`,
-    family: def.id,
-    familyLabel: def.label,
-    index: index + 1,
-    label: `${def.id}${index + 1}`,
-    cornerOrientation: def.orientation,
-    cornerPermutation,
-    pattern: makeLastLayerPattern({ cornerOrientation: def.orientation, cornerPermutation }),
-  }));
+const COLL_GROUPS = COLL_FAMILY_META.map((family) => {
+  const cases = COLL_CASES.filter((record) => record.family === family.id);
   return {
-    id: def.id,
-    label: `${def.id} (${cases.length})`,
+    ...family,
+    label: `${family.label} (${cases.length})`,
     preview: cases[0].pattern,
     cases,
   };
-}
-
-function makeZbllCasesForCollCase(collCase, collIndex) {
-  const validEdges = LAST_LAYER_PERMUTATIONS.filter((edgePermutation) => (
-    permutationParity(collCase.cornerPermutation) === permutationParity(edgePermutation)
-  ));
-  const targetCount = collCase.family === "H" && collIndex >= 2 ? 8 : 12;
-  return validEdges.slice(0, targetCount).map((edgePermutation, index) => ({
-    id: `zbll-${collCase.family.toLowerCase()}-${collCase.index}-${index + 1}`,
-    family: collCase.family,
-    collId: collCase.id,
-    label: `${collCase.label}-${String(index + 1).padStart(2, "0")}`,
-    pattern: makeLastLayerPattern({
-      cornerOrientation: collCase.cornerOrientation,
-      cornerPermutation: collCase.cornerPermutation,
-      edgePermutation,
-      includeEdgePermutation: true,
-    }),
-  }));
-}
-
-const COLL_GROUPS = COLL_FAMILY_DEFS.map(makeCollGroup);
-const COLL_CASES = COLL_GROUPS.flatMap((group) => group.cases);
-const ZBLL_GROUPS = COLL_GROUPS.map((group) => ({
-  ...group,
-  cases: group.cases.map((collCase, collIndex) => ({
-    ...collCase,
-    zbllCases: makeZbllCasesForCollCase(collCase, collIndex),
-  })),
-}));
-const ZBLL_CASES = ZBLL_GROUPS.flatMap((group) => group.cases.flatMap((collCase) => collCase.zbllCases));
-
-function rotateCornerSlotId(slotId) {
-  return { URF: "UBR", UBR: "ULB", ULB: "UFL", UFL: "URF", DFR: "DFR" }[slotId];
-}
-
-function rotateEdgeSlotId(slotId) {
-  return { UR: "UB", UB: "UL", UL: "UF", UF: "UR", FR: "FR" }[slotId];
-}
-
-function canonicalF2lKey(cornerSlotId, cornerTwist, edgeSlotId, edgeFlip) {
-  const keys = [];
-  let currentCornerSlotId = cornerSlotId;
-  let currentEdgeSlotId = edgeSlotId;
-  for (let i = 0; i < 4; i += 1) {
-    keys.push(`${currentCornerSlotId}:${cornerTwist}|${currentEdgeSlotId}:${edgeFlip}`);
-    currentCornerSlotId = rotateCornerSlotId(currentCornerSlotId);
-    currentEdgeSlotId = rotateEdgeSlotId(currentEdgeSlotId);
-  }
-  return keys.sort()[0];
-}
-
-function f2lKind(cornerSlotId, edgeSlotId) {
-  const cornerInSlot = cornerSlotId === "DFR";
-  const edgeInSlot = edgeSlotId === "FR";
-  if (!cornerInSlot && !edgeInSlot) return "top";
-  if (!cornerInSlot) return "edge";
-  if (!edgeInSlot) return "corner";
-  return "slot";
-}
-
-function makeF2lGroups() {
-  const groupsByKey = new Map();
-  for (const cornerSlot of LAST_SLOT_CORNER_POSITIONS) {
-    for (let cornerTwist = 0; cornerTwist < 3; cornerTwist += 1) {
-      for (const edgeSlot of LAST_SLOT_EDGE_POSITIONS) {
-        for (let edgeFlip = 0; edgeFlip < 2; edgeFlip += 1) {
-          const key = canonicalF2lKey(cornerSlot.id, cornerTwist, edgeSlot.id, edgeFlip);
-          if (!groupsByKey.has(key)) {
-            groupsByKey.set(key, {
-              key,
-              cornerSlot,
-              cornerTwist,
-              edgeSlot,
-              edgeFlip,
-              kind: f2lKind(cornerSlot.id, edgeSlot.id),
-            });
-          }
-        }
-      }
-    }
-  }
-  return [...groupsByKey.values()]
-    .sort((a, b) => a.key.localeCompare(b.key))
-    .map((group, index) => ({
-      ...group,
-      id: `f2l-${index + 1}`,
-      label: `F${String(index + 1).padStart(2, "0")}`,
-      title: `${group.cornerSlot.id}/${group.cornerTwist} ${group.edgeSlot.id}/${group.edgeFlip}`,
-    }));
-}
-
-function makeZblsPattern(f2lCase, edgeOrientation) {
-  const pattern = solvedPattern();
-  pattern.U = ["X", edgeOrientation[3] ? "B" : "U", "X", edgeOrientation[2] ? "L" : "U", "U", edgeOrientation[0] ? "R" : "U", "X", edgeOrientation[1] ? "F" : "U", "X"];
-  pattern.R = ["X", edgeOrientation[0] ? "U" : "X", "X", "X", "R", "R", "X", "R", "R"];
-  pattern.F = ["X", edgeOrientation[1] ? "U" : "X", "X", "F", "F", "X", "F", "F", "X"];
-  pattern.L = ["X", edgeOrientation[2] ? "U" : "X", "X", "L", "L", "L", "L", "L", "L"];
-  pattern.B = ["X", edgeOrientation[3] ? "U" : "X", "X", "B", "B", "B", "B", "B", "B"];
-  pattern.D = ["D", "D", "X", "D", "D", "D", "D", "D", "D"];
-  fillStickerSet(pattern, f2lCase.cornerSlot.stickers, orientedColors(LAST_SLOT_CORNER_CUBIE, f2lCase.cornerTwist));
-  fillStickerSet(pattern, f2lCase.edgeSlot.stickers, flippedColors(LAST_SLOT_EDGE_CUBIE, f2lCase.edgeFlip));
-  return pattern;
-}
-
-function zblsEoMasksForF2lCase(f2lCase) {
-  if (f2lCase.kind !== "slot") return ZBLS_EO_MASKS;
-  const count = ZBLS_SLOT_EO_COUNTS[`${f2lCase.cornerTwist}-${f2lCase.edgeFlip}`] || 2;
-  return ZBLS_EO_MASKS.slice(0, count);
-}
-
-const ZBLS_GROUPS = makeF2lGroups().map((f2lCase) => {
-  const cases = zblsEoMasksForF2lCase(f2lCase).map((edgeOrientation, index) => ({
-    id: `zbls-${f2lCase.id}-${index + 1}`,
-    f2lId: f2lCase.id,
-    family: f2lCase.kind,
-    label: `EO${index + 1}`,
-    pattern: makeZblsPattern(f2lCase, edgeOrientation),
-  }));
-  return {
-    ...f2lCase,
-    preview: makeZblsPattern(f2lCase, ZBLS_EO_MASKS[0]),
-    cases,
-  };
 });
-const ZBLS_CASES = ZBLS_GROUPS.flatMap((group) => group.cases);
+
+const ZBLL_GROUPS = COLL_GROUPS.map((family) => ({
+  ...family,
+  cases: family.cases.map((collCase) => {
+    const zbllCases = ZBLL_PRESET_DATA
+      .filter((record) => record.coll === collCase.label)
+      .map((record) => ({
+        id: record.id,
+        family: record.family,
+        collId: collCase.id,
+        label: record.name.replace(/\s+/g, ""),
+        pattern: patternFromPresetState(record.state),
+      }));
+    return { ...collCase, zbllCases };
+  }),
+}));
+
+const ZBLL_CASES = ZBLL_GROUPS.flatMap((family) => (
+  family.cases.flatMap((collCase) => collCase.zbllCases)
+));
+
+const ZBLS_CASES = ZBLS_PRESET_DATA.map((record) => ({
+  id: record.id,
+  f2lId: record.f2l,
+  label: `EO${String(record.eo).padStart(2, "0")}`,
+  pattern: patternFromPresetState(record.state),
+}));
+
+const ZBLS_GROUPS = ZBLS_F2L_PRESET_DATA.map((record) => ({
+  id: record.id,
+  label: record.label,
+  title: record.solved ? `${record.title} (solved)` : record.title,
+  kind: record.kind,
+  solved: record.solved,
+  preview: patternFromPresetState(record.state),
+  cases: ZBLS_CASES.filter((preset) => preset.f2lId === record.id),
+}));
 
 const CASE_PRESETS = {
   OLL: OLL_CASES,
@@ -798,7 +599,7 @@ function workerMain() {
 function Sticker({ color, onClick, locked = false, testId }) { return <button type="button" data-testid={testId} data-color={color} onClick={onClick} disabled={locked} className={["aspect-square w-full rounded-md border transition duration-150", locked ? "cursor-not-allowed ring-2 ring-slate-500" : "hover:scale-105 active:scale-95"].join(" ")} style={{ background: FACE_COLOR_STYLE[color], borderColor: "#64748b" }} title={FACE_LABEL[color] || color}>{color === DONT_CARE ? <span className="text-xs font-normal text-white">?</span> : null}</button>; }
 function FaceGrid({ face, stickers, onStickerClick }) { return <div className="grid w-full grid-cols-3 gap-1">{stickers.map((color, idx) => <Sticker key={idx} testId={face ? `net-${face}-${idx}` : undefined} color={color} locked={idx === 4} onClick={() => onStickerClick(idx)} />)}</div>; }
 function MiniSticker({ filled, corner = false }) { if (corner) return <div className="h-2.5 w-2.5 sm:h-3 sm:w-3" />; return <div className="h-2.5 w-2.5 rounded-[2px] border border-slate-500/70 sm:h-3 sm:w-3" style={{ background: filled ? "#f8fafc" : "#374151" }} />; }
-function MiniColorSticker({ color, corner = false }) { if (corner) return <div className="h-2.5 w-2.5 sm:h-3 sm:w-3" />; return <div className="h-2.5 w-2.5 rounded-[2px] border border-slate-500/70 sm:h-3 sm:w-3" style={{ background: FACE_COLOR_STYLE[color] || FACE_COLOR_STYLE.X }} />; }
+function MiniColorSticker({ color, corner = false }) { if (corner) return <div className="h-2.5 w-2.5 sm:h-3 sm:w-3" />; return <div data-color={color} className="h-2.5 w-2.5 rounded-[2px] border border-slate-500/70 sm:h-3 sm:w-3" style={{ background: FACE_COLOR_STYLE[color] || FACE_COLOR_STYLE.X }} />; }
 function fallbackPreviewMask(pattern) { const u = pattern.U; const bit = (idx) => (u[idx] === "U" ? "1" : "0"); return [`x${bit(0)}${bit(1)}${bit(2)}x`, `0${bit(0)}${bit(1)}${bit(2)}0`, `0${bit(3)}${bit(4)}${bit(5)}0`, `0${bit(6)}${bit(7)}${bit(8)}0`, `x${bit(6)}${bit(7)}${bit(8)}x`].join(""); }
 function pllPreviewCells(pattern) {
   return [
@@ -809,7 +610,19 @@ function pllPreviewCells(pattern) {
     null, pattern.F[0], pattern.F[1], pattern.F[2], null,
   ];
 }
-function MiniPatternPreview({ pattern, previewMask }) {
+function MiniFacePreview({ stickers, face }) {
+  return <div data-preview-face={face} className="grid grid-cols-3 gap-[1px]">{stickers.map((color, index) => <span key={index} data-color={color} className="h-[7px] w-[7px] rounded-[1px] border border-slate-500/70" style={{ background: FACE_COLOR_STYLE[color] || FACE_COLOR_STYLE.X }} />)}</div>;
+}
+function MiniZblsPreview({ pattern }) {
+  return (
+    <div className="grid w-[47px] gap-[2px]">
+      <div className="ml-[8px]"><MiniFacePreview face="U" stickers={pattern.U} /></div>
+      <div className="flex gap-[2px]"><MiniFacePreview face="F" stickers={pattern.F} /><MiniFacePreview face="R" stickers={pattern.R} /></div>
+    </div>
+  );
+}
+function MiniPatternPreview({ pattern, previewMask, variant = "last-layer" }) {
+  if (variant === "zbls") return <MiniZblsPreview pattern={pattern} />;
   if (!previewMask) {
     return <div className="grid grid-cols-5 gap-[2px]">{pllPreviewCells(pattern).map((cell, idx) => <MiniColorSticker key={idx} corner={!cell} color={cell || "X"} />)}</div>;
   }
@@ -822,7 +635,7 @@ function ThinkingCard({ foundCount, t }) { return <div className="rounded-2xl bo
 function ResultSummaryCard({ text, className = "" }) { return <div className={`rounded-2xl border border-slate-300 bg-white p-4 shadow-sm ${className}`}><div className="flex min-h-[34px] items-center justify-center text-sm text-slate-600">{text}</div></div>; }
 function EmptyCard({ text, className = "" }) { return <ResultSummaryCard text={text} className={className} />; }
 function NumberInput({ label, value, onChange, min = 1, max = 99 }) { function setClamped(nextValue) { const raw = String(nextValue); if (raw === "") { onChange(""); return; } const numeric = Number(raw); if (!Number.isFinite(numeric)) return; onChange(Math.min(max, Math.max(min, Math.trunc(numeric)))); } return <label className="grid gap-1"><span className="text-sm font-normal">{label}</span><input type="number" inputMode="numeric" pattern="[0-9]*" min={min} max={max} step="1" value={value} onChange={(e) => setClamped(e.target.value)} onBlur={() => { if (value === "") onChange(min); }} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 text-center text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" /></label>; }
-function PresetTile({ label, pattern, previewMask, title, testId, selected = false, onClick }) {
+function PresetTile({ label, pattern, previewMask, previewVariant, title, testId, selected = false, onClick }) {
   return (
     <button
       type="button"
@@ -831,7 +644,7 @@ function PresetTile({ label, pattern, previewMask, title, testId, selected = fal
       title={title || label}
       className={`flex h-[88px] w-[78px] flex-col items-center justify-center gap-1 rounded-lg border bg-white p-2 transition hover:bg-slate-50 active:scale-95 ${selected ? "border-slate-900 ring-2 ring-slate-400" : "border-slate-300"}`}
     >
-      <MiniPatternPreview pattern={pattern} previewMask={previewMask} />
+      <MiniPatternPreview pattern={pattern} previewMask={previewMask} variant={previewVariant} />
       <span className="h-4 max-w-full truncate text-[11px] font-normal leading-4 text-slate-700">{label}</span>
     </button>
   );
@@ -945,10 +758,11 @@ function ZbllPresetPanel({ activeFamily, setActiveFamily, activeColl, setActiveC
 }
 function ZblsPresetPanel({ activeF2l, setActiveF2l, applyCasePreset }) {
   const group = ZBLS_GROUPS.find((item) => item.id === activeF2l);
+  const visibleGroups = group ? [group] : ZBLS_GROUPS;
   return (
     <div className="grid gap-2">
       <PresetTileList>
-        {ZBLS_GROUPS.map((item) => (
+        {visibleGroups.map((item) => (
           <PresetTile
             key={item.id}
             testId={`zbls-f2l-${item.id}`}
@@ -957,6 +771,7 @@ function ZblsPresetPanel({ activeF2l, setActiveF2l, applyCasePreset }) {
             title={item.title}
             label={`${item.label} (${item.cases.length})`}
             pattern={item.preview}
+            previewVariant="zbls"
           />
         ))}
       </PresetTileList>
@@ -970,6 +785,7 @@ function ZblsPresetPanel({ activeF2l, setActiveF2l, applyCasePreset }) {
               title={`${group.label} ${preset.label}`}
               label={preset.label}
               pattern={preset.pattern}
+              previewVariant="zbls"
             />
           ))}
         </PresetTileList>

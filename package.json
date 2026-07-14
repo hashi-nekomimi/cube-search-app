@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
+    "presets:generate": "node scripts/generate-preset-data.mjs",
     "test:e2e": "playwright test",
     "preview": "vite preview"
   },
