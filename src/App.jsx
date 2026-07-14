@@ -363,6 +363,177 @@ function readabilityPenalty(moves) {
   return penalty;
 }
 
+const REGRIP_SUFFIXES_BY_FACE = {
+  R: ["'3", "'2", "'", "", "2", "3"],
+  U: ["'2", "'", "", "2"],
+  D: ["'2", "'", "", "2"],
+  F: ["'", "", "2"],
+  B: ["'", "", "2"],
+};
+const REGRIP_ALLOWED = {
+  "-2": {
+    R: { "'3": false, "'2": false, "'": false, "": true, 2: true, 3: true },
+    U: { "'2": true, "'": true, "": true, 2: false },
+    D: { "'2": false, "'": true, "": true, 2: true },
+    F: { "'": false, "": false, 2: false },
+    B: { "'": false, "": false, 2: false },
+  },
+  "-1": {
+    R: { "'3": false, "'2": false, "'": true, "": true, 2: true, 3: true },
+    U: { "'2": true, "'": true, "": true, 2: false },
+    D: { "'2": false, "'": true, "": true, 2: true },
+    F: { "'": true, "": true, 2: true },
+    B: { "'": true, "": true, 2: true },
+  },
+  0: {
+    R: { "'3": false, "'2": true, "'": true, "": true, 2: true, 3: false },
+    U: { "'2": true, "'": true, "": true, 2: true },
+    D: { "'2": true, "'": true, "": true, 2: true },
+    F: { "'": false, "": false, 2: false },
+    B: { "'": false, "": false, 2: false },
+  },
+  1: {
+    R: { "'3": true, "'2": true, "'": true, "": true, 2: false, 3: false },
+    U: { "'2": true, "'": true, "": true, 2: false },
+    D: { "'2": false, "'": true, "": true, 2: true },
+    F: { "'": true, "": true, 2: true },
+    B: { "'": true, "": true, 2: true },
+  },
+  2: {
+    R: { "'3": true, "'2": true, "'": true, "": false, 2: false, 3: false },
+    U: { "'2": true, "'": true, "": true, 2: false },
+    D: { "'2": false, "'": true, "": true, 2: true },
+    F: { "'": false, "": false, 2: false },
+    B: { "'": false, "": false, 2: false },
+  },
+};
+const REGRIP_COUNT_CACHE = new Map();
+const SOLUTION_SORT_KEYS = ["effective", "symbol", "quarter", "regrip"];
+const SEARCH_RESULT_POOL_LIMIT = 50;
+
+function activeRegripThumbs(useBThumb = false) {
+  return useBThumb ? [-2, -1, 0, 1, 2] : [-1, 0, 1];
+}
+
+function splitRegripMove(move) {
+  const face = move[0];
+  const suffix = move.slice(1);
+  if (!FACE_ORDER.includes(face)) return null;
+  if (!["", "'", "2", "'2", "3", "'3"].includes(suffix)) return null;
+  return [face, suffix];
+}
+
+function equivalentPhysicalSuffixes(face, suffix) {
+  if (face === "R") {
+    if (suffix === "" || suffix === "'3") return ["", "'3"];
+    if (suffix === "'" || suffix === "3") return ["'", "3"];
+    if (suffix === "2" || suffix === "'2") return suffix === "2" ? ["2", "'2"] : ["'2", "2"];
+  }
+  if ((face === "U" || face === "D") && (suffix === "2" || suffix === "'2")) {
+    return suffix === "2" ? ["2", "'2"] : ["'2", "2"];
+  }
+  return [suffix];
+}
+
+function choosePhysicalMoveForRegrip(move, thumb) {
+  const parts = splitRegripMove(move);
+  if (!parts) return null;
+  const [face, suffix] = parts;
+  const suffixes = REGRIP_SUFFIXES_BY_FACE[face];
+  const allowedForThumb = REGRIP_ALLOWED[thumb]?.[face];
+  if (!suffixes || !allowedForThumb) return null;
+  for (const physicalSuffix of equivalentPhysicalSuffixes(face, suffix)) {
+    if (suffixes.includes(physicalSuffix) && allowedForThumb[physicalSuffix]) return face + physicalSuffix;
+  }
+  return null;
+}
+
+function nextRegripThumb(move, thumb) {
+  const physicalMove = choosePhysicalMoveForRegrip(move, thumb);
+  if (!physicalMove) return null;
+  const [face, suffix] = splitRegripMove(physicalMove);
+  if (face !== "R") return thumb;
+  const delta = { "'3": -3, "'2": -2, "'": -1, "": 1, 2: 2, 3: 3 }[suffix];
+  const next = thumb + delta;
+  return REGRIP_ALLOWED[next] ? next : null;
+}
+
+function countRegripsFromStart(moves, startThumb, useBThumb = false) {
+  const activeThumbs = activeRegripThumbs(useBThumb);
+  let states = new Map([[startThumb, 0]]);
+  for (const move of moves) {
+    const nextStates = new Map();
+    for (const [thumb, cost] of states) {
+      const nextThumb = nextRegripThumb(move, thumb);
+      if (nextThumb !== null && activeThumbs.includes(nextThumb)) {
+        const oldCost = nextStates.get(nextThumb);
+        if (oldCost === undefined || cost < oldCost) nextStates.set(nextThumb, cost);
+        continue;
+      }
+      for (const regrippedThumb of activeThumbs) {
+        if (regrippedThumb === thumb) continue;
+        const nextAfterRegrip = nextRegripThumb(move, regrippedThumb);
+        if (nextAfterRegrip === null || !activeThumbs.includes(nextAfterRegrip)) continue;
+        const newCost = cost + 1;
+        const oldCost = nextStates.get(nextAfterRegrip);
+        if (oldCost === undefined || newCost < oldCost) nextStates.set(nextAfterRegrip, newCost);
+      }
+    }
+    if (!nextStates.size) return null;
+    states = nextStates;
+  }
+  return Math.min(...states.values());
+}
+
+function regripCount(moves) {
+  const cleaned = cleanMoves(moves);
+  const key = algToString(cleaned);
+  if (REGRIP_COUNT_CACHE.has(key)) return REGRIP_COUNT_CACHE.get(key);
+  let best = Infinity;
+  for (const startThumb of activeRegripThumbs(false)) {
+    const count = countRegripsFromStart(cleaned, startThumb, false);
+    if (count !== null) best = Math.min(best, count);
+  }
+  const result = Number.isFinite(best) ? best : null;
+  REGRIP_COUNT_CACHE.set(key, result);
+  return result;
+}
+
+function regripSortValue(moves) {
+  const count = regripCount(moves);
+  return count === null ? Number.POSITIVE_INFINITY : count;
+}
+
+function solutionMetricValue(solution, sortKey) {
+  if (sortKey === "symbol") return symbolMoveCount(solution);
+  if (sortKey === "quarter") return quarterTurnCount(solution);
+  if (sortKey === "regrip") return regripSortValue(solution);
+  return effectiveMoveCount(solution);
+}
+
+function compareSolutions(a, b, sortKey = "effective") {
+  const fallbackKeys = sortKey === "regrip"
+    ? ["regrip", "effective", "symbol", "quarter"]
+    : [sortKey, "regrip", "effective", "symbol", "quarter"];
+  const seen = new Set();
+  for (const key of fallbackKeys) {
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const av = solutionMetricValue(a, key);
+    const bv = solutionMetricValue(b, key);
+    if (av < bv) return -1;
+    if (av > bv) return 1;
+  }
+  const readabilityA = readabilityPenalty(a);
+  const readabilityB = readabilityPenalty(b);
+  if (readabilityA !== readabilityB) return readabilityA - readabilityB;
+  return algToString(a).localeCompare(algToString(b));
+}
+
+function sortedSolutions(solutions, sortKey) {
+  return [...solutions].sort((a, b) => compareSolutions(a, b, sortKey));
+}
+
 function formatWithSimulUD(moves) {
   const cleaned = cleanMoves(moves);
   const parts = [];
@@ -433,21 +604,11 @@ function patternFromAlg(alg) {
   return stateStringToPattern(applyAlgToString(SOLVED_STRING, inverse));
 }
 
-function insertSolutionSorted(list, solution, maxLen = Infinity) {
+function insertSolutionUnique(list, solution) {
   const normalized = cleanMoves(solution);
   const key = algToString(normalized);
   if (list.some((x) => algToString(x) === key)) return list;
-  const next = [...list, normalized].sort((a, b) => {
-    const ka = [effectiveMoveCount(a), readabilityPenalty(a), symbolMoveCount(a), quarterTurnCount(a), algToString(a)];
-    const kb = [effectiveMoveCount(b), readabilityPenalty(b), symbolMoveCount(b), quarterTurnCount(b), algToString(b)];
-    for (let i = 0; i < ka.length; i += 1) {
-      if (ka[i] < kb[i]) return -1;
-      if (ka[i] > kb[i]) return 1;
-    }
-    return 0;
-  });
-  if (next.length > maxLen) next.length = maxLen;
-  return next;
+  return [...list, normalized];
 }
 
 const LANGUAGE_LABEL = { ja: "日本語", en: "English", ur: "اردو", ko: "한국어", hi: "हिन्दी", ar: "العربية" };
@@ -461,6 +622,19 @@ const TEXT = {
   hi: { title: "एल्गोरिदम खोज", darkMode: "डार्क मोड", showMoveCounts: "चालों की संख्या दिखाएँ", netInput: "इनपुट मोड", language: "भाषा", shareUrl: "URL साझा करें", saved: "सहेजे गए", history: "इतिहास", favorite: "सहेजें", clear: "हटाएँ", copied: "कॉपी हुआ", unsafeContinue: "सीमा के बिना जारी रखें", inputPlaceholder: "मौजूदा समाधान दर्ज करें…", searchFromAlg: "एल्गोरिदम से खोजें", searchFromNet: "नेट से खोजें", algMode: "एल्गोरिदम", netMode: "नेट", casePresets: "स्टेट प्रीसेट", generator: "जनरेटर", requiredParts: "ज़रूरी भाग", requiredPartsPlaceholder: "उदाहरण: R U R' U'", depthLimit: "चाल सीमा", resultLimit: "परिणाम संख्या", copy: "कॉपी", simultaneous: "साथ-साथ चालें", symbolMoves: "चालों की संख्या", quarterTurns: "90° चालें", thinkingTitle: "खोज जारी…", thinkingBody: (n) => `मिले हुए तरीके क्रम से दिखाए जा रहे हैं। अभी तक ${n} मिले।`, noResults: "शर्तों से मिलता कोई तरीका नहीं मिला।", searchFinished: (n) => `${n} परिणाम मिले।`, initialHelp: "शर्तें दर्ज करें और खोज शुरू करें।" },
   ar: { title: "البحث عن الخوارزميات", darkMode: "الوضع الداكن", showMoveCounts: "إظهار عدد الحركات", netInput: "طريقة الإدخال", language: "اللغة", shareUrl: "مشاركة الرابط", saved: "محفوظ", history: "السجل", favorite: "حفظ", clear: "حذف", copied: "تم النسخ", unsafeContinue: "المتابعة بلا حد", inputPlaceholder: "أدخل الحل الموجود…", searchFromAlg: "البحث من الخوارزمية", searchFromNet: "البحث من المخطط", algMode: "الخوارزمية", netMode: "المخطط", casePresets: "إعدادات الحالة", generator: "المولد", requiredParts: "جزء إلزامي", requiredPartsPlaceholder: "مثال: R U R' U'", depthLimit: "حد الحركات", resultLimit: "عدد النتائج", copy: "نسخ", simultaneous: "حركات متزامنة", symbolMoves: "عدد الحركات", quarterTurns: "دورات 90°", thinkingTitle: "جارٍ البحث…", thinkingBody: (n) => `يتم عرض النتائج فور العثور عليها. تم العثور على ${n} حتى الآن.`, noResults: "لم يتم العثور على خوارزميات مطابقة.", searchFinished: (n) => `تم العثور على ${n} نتيجة.`, initialHelp: "أدخل الشروط وابدأ البحث." },
 };
+
+const SORT_BY_LABEL = { ja: "並び順", en: "Sort", ur: "Sort", ko: "정렬", hi: "Sort", ar: "Sort" };
+const REGRIP_LABEL = { ja: "リグリップ", en: "Regrips", ur: "Regrips", ko: "리그립", hi: "Regrips", ar: "Regrips" };
+const SOLUTION_SORT_LABELS = {
+  effective: { ja: "同時回し順", en: "Simul", ur: "Simul", ko: "동시 회전", hi: "Simul", ar: "Simul" },
+  symbol: { ja: "記号手数順", en: "Moves", ur: "Moves", ko: "기호 수", hi: "Moves", ar: "Moves" },
+  quarter: { ja: "90度手数順", en: "Quarter", ur: "Quarter", ko: "90도", hi: "Quarter", ar: "Quarter" },
+  regrip: { ja: "リグリップ順", en: "Regrips", ur: "Regrips", ko: "리그립", hi: "Regrips", ar: "Regrips" },
+};
+
+function localizedLabel(labels, language) {
+  return labels[language] || labels.en || labels.ja || "";
+}
 
 function cellToU(cell) { return cell === "1" ? "U" : "X"; }
 function patternFromOllPreviewMask(previewMask) {
@@ -975,7 +1149,54 @@ function PatternInputEditor({ pattern, setPattern, selectedColor, setSelectedCol
     </>
   );
 }
-function SolutionCard({ solution, t, showMoveCounts, onSave, onCopy }) { const displayAlg = formatWithSimulUD(solution); return <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md"><div className="mb-3 flex justify-end gap-2"><button onClick={() => onCopy(displayAlg)} className="rounded-xl border border-slate-300 bg-white px-3 py-1 text-xs font-normal text-slate-700 transition hover:bg-slate-50 active:scale-95">{t.copy}</button><button onClick={() => onSave(solution)} className="rounded-xl border border-slate-300 bg-white px-3 py-1 text-xs font-normal text-slate-700 transition hover:bg-slate-50 active:scale-95">{t.favorite}</button></div><div className="break-words font-mono text-base font-normal text-slate-900">{displayAlg || "(空)"}</div>{showMoveCounts ? <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs"><div className="rounded-xl bg-slate-100 p-2"><div className="text-slate-500">{t.simultaneous}</div><div className="text-lg font-normal">{effectiveMoveCount(solution)}</div></div><div className="rounded-xl bg-slate-100 p-2"><div className="text-slate-500">{t.symbolMoves}</div><div className="text-lg font-normal">{symbolMoveCount(solution)}</div></div><div className="rounded-xl bg-slate-100 p-2"><div className="text-slate-500">{t.quarterTurns}</div><div className="text-lg font-normal">{quarterTurnCount(solution)}</div></div></div> : null}</div>; }
+function SolutionSortControls({ sortKey, setSortKey, language }) {
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-300 bg-white p-3 shadow-sm">
+      <span className="mr-1 text-sm text-slate-500">{localizedLabel(SORT_BY_LABEL, language)}</span>
+      {SOLUTION_SORT_KEYS.map((key) => (
+        <button
+          key={key}
+          type="button"
+          data-testid={`sort-${key}`}
+          aria-pressed={sortKey === key}
+          onClick={() => setSortKey(key)}
+          className={`rounded-xl border px-3 py-2 text-xs font-normal transition active:scale-95 ${sortKey === key ? "border-slate-200 bg-slate-900 text-white" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
+        >
+          {localizedLabel(SOLUTION_SORT_LABELS[key], language)}
+        </button>
+      ))}
+    </div>
+  );
+}
+function SolutionMetric({ testId, label, value }) {
+  return (
+    <div data-testid={testId} className="rounded-xl bg-slate-100 p-2">
+      <div className="text-slate-500">{label}</div>
+      <div className="text-lg font-normal">{value}</div>
+    </div>
+  );
+}
+function SolutionCard({ solution, t, language, showMoveCounts, onSave, onCopy }) {
+  const displayAlg = formatWithSimulUD(solution);
+  const regrips = regripCount(solution);
+  return (
+    <div data-testid="solution-card" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md">
+      <div className="mb-3 flex justify-end gap-2">
+        <button onClick={() => onCopy(displayAlg)} className="rounded-xl border border-slate-300 bg-white px-3 py-1 text-xs font-normal text-slate-700 transition hover:bg-slate-50 active:scale-95">{t.copy}</button>
+        <button onClick={() => onSave(solution)} className="rounded-xl border border-slate-300 bg-white px-3 py-1 text-xs font-normal text-slate-700 transition hover:bg-slate-50 active:scale-95">{t.favorite}</button>
+      </div>
+      <div data-testid="solution-alg" className="break-words font-mono text-base font-normal text-slate-900">{displayAlg || "(空)"}</div>
+      {showMoveCounts ? (
+        <div className="mt-3 grid grid-cols-2 gap-2 text-center text-xs sm:grid-cols-4">
+          <SolutionMetric testId="metric-effective" label={t.simultaneous} value={effectiveMoveCount(solution)} />
+          <SolutionMetric testId="metric-symbol" label={t.symbolMoves} value={symbolMoveCount(solution)} />
+          <SolutionMetric testId="metric-quarter" label={t.quarterTurns} value={quarterTurnCount(solution)} />
+          <SolutionMetric testId="metric-regrip" label={localizedLabel(REGRIP_LABEL, language)} value={regrips === null ? "—" : regrips} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
 function ThinkingCard({ foundCount, t }) { return <div className="rounded-2xl border border-slate-300 bg-white p-4 shadow-sm"><div className="flex items-center gap-3"><div className="flex gap-1"><span className="h-2.5 w-2.5 animate-bounce rounded-full bg-slate-500 [animation-delay:0ms]" /><span className="h-2.5 w-2.5 animate-bounce rounded-full bg-slate-500 [animation-delay:120ms]" /><span className="h-2.5 w-2.5 animate-bounce rounded-full bg-slate-500 [animation-delay:240ms]" /></div><div><div className="font-normal text-slate-900">{t.thinkingTitle}</div><div className="text-sm text-slate-600">{t.thinkingBody(foundCount)}</div></div></div></div>; }
 function ResultSummaryCard({ text, className = "" }) { return <div className={`rounded-2xl border border-slate-300 bg-white p-4 shadow-sm ${className}`}><div className="flex min-h-[34px] items-center justify-center text-sm text-slate-600">{text}</div></div>; }
 function EmptyCard({ text, className = "" }) { return <ResultSummaryCard text={text} className={className} />; }
@@ -1159,7 +1380,7 @@ export default function App() {
   if (initialShareRef.current === undefined) initialShareRef.current = readInitialShareState();
   const initialShare = initialShareRef.current;
   const workerUrlRef = useRef(new WeakMap());
-  const [showMoveCounts, setShowMoveCounts] = useState(() => typeof initialShare.showMoveCounts === "boolean" ? initialShare.showMoveCounts : false);
+  const [showMoveCounts, setShowMoveCounts] = useState(() => typeof initialShare.showMoveCounts === "boolean" ? initialShare.showMoveCounts : true);
   const [showNetInput, setShowNetInput] = useState(() => typeof initialShare.showNetInput === "boolean" ? initialShare.showNetInput : false);
   const [patternEditorMode, setPatternEditorMode] = useState(() => initialShare.patternEditorMode === "cube" ? "cube" : "net");
   const [bottomColor, setBottomColor] = useState(() => FACE_ORDER.includes(initialShare.bottomColor) ? initialShare.bottomColor : "D");
@@ -1186,6 +1407,7 @@ export default function App() {
   const [requiredPartsText, setRequiredPartsText] = useState(() => typeof initialShare.requiredPartsText === "string" ? initialShare.requiredPartsText : "");
   const [maxSymbolDepth, setMaxSymbolDepth] = useState(() => Number.isFinite(initialShare.maxSymbolDepth) ? initialShare.maxSymbolDepth : 15);
   const [limit, setLimit] = useState(() => Number.isFinite(initialShare.limit) ? initialShare.limit : 5);
+  const [solutionSortKey, setSolutionSortKey] = useState(() => SOLUTION_SORT_KEYS.includes(initialShare.solutionSortKey) ? initialShare.solutionSortKey : "effective");
   const [solutions, setSolutions] = useState([]);
   const [error, setError] = useState("");
   const [isSearching, setIsSearching] = useState(false);
@@ -1198,7 +1420,7 @@ export default function App() {
   function createSearchWorker() { const source = `(${workerMain.toString()})();`; const blob = new Blob([source], { type: "text/javascript" }); const url = URL.createObjectURL(blob); const worker = new Worker(url); workerUrlRef.current.set(worker, url); return worker; }
   function terminateSearchWorker(worker) { if (!worker) return; worker.terminate(); const url = workerUrlRef.current.get(worker); if (url) URL.revokeObjectURL(url); workerUrlRef.current.delete(worker); }
   useEffect(() => () => { if (workerRef.current) terminateSearchWorker(workerRef.current); if (shareMessageTimerRef.current) clearTimeout(shareMessageTimerRef.current); }, []);
-  function currentShareState() { return { targetAlg, targetPattern, selectedColor, casePresetCategory, collGroupOpen, zbllFamilyOpen, zbllCollOpen, zblsF2lOpen, showNetInput, patternEditorMode, bottomColor, searchMovesText, requiredPartsText, maxSymbolDepth, limit, showMoveCounts, language }; }
+  function currentShareState() { return { targetAlg, targetPattern, selectedColor, casePresetCategory, collGroupOpen, zbllFamilyOpen, zbllCollOpen, zblsF2lOpen, showNetInput, patternEditorMode, bottomColor, searchMovesText, requiredPartsText, maxSymbolDepth, limit, showMoveCounts, solutionSortKey, language }; }
   function showTemporaryMessage(message) { if (shareMessageTimerRef.current) clearTimeout(shareMessageTimerRef.current); setShareMessage(message); shareMessageTimerRef.current = setTimeout(() => { setShareMessage(""); shareMessageTimerRef.current = null; }, 1600); }
   async function shareUrl() { const hash = `#s=${encodeShareState(currentShareState())}`; const url = `${window.location.origin}${window.location.pathname}${hash}`; window.history.replaceState(null, "", hash); try { await navigator.clipboard.writeText(url); showTemporaryMessage(t.copied); } catch { showTemporaryMessage(url); } }
   function saveHistoryItem(mode) { const item = { id: Date.now(), mode, targetAlg, targetPattern, searchMovesText, requiredPartsText, maxSymbolDepth, limit }; const itemKey = JSON.stringify({ mode, targetAlg, targetPattern, searchMovesText, requiredPartsText, maxSymbolDepth, limit }); const next = [item, ...history.filter((x) => JSON.stringify({ mode: x.mode, targetAlg: x.targetAlg, targetPattern: x.targetPattern, searchMovesText: x.searchMovesText, requiredPartsText: x.requiredPartsText || "", maxSymbolDepth: x.maxSymbolDepth, limit: x.limit }) !== itemKey)].slice(0, 12); setHistory(next); writeStorageList(STORAGE_KEYS.history, next); }
@@ -1208,7 +1430,9 @@ export default function App() {
   function applyCasePreset(preset) { setTargetPattern(clonePattern(preset.pattern)); setSelectedColor(DONT_CARE); }
   function stopSearch() { searchSessionRef.current += 1; if (workerRef.current) { terminateSearchWorker(workerRef.current); workerRef.current = null; } setIsSearching(false); setCanContinueUnsafe(false); setSearchExhausted(false); }
   function continuePausedSearch() { if (!workerRef.current) { runSearch(lastSearchModeRef.current, { allowUnsafe: true }); return; } setError(""); setCanContinueUnsafe(false); setIsSearching(true); workerRef.current.postMessage({ command: "continue" }); }
-  async function runSearch(mode, options = {}) { const currentSession = searchSessionRef.current + 1; lastSearchModeRef.current = mode; searchSessionRef.current = currentSession; if (workerRef.current) { terminateSearchWorker(workerRef.current); workerRef.current = null; } setError(""); setCanContinueUnsafe(false); setHasSearched(true); setIsSearching(true); setSearchExhausted(false); setSolutions([]); saveHistoryItem(mode); const worker = createSearchWorker(); workerRef.current = worker; let receivedAnySolution = false; worker.onmessage = (event) => { if (searchSessionRef.current !== currentSession) return; const data = event.data; if (data.type === "solution") { const maxResults = Math.max(1, Number(limit) || 1); if (!receivedAnySolution) { receivedAnySolution = true; setSolutions(insertSolutionSorted([], data.solution, maxResults)); } else setSolutions((prev) => insertSolutionSorted(prev, data.solution, maxResults)); return; } if (data.type === "paused") { setError(data.message); setCanContinueUnsafe(true); setIsSearching(false); return; } if (data.type === "error") { setError(data.message); setCanContinueUnsafe(String(data.message || "").includes("探索が大きすぎ")); setIsSearching(false); terminateSearchWorker(worker); if (workerRef.current === worker) workerRef.current = null; return; } if (data.type === "done") { if (!receivedAnySolution) setSolutions([]); setSearchExhausted(Boolean(data.completed)); setIsSearching(false); terminateSearchWorker(worker); if (workerRef.current === worker) workerRef.current = null; } }; worker.onerror = (event) => { if (searchSessionRef.current !== currentSession) return; setError(event.message || "Worker error"); setCanContinueUnsafe(String(event.message || "").includes("探索が大きすぎ")); setIsSearching(false); terminateSearchWorker(worker); if (workerRef.current === worker) workerRef.current = null; }; worker.postMessage({ mode, targetAlg, targetPattern, searchMovesText, requiredPartsText, maxSymbolDepth: Number(maxSymbolDepth), limit: Math.max(1, Number(limit) || 1), allowUnsafe: Boolean(options.allowUnsafe) }); }
+  async function runSearch(mode, options = {}) { const currentSession = searchSessionRef.current + 1; lastSearchModeRef.current = mode; searchSessionRef.current = currentSession; if (workerRef.current) { terminateSearchWorker(workerRef.current); workerRef.current = null; } setError(""); setCanContinueUnsafe(false); setHasSearched(true); setIsSearching(true); setSearchExhausted(false); setSolutions([]); saveHistoryItem(mode); const worker = createSearchWorker(); workerRef.current = worker; let receivedAnySolution = false; worker.onmessage = (event) => { if (searchSessionRef.current !== currentSession) return; const data = event.data; if (data.type === "solution") { receivedAnySolution = true; setSolutions((prev) => insertSolutionUnique(prev, data.solution)); return; } if (data.type === "paused") { setError(data.message); setCanContinueUnsafe(true); setIsSearching(false); return; } if (data.type === "error") { setError(data.message); setCanContinueUnsafe(String(data.message || "").includes("探索が大きすぎ")); setIsSearching(false); terminateSearchWorker(worker); if (workerRef.current === worker) workerRef.current = null; return; } if (data.type === "done") { if (!receivedAnySolution) setSolutions([]); setSearchExhausted(Boolean(data.completed)); setIsSearching(false); terminateSearchWorker(worker); if (workerRef.current === worker) workerRef.current = null; } }; worker.onerror = (event) => { if (searchSessionRef.current !== currentSession) return; setError(event.message || "Worker error"); setCanContinueUnsafe(String(event.message || "").includes("探索が大きすぎ")); setIsSearching(false); terminateSearchWorker(worker); if (workerRef.current === worker) workerRef.current = null; }; worker.postMessage({ mode, targetAlg, targetPattern, searchMovesText, requiredPartsText, maxSymbolDepth: Number(maxSymbolDepth), limit: SEARCH_RESULT_POOL_LIMIT, allowUnsafe: Boolean(options.allowUnsafe) }); }
+  const displayLimit = Math.max(1, Number(limit) || 1);
+  const displayedSolutions = sortedSolutions(solutions, solutionSortKey).slice(0, displayLimit);
   return <div className="dark-mode min-h-screen px-4 pb-4 pt-16 text-slate-900 md:px-8 md:pb-8 md:pt-16"><style>{`body{background:#27272a}.dark-mode{background:#27272a!important;color:#f4f4f5!important}.dark-mode .bg-white,.dark-mode .light-panel{background-color:#3f3f46!important}.dark-mode .bg-slate-50,.dark-mode .light-inner{background-color:#34343a!important}.dark-mode .bg-slate-100{background-color:#52525b!important}.dark-mode .text-slate-900{color:#fafafa!important}.dark-mode .text-slate-700,.dark-mode .text-slate-600{color:#e5e7eb!important}.dark-mode .text-slate-500{color:#d4d4d8!important}.dark-mode .border-slate-200,.dark-mode .border-slate-300{border-color:#71717a!important}.dark-mode input,.dark-mode textarea{background-color:#52525b!important;color:#fff!important;border-color:#71717a!important}.dark-mode input::placeholder,.dark-mode textarea::placeholder{color:#d4d4d8!important}.dark-mode button.bg-white{background-color:#52525b!important;color:#fff!important}.dark-mode button.bg-white:hover{background-color:#60606a!important}.dark-mode .menu-button{background-color:#52525b!important;color:#fff!important;border-color:#a1a1aa!important}.dark-mode .menu-panel{background-color:#3f3f46!important;border-color:#a1a1aa!important}.dark-mode .menu-item{background-color:#52525b!important;color:#fff!important;border:1px solid #a1a1aa!important}.dark-mode .menu-item:hover{background-color:#63636d!important}.dark-mode .menu-item span{color:#fff!important}`}</style>{menuOpen ? <button type="button" aria-label="close menu" onClick={() => { setMenuOpen(false); setLanguageOpen(false); }} className="fixed inset-0 z-40 cursor-default bg-transparent" /> : null}<div className="fixed left-4 top-4 z-50"><button onClick={() => setMenuOpen((v) => !v)} className="menu-button flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-300 bg-white text-xl font-normal text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95" aria-label="menu">☰</button>{menuOpen ? <div className="menu-panel mt-2 w-48 rounded-2xl border border-slate-200 bg-white p-2 shadow-lg" onClick={(e) => e.stopPropagation()}><button onClick={() => setShowMoveCounts((v) => !v)} className="menu-item flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"><span>{t.showMoveCounts}</span><span>{showMoveCounts ? "ON" : "OFF"}</span></button><button data-testid="toggle-net-input" onClick={() => setShowNetInput((v) => !v)} className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"><span>{t.netInput}</span><span>{showNetInput ? t.netMode : t.algMode}</span></button><button onClick={shareUrl} className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"><span>{t.shareUrl}</span><span>↗</span></button><button onClick={() => setSavedOpen((v) => !v)} className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"><span>{t.saved}</span><span>{savedOpen ? "▴" : favorites.length}</span></button>{savedOpen ? <div className="mt-2 max-h-52 overflow-auto rounded-xl border border-slate-200 p-2">{favorites.length ? favorites.map((item) => <button key={item.id} onClick={() => copyText(item.alg)} className="menu-item mb-1 block w-full rounded-xl px-3 py-2 text-left font-mono text-xs text-slate-900 transition hover:bg-slate-50 active:scale-95">{item.alg}</button>) : <div className="px-3 py-2 text-xs text-slate-500">0</div>}{favorites.length ? <button onClick={() => { setFavorites([]); writeStorageList(STORAGE_KEYS.favorites, []); }} className="menu-item mt-2 w-full rounded-xl px-3 py-2 text-xs text-slate-900">{t.clear}</button> : null}</div> : null}<button onClick={() => setHistoryOpen((v) => !v)} className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"><span>{t.history}</span><span>{historyOpen ? "▴" : history.length}</span></button>{historyOpen ? <div className="mt-2 max-h-52 overflow-auto rounded-xl border border-slate-200 p-2">{history.length ? history.map((item) => <button key={item.id} onClick={() => applyHistoryItem(item)} className="menu-item mb-1 block w-full rounded-xl px-3 py-2 text-left text-xs text-slate-900 transition hover:bg-slate-50 active:scale-95"><div className="font-mono">{item.searchMovesText}</div><div className="truncate text-slate-500">{item.mode === "alg" ? item.targetAlg : t.searchFromNet}</div></button>) : <div className="px-3 py-2 text-xs text-slate-500">0</div>}{history.length ? <button onClick={() => { setHistory([]); writeStorageList(STORAGE_KEYS.history, []); }} className="menu-item mt-2 w-full rounded-xl px-3 py-2 text-xs text-slate-900">{t.clear}</button> : null}</div> : null}<button onClick={() => setLanguageOpen((v) => !v)} className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"><span>{t.language}</span><span>{languageOpen ? "▴" : LANGUAGE_LABEL[language]}</span></button>{languageOpen ? <div className="mt-2 rounded-xl border border-slate-200 p-2">{Object.keys(TEXT).map((lang) => <button key={lang} onClick={() => { setLanguage(lang); setLanguageOpen(false); }} className={`menu-item mb-1 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95 ${language === lang ? "ring-2 ring-slate-400" : ""}`}><span>{LANGUAGE_LABEL[lang]}</span><span>{language === lang ? "✓" : ""}</span></button>)}</div> : null}</div> : null}</div><div className="mx-auto max-w-6xl"><h1 className="mb-6 text-center text-4xl font-normal tracking-tight text-slate-900 sm:text-5xl">{t.title}</h1><div className="light-panel mb-6 rounded-3xl p-6 shadow-sm ring-1 ring-slate-200"><div className="grid gap-4">{!showNetInput ? <div className="light-inner rounded-3xl border border-slate-200 p-4 shadow-sm"><textarea value={targetAlg} onChange={(e) => setTargetAlg(e.target.value)} placeholder={t.inputPlaceholder} className="h-14 w-full resize-none rounded-2xl border border-slate-300 bg-white px-3 py-4 font-mono text-sm leading-5 outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-slate-400" /><div className="mt-3 flex flex-wrap justify-end gap-2"><button onClick={() => isSearching ? stopSearch() : runSearch("alg")} className={`rounded-xl border px-4 py-2 text-sm font-normal shadow-sm transition hover:bg-slate-50 active:scale-95 ${isSearching ? "border-slate-500 bg-slate-800 text-white hover:bg-slate-700" : "border-slate-300 bg-white text-slate-900"}`}>{isSearching ? "停止" : t.searchFromAlg}</button></div></div> : <div className="light-inner overflow-hidden rounded-3xl border border-slate-200 p-3 sm:p-4"><div className="mb-4 rounded-2xl border border-slate-300 bg-white p-3">
   <div className="flex flex-wrap gap-2">
     {CASE_PRESET_CATEGORIES.map((category) => (
@@ -1244,5 +1468,5 @@ export default function App() {
       />
     </div>
   ) : null}
-</div><PatternInputEditor pattern={targetPattern} setPattern={setTargetPattern} selectedColor={selectedColor} setSelectedColor={setSelectedColor} editorMode={patternEditorMode} setEditorMode={setPatternEditorMode} bottomColor={bottomColor} setBottomColor={setBottomColor} /><div className="mt-4 flex justify-end"><button onClick={() => isSearching ? stopSearch() : runSearch("pattern")} className={`w-fit whitespace-nowrap rounded-xl border px-4 py-2 text-sm font-normal shadow-sm transition hover:bg-slate-50 active:scale-95 ${isSearching ? "border-slate-500 bg-slate-800 text-white hover:bg-slate-700" : "border-slate-300 bg-white text-slate-900"}`}>{isSearching ? "停止" : t.searchFromNet}</button></div></div>}<div className="grid items-start gap-4 sm:grid-cols-4"><label className="grid gap-1"><span className="text-sm font-normal">{t.generator}</span><input value={searchMovesText} onChange={(e) => setSearchMovesText(e.target.value)} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" placeholder="例: R U D / R U f / R U S / R U x" /><div className="mt-2 flex flex-wrap gap-1.5">{PRESET_GENS.map((preset) => <button key={preset} type="button" onClick={() => setSearchMovesText(preset)} className="rounded-lg border border-slate-300 bg-white px-2 py-1 font-mono text-xs text-slate-700 transition hover:bg-slate-50 active:scale-95">{preset}</button>)}</div></label><label className="grid gap-1"><span className="text-sm font-normal">{t.requiredParts}</span><input value={requiredPartsText} onChange={(e) => setRequiredPartsText(e.target.value)} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" placeholder={t.requiredPartsPlaceholder} /><div className="mt-2 flex flex-wrap gap-1.5">{REQUIRED_PART_PRESETS.map((preset) => <button key={preset} type="button" onClick={() => setRequiredPartsText((prev) => prev.trim() ? `${prev.trim()}${NL}${preset}` : preset)} className="rounded-lg border border-slate-300 bg-white px-2 py-1 font-mono text-xs text-slate-700 transition hover:bg-slate-50 active:scale-95">{preset}</button>)}</div></label><NumberInput label={t.depthLimit} value={maxSymbolDepth} onChange={setMaxSymbolDepth} min={1} max={30} /><NumberInput label={t.resultLimit} value={limit} onChange={setLimit} min={1} max={50} /></div></div></div>{error ? <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-300 bg-white p-4 text-sm text-slate-700"><span>{error}</span>{canContinueUnsafe ? <button type="button" onClick={continuePausedSearch} className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-normal text-slate-700 transition hover:bg-slate-50 active:scale-95">{t.unsafeContinue}</button> : null}</div> : null}{shareMessage ? <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-3 text-sm text-slate-600">{shareMessage}</div> : null}<div className="mb-4">{isSearching ? <ThinkingCard foundCount={solutions.length} t={t} /> : !error && hasSearched && searchExhausted && solutions.length > 0 && solutions.length < Math.max(1, Number(limit) || 1) ? <ResultSummaryCard text={typeof t.searchFinished === "function" ? t.searchFinished(solutions.length) : t.searchFinished} /> : null}</div><div className="grid gap-4 md:grid-cols-2">{solutions.map((solution, i) => <SolutionCard key={`${i}-${algToString(solution)}`} solution={solution} t={t} showMoveCounts={showMoveCounts} onSave={saveFavoriteSolution} onCopy={copyText} />)}</div>{!isSearching && !error && hasSearched && solutions.length === 0 ? <div className="mt-4"><EmptyCard text={t.noResults} /></div> : null}{!hasSearched && !isSearching ? <div className="mt-4"><EmptyCard text={t.initialHelp} /></div> : null}</div></div>;
+</div><PatternInputEditor pattern={targetPattern} setPattern={setTargetPattern} selectedColor={selectedColor} setSelectedColor={setSelectedColor} editorMode={patternEditorMode} setEditorMode={setPatternEditorMode} bottomColor={bottomColor} setBottomColor={setBottomColor} /><div className="mt-4 flex justify-end"><button onClick={() => isSearching ? stopSearch() : runSearch("pattern")} className={`w-fit whitespace-nowrap rounded-xl border px-4 py-2 text-sm font-normal shadow-sm transition hover:bg-slate-50 active:scale-95 ${isSearching ? "border-slate-500 bg-slate-800 text-white hover:bg-slate-700" : "border-slate-300 bg-white text-slate-900"}`}>{isSearching ? "停止" : t.searchFromNet}</button></div></div>}<div className="grid items-start gap-4 sm:grid-cols-4"><label className="grid gap-1"><span className="text-sm font-normal">{t.generator}</span><input value={searchMovesText} onChange={(e) => setSearchMovesText(e.target.value)} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" placeholder="例: R U D / R U f / R U S / R U x" /><div className="mt-2 flex flex-wrap gap-1.5">{PRESET_GENS.map((preset) => <button key={preset} type="button" onClick={() => setSearchMovesText(preset)} className="rounded-lg border border-slate-300 bg-white px-2 py-1 font-mono text-xs text-slate-700 transition hover:bg-slate-50 active:scale-95">{preset}</button>)}</div></label><label className="grid gap-1"><span className="text-sm font-normal">{t.requiredParts}</span><input value={requiredPartsText} onChange={(e) => setRequiredPartsText(e.target.value)} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" placeholder={t.requiredPartsPlaceholder} /><div className="mt-2 flex flex-wrap gap-1.5">{REQUIRED_PART_PRESETS.map((preset) => <button key={preset} type="button" onClick={() => setRequiredPartsText((prev) => prev.trim() ? `${prev.trim()}${NL}${preset}` : preset)} className="rounded-lg border border-slate-300 bg-white px-2 py-1 font-mono text-xs text-slate-700 transition hover:bg-slate-50 active:scale-95">{preset}</button>)}</div></label><NumberInput label={t.depthLimit} value={maxSymbolDepth} onChange={setMaxSymbolDepth} min={1} max={30} /><NumberInput label={t.resultLimit} value={limit} onChange={setLimit} min={1} max={50} /></div></div></div>{error ? <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-300 bg-white p-4 text-sm text-slate-700"><span>{error}</span>{canContinueUnsafe ? <button type="button" onClick={continuePausedSearch} className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-normal text-slate-700 transition hover:bg-slate-50 active:scale-95">{t.unsafeContinue}</button> : null}</div> : null}{shareMessage ? <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-3 text-sm text-slate-600">{shareMessage}</div> : null}<div className="mb-4">{isSearching ? <ThinkingCard foundCount={displayedSolutions.length} t={t} /> : !error && hasSearched && searchExhausted && solutions.length > 0 && displayedSolutions.length < displayLimit ? <ResultSummaryCard text={typeof t.searchFinished === "function" ? t.searchFinished(displayedSolutions.length) : t.searchFinished} /> : null}</div>{solutions.length ? <SolutionSortControls sortKey={solutionSortKey} setSortKey={setSolutionSortKey} language={language} /> : null}<div className="grid gap-4 md:grid-cols-2">{displayedSolutions.map((solution) => <SolutionCard key={algToString(solution)} solution={solution} t={t} language={language} showMoveCounts={showMoveCounts} onSave={saveFavoriteSolution} onCopy={copyText} />)}</div>{!isSearching && !error && hasSearched && solutions.length === 0 ? <div className="mt-4"><EmptyCard text={t.noResults} /></div> : null}{!hasSearched && !isSearching ? <div className="mt-4"><EmptyCard text={t.initialHelp} /></div> : null}</div></div>;
 }
