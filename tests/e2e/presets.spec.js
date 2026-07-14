@@ -154,7 +154,7 @@ test("nested preset icons and applied nets use the generated color arrays", asyn
   await expectNetState(page, zbls.state);
 });
 
-test("dark-only pattern input supports bottom color and quaternion clicking", async ({ page }) => {
+test("dark-only pattern input supports bottom color and Three.js cube clicking", async ({ page }) => {
   await openNetInput(page);
   await expect(page.locator(".dark-mode")).toHaveCount(1);
 
@@ -165,14 +165,34 @@ test("dark-only pattern input supports bottom color and quaternion clicking", as
   await expect(page.getByTestId("pattern-editor-net")).toHaveAttribute("aria-pressed", "true");
   await page.getByTestId("pattern-editor-cube").click();
   await expect(page.getByTestId("quaternion-editor")).toBeVisible();
+  await expect(page.getByTestId("cube-canvas")).toBeVisible();
 
   await expect(page.getByTestId("bottom-color-D")).toHaveAttribute("aria-pressed", "true");
   await page.getByTestId("bottom-color-U").click();
   await expect(page.getByTestId("bottom-color-U")).toHaveAttribute("aria-pressed", "true");
+  await page.getByTestId("pattern-editor-net").click();
+  await expect(page.getByTestId("net-D-4")).toHaveAttribute("data-display-color", "U");
+  await expect(page.getByTestId("net-U-4")).toHaveAttribute("data-display-color", "D");
+  await page.getByTestId("pattern-editor-cube").click();
   await page.getByTestId("bottom-color-D").click();
 
-  await page.getByTestId("color-R").click();
-  await page.getByTestId("cube-sticker-B-5").click();
+  await page.getByTestId("color-X").click();
+  const canvas = page.getByTestId("cube-canvas");
+  const box = await canvas.boundingBox();
+  await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.58);
   await page.getByTestId("pattern-editor-net").click();
-  await expect(page.locator('[data-testid^="net-"][data-color="R"]')).toHaveCount(10);
+  await expect(page.locator('[data-testid^="net-"][data-color="X"]')).toHaveCount(1);
+});
+
+test("bottom color recolors preset previews without changing logical pattern data", async ({ page }) => {
+  const zbls = ZBLS_PRESET_DATA[0];
+  await openPresetPanel(page, "ZBLS");
+  await page.getByTestId(`zbls-f2l-${zbls.f2l}`).click();
+  const zblsTile = page.getByTestId(`preset-case-${zbls.id}`);
+  await expect(zblsTile.locator('[data-color="D"]').first()).toBeVisible();
+
+  await page.getByTestId("bottom-color-U").click();
+  await expect(page.getByTestId("net-D-4")).toHaveAttribute("data-color", "D");
+  await expect(page.getByTestId("net-D-4")).toHaveAttribute("data-display-color", "U");
+  await expect(zblsTile.locator('[data-color="D"][data-display-color="U"]').first()).toBeVisible();
 });

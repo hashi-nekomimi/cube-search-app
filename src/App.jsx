@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import * as THREE from "three";
 import {
   COLL_PRESET_DATA,
   ZBLL_PRESET_DATA,
@@ -28,13 +29,15 @@ const FACE_COLOR_STYLE = {
   X: "#111111",
 };
 const FACE_LABEL = { U: "白", R: "赤", F: "緑", D: "黄", L: "橙", B: "青", X: "dont care" };
+const OPPOSITE_FACE = { U: "D", D: "U", R: "L", L: "R", F: "B", B: "F" };
+const PREFERRED_FRONT_BY_BOTTOM = { U: "F", D: "F", F: "U", B: "U", R: "F", L: "F" };
 const FACE_AXIS = {
-  U: { col: [1, 0, 0], row: [0, 0, 1] },
-  D: { col: [1, 0, 0], row: [0, 0, -1] },
-  F: { col: [1, 0, 0], row: [0, -1, 0] },
-  B: { col: [-1, 0, 0], row: [0, -1, 0] },
-  R: { col: [0, 0, -1], row: [0, -1, 0] },
-  L: { col: [0, 0, 1], row: [0, -1, 0] },
+  U: { col: [1, 0, 0], row: [0, 0, -1] },
+  D: { col: [1, 0, 0], row: [0, 0, 1] },
+  F: { col: [1, 0, 0], row: [0, 1, 0] },
+  B: { col: [-1, 0, 0], row: [0, 1, 0] },
+  R: { col: [0, 0, -1], row: [0, 1, 0] },
+  L: { col: [0, 0, 1], row: [0, 1, 0] },
 };
 const PARALLEL_GROUP = { U: "UD", D: "UD", R: "RL", L: "RL", F: "FB", B: "FB" };
 const PARALLEL_GROUP_FACES = { UD: ["U", "D"], RL: ["R", "L"], FB: ["F", "B"] };
@@ -73,8 +76,37 @@ function buildStickers() {
 
 const { stickers: STICKERS, indexOf: INDEX_OF } = buildStickers();
 
-function vecDot(a, b) {
-  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+function faceFromNormal(normal) {
+  return FACE_ORDER.find((face) => NORMAL[face].every((value, index) => value === normal[index])) || "F";
+}
+
+function frontForBottom(bottomFace) {
+  const preferred = PREFERRED_FRONT_BY_BOTTOM[bottomFace] || "F";
+  if (preferred !== bottomFace && preferred !== OPPOSITE_FACE[bottomFace]) return preferred;
+  return FACE_ORDER.find((face) => face !== bottomFace && face !== OPPOSITE_FACE[bottomFace]) || "F";
+}
+
+function displayColorMapForBottom(bottomFace) {
+  const bottom = FACE_ORDER.includes(bottomFace) ? bottomFace : "D";
+  const front = frontForBottom(bottom);
+  const right = faceFromNormal(vecCross(NORMAL[front], NORMAL[bottom]));
+  return {
+    U: OPPOSITE_FACE[bottom],
+    D: bottom,
+    F: front,
+    B: OPPOSITE_FACE[front],
+    R: right,
+    L: OPPOSITE_FACE[right],
+    X: "X",
+  };
+}
+
+function displayColorSymbol(color, bottomFace) {
+  return displayColorMapForBottom(bottomFace)[color] || color;
+}
+
+function displayColorStyle(color, bottomFace) {
+  return FACE_COLOR_STYLE[displayColorSymbol(color, bottomFace)] || FACE_COLOR_STYLE.X;
 }
 
 function vecCross(a, b) {
@@ -126,49 +158,7 @@ function quatRotate(q, v) {
   return vecAdd(v, vecAdd(vecScale(uv, 2 * q[0]), vecScale(uuv, 2)));
 }
 
-function quatFromMatrix(m) {
-  const trace = m[0][0] + m[1][1] + m[2][2];
-  if (trace > 0) {
-    const s = Math.sqrt(trace + 1) * 2;
-    return quatNormalize([0.25 * s, (m[2][1] - m[1][2]) / s, (m[0][2] - m[2][0]) / s, (m[1][0] - m[0][1]) / s]);
-  }
-  if (m[0][0] > m[1][1] && m[0][0] > m[2][2]) {
-    const s = Math.sqrt(1 + m[0][0] - m[1][1] - m[2][2]) * 2;
-    return quatNormalize([(m[2][1] - m[1][2]) / s, 0.25 * s, (m[0][1] + m[1][0]) / s, (m[0][2] + m[2][0]) / s]);
-  }
-  if (m[1][1] > m[2][2]) {
-    const s = Math.sqrt(1 + m[1][1] - m[0][0] - m[2][2]) * 2;
-    return quatNormalize([(m[0][2] - m[2][0]) / s, (m[0][1] + m[1][0]) / s, 0.25 * s, (m[1][2] + m[2][1]) / s]);
-  }
-  const s = Math.sqrt(1 + m[2][2] - m[0][0] - m[1][1]) * 2;
-  return quatNormalize([(m[1][0] - m[0][1]) / s, (m[0][2] + m[2][0]) / s, (m[1][2] + m[2][1]) / s, 0.25 * s]);
-}
-
-function rotationMatrixFromBasis(sourceAxes, targetAxes) {
-  const matrix = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
-  for (let axis = 0; axis < 3; axis += 1) {
-    for (let row = 0; row < 3; row += 1) {
-      for (let col = 0; col < 3; col += 1) {
-        matrix[row][col] += targetAxes[axis][row] * sourceAxes[axis][col];
-      }
-    }
-  }
-  return matrix;
-}
-
 const BASE_CUBE_VIEW_QUAT = quatNormalize(quatMultiply(quatFromAxisAngle([1, 0, 0], Math.PI / 6), quatFromAxisAngle([0, 1, 0], -Math.PI / 5)));
-
-function cubeOrientationForBottom(bottomFace) {
-  const downSource = NORMAL[bottomFace] || NORMAL.D;
-  const frontFace = FACE_ORDER.find((face) => face !== bottomFace && Math.abs(vecDot(NORMAL[face], downSource)) < 0.5) || "F";
-  const frontSource = NORMAL[frontFace];
-  const rightSource = vecNormalize(vecCross(frontSource, downSource));
-  const toStandard = quatFromMatrix(rotationMatrixFromBasis(
-    [rightSource, downSource, frontSource],
-    [[1, 0, 0], [0, -1, 0], [0, 0, 1]],
-  ));
-  return quatNormalize(quatMultiply(BASE_CUBE_VIEW_QUAT, toStandard));
-}
 
 function rot(v, axis, direction) {
   const [x, y, z] = v;
@@ -701,10 +691,21 @@ function workerMain() {
   self.onmessage = function (event) { const data = event.data || {}; if (data.command === "continue") { if (CURRENT_JOB) { CURRENT_JOB.allowUnsafe = true; if (CURRENT_JOB.kind === "alg") processAlgJob(CURRENT_JOB); else processBidirectionalPatternJob(CURRENT_JOB); } return; } try { if (data.mode === "alg") startAlgJob(data); else startPatternJob(data); } catch (e) { self.postMessage({ type: "error", message: e instanceof Error ? e.message : String(e) }); } };
 }
 
-function Sticker({ color, onClick, locked = false, testId }) { return <button type="button" data-testid={testId} data-color={color} onClick={onClick} disabled={locked} className={["aspect-square w-full rounded-md border transition duration-150", locked ? "cursor-not-allowed ring-2 ring-slate-500" : "hover:scale-105 active:scale-95"].join(" ")} style={{ background: FACE_COLOR_STYLE[color], borderColor: "#64748b" }} title={FACE_LABEL[color] || color}>{color === DONT_CARE ? <span className="text-xs font-normal text-white">?</span> : null}</button>; }
-function FaceGrid({ face, stickers, onStickerClick }) { return <div className="grid w-full grid-cols-3 gap-1">{stickers.map((color, idx) => <Sticker key={idx} testId={face ? `net-${face}-${idx}` : undefined} color={color} locked={idx === 4} onClick={() => onStickerClick(idx)} />)}</div>; }
-function MiniSticker({ filled, corner = false }) { if (corner) return <div className="h-2.5 w-2.5 sm:h-3 sm:w-3" />; return <div className="h-2.5 w-2.5 rounded-[2px] border border-slate-500/70 sm:h-3 sm:w-3" style={{ background: filled ? "#f8fafc" : "#374151" }} />; }
-function MiniColorSticker({ color, corner = false }) { if (corner) return <div className="h-2.5 w-2.5 sm:h-3 sm:w-3" />; return <div data-color={color} className="h-2.5 w-2.5 rounded-[2px] border border-slate-500/70 sm:h-3 sm:w-3" style={{ background: FACE_COLOR_STYLE[color] || FACE_COLOR_STYLE.X }} />; }
+function Sticker({ color, bottomColor, onClick, locked = false, testId }) {
+  const displayColor = displayColorSymbol(color, bottomColor);
+  return <button type="button" data-testid={testId} data-color={color} data-display-color={displayColor} onClick={onClick} disabled={locked} className={["aspect-square w-full rounded-md border transition duration-150", locked ? "cursor-not-allowed ring-2 ring-slate-500" : "hover:scale-105 active:scale-95"].join(" ")} style={{ background: displayColorStyle(color, bottomColor), borderColor: "#64748b" }} title={FACE_LABEL[displayColor] || displayColor}>{color === DONT_CARE ? <span className="text-xs font-normal text-white">?</span> : null}</button>;
+}
+function FaceGrid({ face, stickers, bottomColor, onStickerClick }) { return <div className="grid w-full grid-cols-3 gap-1">{stickers.map((color, idx) => <Sticker key={idx} testId={face ? `net-${face}-${idx}` : undefined} color={color} bottomColor={bottomColor} locked={idx === 4} onClick={() => onStickerClick(idx)} />)}</div>; }
+function MiniSticker({ filled, bottomColor, corner = false }) {
+  if (corner) return <div className="h-2.5 w-2.5 sm:h-3 sm:w-3" />;
+  const displayColor = displayColorSymbol("U", bottomColor);
+  return <div data-display-color={filled ? displayColor : "X"} className="h-2.5 w-2.5 rounded-[2px] border border-slate-500/70 sm:h-3 sm:w-3" style={{ background: filled ? displayColorStyle("U", bottomColor) : "#374151" }} />;
+}
+function MiniColorSticker({ color, bottomColor, corner = false }) {
+  if (corner) return <div className="h-2.5 w-2.5 sm:h-3 sm:w-3" />;
+  const displayColor = displayColorSymbol(color, bottomColor);
+  return <div data-color={color} data-display-color={displayColor} className="h-2.5 w-2.5 rounded-[2px] border border-slate-500/70 sm:h-3 sm:w-3" style={{ background: displayColorStyle(color, bottomColor) }} />;
+}
 function fallbackPreviewMask(pattern) { const u = pattern.U; const bit = (idx) => (u[idx] === "U" ? "1" : "0"); return [`x${bit(0)}${bit(1)}${bit(2)}x`, `0${bit(0)}${bit(1)}${bit(2)}0`, `0${bit(3)}${bit(4)}${bit(5)}0`, `0${bit(6)}${bit(7)}${bit(8)}0`, `x${bit(6)}${bit(7)}${bit(8)}x`].join(""); }
 function pllPreviewCells(pattern) {
   return [
@@ -722,7 +723,7 @@ function cubePreviewPoint(x, y, z) {
 function cubePreviewPolygon(points) {
   return points.map(([x, y, z]) => cubePreviewPoint(x, y, z)).join(" ");
 }
-function MiniCubePreviewFace({ stickers, face }) {
+function MiniCubePreviewFace({ stickers, face, bottomColor }) {
   return (
     <g data-preview-face={face}>
       {stickers.map((color, index) => {
@@ -748,151 +749,208 @@ function MiniCubePreviewFace({ stickers, face }) {
           const y1 = 0.5 - row;
           points = [[1.5, y0, z0], [1.5, y0, z1], [1.5, y1, z1], [1.5, y1, z0]];
         }
-        return <polygon key={index} data-color={color} points={cubePreviewPolygon(points)} fill={FACE_COLOR_STYLE[color] || FACE_COLOR_STYLE.X} stroke="#334155" strokeWidth="0.55" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />;
+        const displayColor = displayColorSymbol(color, bottomColor);
+        return <polygon key={index} data-color={color} data-display-color={displayColor} points={cubePreviewPolygon(points)} fill={displayColorStyle(color, bottomColor)} stroke="#334155" strokeWidth="0.55" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />;
       })}
     </g>
   );
 }
-function MiniZblsPreview({ pattern }) {
+function MiniZblsPreview({ pattern, bottomColor }) {
   return (
     <svg data-zbls-cube-preview aria-hidden="true" viewBox="0 0 64 58" className="h-[54px] w-[64px] overflow-visible drop-shadow-sm">
-      <MiniCubePreviewFace face="U" stickers={pattern.U} />
-      <MiniCubePreviewFace face="F" stickers={pattern.F} />
-      <MiniCubePreviewFace face="R" stickers={pattern.R} />
+      <MiniCubePreviewFace face="U" stickers={pattern.U} bottomColor={bottomColor} />
+      <MiniCubePreviewFace face="F" stickers={pattern.F} bottomColor={bottomColor} />
+      <MiniCubePreviewFace face="R" stickers={pattern.R} bottomColor={bottomColor} />
     </svg>
   );
 }
-function MiniPatternPreview({ pattern, previewMask, variant = "last-layer" }) {
-  if (variant === "zbls") return <MiniZblsPreview pattern={pattern} />;
+function MiniPatternPreview({ pattern, previewMask, variant = "last-layer", bottomColor }) {
+  if (variant === "zbls") return <MiniZblsPreview pattern={pattern} bottomColor={bottomColor} />;
   if (!previewMask) {
-    return <div className="grid grid-cols-5 gap-[2px]">{pllPreviewCells(pattern).map((cell, idx) => <MiniColorSticker key={idx} corner={!cell} color={cell || "X"} />)}</div>;
+    return <div className="grid grid-cols-5 gap-[2px]">{pllPreviewCells(pattern).map((cell, idx) => <MiniColorSticker key={idx} corner={!cell} color={cell || "X"} bottomColor={bottomColor} />)}</div>;
   }
   const mask = previewMask || fallbackPreviewMask(pattern);
-  return <div className="grid grid-cols-5 gap-[2px]">{mask.split("").map((cell, idx) => <MiniSticker key={idx} corner={cell === "x" || idx === 0 || idx === 4 || idx === 20 || idx === 24} filled={cell === "1"} />)}</div>;
+  return <div className="grid grid-cols-5 gap-[2px]">{mask.split("").map((cell, idx) => <MiniSticker key={idx} corner={cell === "x" || idx === 0 || idx === 4 || idx === 20 || idx === 24} filled={cell === "1"} bottomColor={bottomColor} />)}</div>;
 }
-function NetEditor({ pattern, setPattern, selectedColor }) { function setSticker(face, idx) { if (idx === 4) return; setPattern((prev) => { const next = {}; for (const f of FACE_ORDER) next[f] = [...prev[f]]; next[face][idx] = selectedColor; return next; }); } const spacer = <div />; return <div className="mx-auto grid w-full max-w-[520px] grid-cols-4 gap-1.5 py-2 sm:gap-3">{spacer}<FaceGrid face="U" stickers={pattern.U} onStickerClick={(idx) => setSticker("U", idx)} />{spacer}{spacer}<FaceGrid face="L" stickers={pattern.L} onStickerClick={(idx) => setSticker("L", idx)} /><FaceGrid face="F" stickers={pattern.F} onStickerClick={(idx) => setSticker("F", idx)} /><FaceGrid face="R" stickers={pattern.R} onStickerClick={(idx) => setSticker("R", idx)} /><FaceGrid face="B" stickers={pattern.B} onStickerClick={(idx) => setSticker("B", idx)} />{spacer}<FaceGrid face="D" stickers={pattern.D} onStickerClick={(idx) => setSticker("D", idx)} />{spacer}{spacer}</div>; }
-function stickerPolygon(face, index, orientation) {
-  const row = Math.floor(index / 3);
-  const col = index % 3;
-  const center = facePos(face, row, col);
-  const axes = FACE_AXIS[face];
-  const half = 0.49;
-  const corners = [
-    vecAdd(center, vecAdd(vecScale(axes.col, -half), vecScale(axes.row, -half))),
-    vecAdd(center, vecAdd(vecScale(axes.col, half), vecScale(axes.row, -half))),
-    vecAdd(center, vecAdd(vecScale(axes.col, half), vecScale(axes.row, half))),
-    vecAdd(center, vecAdd(vecScale(axes.col, -half), vecScale(axes.row, half))),
-  ].map((point) => quatRotate(orientation, point));
-  const normal = quatRotate(orientation, NORMAL[face]);
-  const screenPoints = corners.map((point) => [160 + point[0] * 58, 134 - point[1] * 58]);
-  return {
-    face,
-    index,
-    corners,
-    normal,
-    faceDepth: quatRotate(orientation, vecScale(NORMAL[face], 1.5))[2],
-    depth: corners.reduce((sum, point) => sum + point[2], 0) / corners.length,
-    screenPoints,
-    points: screenPoints.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" "),
-  };
-}
-function pointInPolygon([x, y], points) {
-  let inside = false;
-  for (let i = 0, j = points.length - 1; i < points.length; j = i, i += 1) {
-    const [xi, yi] = points[i];
-    const [xj, yj] = points[j];
-    const crosses = (yi > y) !== (yj > y);
-    if (crosses && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-9) + xi) inside = !inside;
-  }
-  return inside;
-}
-function QuaternionCubeEditor({ pattern, setPattern, selectedColor, bottomColor }) {
-  const [orientationState, setOrientationState] = useState(() => ({ bottomColor, value: cubeOrientationForBottom(bottomColor) }));
-  const orientation = orientationState.bottomColor === bottomColor ? orientationState.value : cubeOrientationForBottom(bottomColor);
-  const dragRef = useRef(null);
-  const draggedRef = useRef(false);
-  function setSticker(face, idx) {
-    if (idx === 4 || draggedRef.current) return;
-    setPattern((prev) => {
-      const next = {};
-      for (const f of FACE_ORDER) next[f] = [...prev[f]];
-      next[face][idx] = selectedColor;
-      return next;
-    });
-  }
-  function onPointerDown(event) {
-    dragRef.current = { x: event.clientX, y: event.clientY, orientation, captured: false };
-    draggedRef.current = false;
-  }
-  function onPointerMove(event) {
-    if (!dragRef.current) return;
-    const dx = event.clientX - dragRef.current.x;
-    const dy = event.clientY - dragRef.current.y;
-    if (Math.abs(dx) + Math.abs(dy) > 3) {
-      draggedRef.current = true;
-      if (!dragRef.current.captured) {
-        event.currentTarget.setPointerCapture(event.pointerId);
-        dragRef.current.captured = true;
+function NetEditor({ pattern, setPattern, selectedColor, bottomColor }) { function setSticker(face, idx) { if (idx === 4) return; setPattern((prev) => { const next = {}; for (const f of FACE_ORDER) next[f] = [...prev[f]]; next[face][idx] = selectedColor; return next; }); } const spacer = <div />; return <div className="mx-auto grid w-full max-w-[520px] grid-cols-4 gap-1.5 py-2 sm:gap-3">{spacer}<FaceGrid face="U" stickers={pattern.U} bottomColor={bottomColor} onStickerClick={(idx) => setSticker("U", idx)} />{spacer}{spacer}<FaceGrid face="L" stickers={pattern.L} bottomColor={bottomColor} onStickerClick={(idx) => setSticker("L", idx)} /><FaceGrid face="F" stickers={pattern.F} bottomColor={bottomColor} onStickerClick={(idx) => setSticker("F", idx)} /><FaceGrid face="R" stickers={pattern.R} bottomColor={bottomColor} onStickerClick={(idx) => setSticker("R", idx)} /><FaceGrid face="B" stickers={pattern.B} bottomColor={bottomColor} onStickerClick={(idx) => setSticker("B", idx)} />{spacer}<FaceGrid face="D" stickers={pattern.D} bottomColor={bottomColor} onStickerClick={(idx) => setSticker("D", idx)} />{spacer}{spacer}</div>; }
+function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor }) {
+  const rootRef = useRef(null);
+  const sceneRef = useRef(null);
+  const patternRef = useRef(pattern);
+  const selectedColorRef = useRef(selectedColor);
+  const bottomColorRef = useRef(bottomColor);
+
+  useEffect(() => { patternRef.current = pattern; }, [pattern]);
+  useEffect(() => { selectedColorRef.current = selectedColor; }, [selectedColor]);
+  useEffect(() => { bottomColorRef.current = bottomColor; }, [bottomColor]);
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return undefined;
+
+    const scene = new THREE.Scene();
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+    renderer.setClearColor(0x27272a, 1);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.domElement.setAttribute("data-testid", "cube-canvas");
+    renderer.domElement.style.display = "block";
+    renderer.domElement.style.height = "100%";
+    renderer.domElement.style.touchAction = "none";
+    renderer.domElement.style.width = "100%";
+    root.appendChild(renderer.domElement);
+
+    const camera = new THREE.OrthographicCamera(-3, 3, 2.5, -2.5, 0.1, 100);
+    camera.position.set(5, 3.7, 5.5);
+    camera.lookAt(0, 0, 0);
+
+    const group = new THREE.Group();
+    scene.add(group);
+    const bodyMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(3.08, 3.08, 3.08),
+      new THREE.MeshBasicMaterial({ color: 0x0f172a }),
+    );
+    group.add(bodyMesh);
+
+    const stickerGeometry = new THREE.PlaneGeometry(0.9, 0.9);
+    const stickerMeshes = [];
+    for (const face of FACE_ORDER) {
+      const axes = FACE_AXIS[face];
+      const normal = new THREE.Vector3(...NORMAL[face]);
+      const colAxis = new THREE.Vector3(...axes.col);
+      const rowAxis = new THREE.Vector3(...axes.row);
+      const rotation = new THREE.Matrix4().makeBasis(colAxis, rowAxis, normal);
+      for (let index = 0; index < 9; index += 1) {
+        const row = Math.floor(index / 3);
+        const col = index % 3;
+        const material = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.FrontSide });
+        const mesh = new THREE.Mesh(stickerGeometry, material);
+        const position = new THREE.Vector3(...facePos(face, row, col)).addScaledVector(normal, 0.56);
+        mesh.position.copy(position);
+        mesh.quaternion.setFromRotationMatrix(rotation);
+        mesh.userData = { face, index };
+        group.add(mesh);
+        stickerMeshes.push(mesh);
       }
     }
-    const yaw = quatFromAxisAngle([0, 1, 0], dx * 0.01);
-    const pitch = quatFromAxisAngle([1, 0, 0], dy * 0.01);
-    setOrientationState({ bottomColor, value: quatNormalize(quatMultiply(yaw, quatMultiply(pitch, dragRef.current.orientation))) });
-  }
-  function onPointerUp(event) {
-    if (dragRef.current?.captured) event.currentTarget.releasePointerCapture(event.pointerId);
-    dragRef.current = null;
-    setTimeout(() => { draggedRef.current = false; }, 0);
-  }
-  const stickers = FACE_ORDER.flatMap((face) => pattern[face].map((_color, index) => stickerPolygon(face, index, orientation)))
-    .filter((item) => item.normal[2] > 0.02)
-    .sort((a, b) => a.faceDepth - b.faceDepth || a.depth - b.depth);
-  function onSvgClick(event) {
-    if (draggedRef.current) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    const point = [
-      ((event.clientX - rect.left) / rect.width) * 320,
-      ((event.clientY - rect.top) / rect.height) * 268,
-    ];
-    const hit = [...stickers].reverse().find((item) => item.index !== 4 && pointInPolygon(point, item.screenPoints));
-    if (hit) setSticker(hit.face, hit.index);
-  }
+
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
+    const dragRef = { active: false, captured: false, dragged: false, x: 0, y: 0, quaternion: new THREE.Quaternion() };
+
+    function render() {
+      renderer.render(scene, camera);
+    }
+
+    function resize() {
+      const width = Math.max(1, root.clientWidth);
+      const height = Math.max(1, root.clientHeight);
+      renderer.setSize(width, height, false);
+      const aspect = width / height;
+      const viewHeight = 5.55;
+      camera.left = -viewHeight * aspect / 2;
+      camera.right = viewHeight * aspect / 2;
+      camera.top = viewHeight / 2;
+      camera.bottom = -viewHeight / 2;
+      camera.updateProjectionMatrix();
+      render();
+    }
+
+    function updateStickerColors() {
+      for (const mesh of stickerMeshes) {
+        const { face, index } = mesh.userData;
+        const color = patternRef.current[face][index];
+        mesh.material.color.set(displayColorStyle(color, bottomColorRef.current));
+      }
+      render();
+    }
+
+    function setSticker(face, index) {
+      if (index === 4) return;
+      setPattern((prev) => {
+        const next = {};
+        for (const item of FACE_ORDER) next[item] = [...prev[item]];
+        next[face][index] = selectedColorRef.current;
+        return next;
+      });
+    }
+
+    function pickSticker(event) {
+      const rect = renderer.domElement.getBoundingClientRect();
+      pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      pointer.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
+      raycaster.setFromCamera(pointer, camera);
+      const hit = raycaster.intersectObjects([bodyMesh, ...stickerMeshes], false)[0];
+      if (hit?.object.userData.face && hit.object.userData.index !== 4) setSticker(hit.object.userData.face, hit.object.userData.index);
+    }
+
+    function onPointerDown(event) {
+      event.preventDefault();
+      dragRef.active = true;
+      dragRef.captured = true;
+      dragRef.dragged = false;
+      dragRef.x = event.clientX;
+      dragRef.y = event.clientY;
+      dragRef.quaternion.copy(group.quaternion);
+      renderer.domElement.setPointerCapture(event.pointerId);
+    }
+
+    function onPointerMove(event) {
+      if (!dragRef.active) return;
+      const dx = event.clientX - dragRef.x;
+      const dy = event.clientY - dragRef.y;
+      if (Math.abs(dx) + Math.abs(dy) > 3) dragRef.dragged = true;
+      const yaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), dx * 0.01);
+      const pitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), dy * 0.01);
+      group.quaternion.copy(yaw.multiply(pitch).multiply(dragRef.quaternion));
+      render();
+    }
+
+    function onPointerUp(event) {
+      if (!dragRef.active) return;
+      if (dragRef.captured) renderer.domElement.releasePointerCapture(event.pointerId);
+      if (!dragRef.dragged) pickSticker(event);
+      dragRef.active = false;
+      dragRef.captured = false;
+    }
+
+    renderer.domElement.addEventListener("pointerdown", onPointerDown);
+    renderer.domElement.addEventListener("pointermove", onPointerMove);
+    renderer.domElement.addEventListener("pointerup", onPointerUp);
+    renderer.domElement.addEventListener("pointercancel", onPointerUp);
+
+    const resizeObserver = new ResizeObserver(resize);
+    resizeObserver.observe(root);
+    sceneRef.current = { updateStickerColors };
+    resize();
+    updateStickerColors();
+
+    return () => {
+      resizeObserver.disconnect();
+      renderer.domElement.removeEventListener("pointerdown", onPointerDown);
+      renderer.domElement.removeEventListener("pointermove", onPointerMove);
+      renderer.domElement.removeEventListener("pointerup", onPointerUp);
+      renderer.domElement.removeEventListener("pointercancel", onPointerUp);
+      sceneRef.current = null;
+      root.removeChild(renderer.domElement);
+      stickerGeometry.dispose();
+      scene.traverse((object) => {
+        if (object.geometry && object.geometry !== stickerGeometry) object.geometry.dispose();
+        if (object.material) object.material.dispose();
+      });
+      renderer.dispose();
+    };
+  }, [setPattern]);
+
+  useEffect(() => {
+    sceneRef.current?.updateStickerColors();
+  }, [pattern, bottomColor]);
+
   return (
-    <div data-testid="quaternion-editor" className="mx-auto w-full max-w-[520px] touch-none select-none py-1">
-      <svg
-        viewBox="0 0 320 268"
-        className="mx-auto block w-full max-w-[480px]"
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
-        onClick={onSvgClick}
-      >
-        <rect x="0" y="0" width="320" height="268" rx="18" fill="#27272a" />
-        {stickers.map((item) => {
-          const color = pattern[item.face][item.index];
-          const locked = item.index === 4;
-          return (
-            <polygon
-              key={`${item.face}-${item.index}`}
-              data-testid={`cube-sticker-${item.face}-${item.index}`}
-              data-color={color}
-              points={item.points}
-              fill={FACE_COLOR_STYLE[color] || FACE_COLOR_STYLE.X}
-              stroke={locked ? "#cbd5e1" : "#111827"}
-              strokeWidth={locked ? "2.2" : "1.2"}
-              strokeLinejoin="round"
-              vectorEffect="non-scaling-stroke"
-              className={locked ? "cursor-not-allowed" : "cursor-pointer"}
-            />
-          );
-        })}
-      </svg>
-    </div>
+    <div data-testid="quaternion-editor" className="mx-auto h-[320px] w-full max-w-[520px] touch-none select-none overflow-hidden rounded-[22px] bg-[#27272a] sm:h-[360px]" ref={rootRef} />
   );
 }
-function ColorPicker({ selectedColor, setSelectedColor }) {
-  return <div className="mb-4 flex flex-wrap gap-2">{[...FACE_ORDER, DONT_CARE].map((face) => <button key={face} type="button" data-testid={`color-${face}`} onClick={() => setSelectedColor(face)} className={`flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-normal transition active:scale-95 ${selectedColor === face ? "border-slate-100 bg-zinc-700 shadow-md ring-2 ring-slate-300" : "border-zinc-600 bg-zinc-700 hover:bg-zinc-600"}`} title={FACE_LABEL[face] || face}><span className="inline-flex h-5 w-5 items-center justify-center rounded border text-[10px] font-normal text-white" style={{ background: FACE_COLOR_STYLE[face], borderColor: "#64748b" }}>{face === DONT_CARE ? "?" : ""}</span></button>)}</div>;
+function ColorPicker({ selectedColor, setSelectedColor, bottomColor }) {
+  return <div className="mb-4 flex flex-wrap gap-2">{[...FACE_ORDER, DONT_CARE].map((face) => { const displayColor = displayColorSymbol(face, bottomColor); return <button key={face} type="button" data-testid={`color-${face}`} data-display-color={displayColor} onClick={() => setSelectedColor(face)} className={`flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-normal transition active:scale-95 ${selectedColor === face ? "border-slate-100 bg-zinc-700 shadow-md ring-2 ring-slate-300" : "border-zinc-600 bg-zinc-700 hover:bg-zinc-600"}`} title={FACE_LABEL[displayColor] || displayColor}><span className="inline-flex h-5 w-5 items-center justify-center rounded border text-[10px] font-normal text-white" style={{ background: displayColorStyle(face, bottomColor), borderColor: "#64748b" }}>{face === DONT_CARE ? "?" : ""}</span></button>; })}</div>;
 }
 function PatternEditorControls({ editorMode, setEditorMode, bottomColor, setBottomColor }) {
   return (
@@ -911,9 +969,9 @@ function PatternEditorControls({ editorMode, setEditorMode, bottomColor, setBott
 function PatternInputEditor({ pattern, setPattern, selectedColor, setSelectedColor, editorMode, setEditorMode, bottomColor, setBottomColor }) {
   return (
     <>
-      <ColorPicker selectedColor={selectedColor} setSelectedColor={setSelectedColor} />
+      <ColorPicker selectedColor={selectedColor} setSelectedColor={setSelectedColor} bottomColor={bottomColor} />
       <PatternEditorControls editorMode={editorMode} setEditorMode={setEditorMode} bottomColor={bottomColor} setBottomColor={setBottomColor} />
-      {editorMode === "cube" ? <QuaternionCubeEditor pattern={pattern} setPattern={setPattern} selectedColor={selectedColor} bottomColor={bottomColor} /> : <NetEditor pattern={pattern} setPattern={setPattern} selectedColor={selectedColor} />}
+      {editorMode === "cube" ? <ThreeCubeEditor pattern={pattern} setPattern={setPattern} selectedColor={selectedColor} bottomColor={bottomColor} /> : <NetEditor pattern={pattern} setPattern={setPattern} selectedColor={selectedColor} bottomColor={bottomColor} />}
     </>
   );
 }
@@ -922,7 +980,7 @@ function ThinkingCard({ foundCount, t }) { return <div className="rounded-2xl bo
 function ResultSummaryCard({ text, className = "" }) { return <div className={`rounded-2xl border border-slate-300 bg-white p-4 shadow-sm ${className}`}><div className="flex min-h-[34px] items-center justify-center text-sm text-slate-600">{text}</div></div>; }
 function EmptyCard({ text, className = "" }) { return <ResultSummaryCard text={text} className={className} />; }
 function NumberInput({ label, value, onChange, min = 1, max = 99 }) { function setClamped(nextValue) { const raw = String(nextValue); if (raw === "") { onChange(""); return; } const numeric = Number(raw); if (!Number.isFinite(numeric)) return; onChange(Math.min(max, Math.max(min, Math.trunc(numeric)))); } return <label className="grid gap-1"><span className="text-sm font-normal">{label}</span><input type="number" inputMode="numeric" pattern="[0-9]*" min={min} max={max} step="1" value={value} onChange={(e) => setClamped(e.target.value)} onBlur={() => { if (value === "") onChange(min); }} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 text-center text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" /></label>; }
-function PresetTile({ label, pattern, previewMask, previewVariant, title, testId, selected = false, onClick }) {
+function PresetTile({ label, pattern, previewMask, previewVariant, title, testId, selected = false, bottomColor, onClick }) {
   const isZblsPreview = previewVariant === "zbls";
   return (
     <button
@@ -932,7 +990,7 @@ function PresetTile({ label, pattern, previewMask, previewVariant, title, testId
       title={title || label}
       className={`flex ${isZblsPreview ? "h-[96px] w-[88px]" : "h-[88px] w-[78px]"} flex-col items-center justify-center gap-1 rounded-lg border bg-white p-2 transition hover:bg-slate-50 active:scale-95 ${selected ? "border-slate-900 ring-2 ring-slate-400" : "border-slate-300"}`}
     >
-      <MiniPatternPreview pattern={pattern} previewMask={previewMask} variant={previewVariant} />
+      <MiniPatternPreview pattern={pattern} previewMask={previewMask} variant={previewVariant} bottomColor={bottomColor} />
       <span className="h-4 max-w-full truncate text-[11px] font-normal leading-4 text-slate-700">{label}</span>
     </button>
   );
@@ -940,7 +998,7 @@ function PresetTile({ label, pattern, previewMask, previewVariant, title, testId
 function PresetTileList({ children, withDivider = false }) {
   return <div className={`flex flex-wrap gap-1.5 ${withDivider ? "border-t border-slate-200 pt-2" : ""}`}>{children}</div>;
 }
-function DirectPresetPanel({ category, applyCasePreset }) {
+function DirectPresetPanel({ category, applyCasePreset, bottomColor }) {
   return (
     <PresetTileList>
       {CASE_PRESETS[category].map((preset) => (
@@ -952,12 +1010,13 @@ function DirectPresetPanel({ category, applyCasePreset }) {
           label={category === "OLL" ? preset.number : preset.label || ""}
           pattern={preset.pattern}
           previewMask={preset.previewMask}
+          bottomColor={bottomColor}
         />
       ))}
     </PresetTileList>
   );
 }
-function CollPresetPanel({ activeGroup, setActiveGroup, applyCasePreset }) {
+function CollPresetPanel({ activeGroup, setActiveGroup, applyCasePreset, bottomColor }) {
   const group = COLL_GROUPS.find((item) => item.id === activeGroup);
   return (
     <div className="grid gap-2">
@@ -971,6 +1030,7 @@ function CollPresetPanel({ activeGroup, setActiveGroup, applyCasePreset }) {
             title={item.label}
             label={item.label}
             pattern={item.preview}
+            bottomColor={bottomColor}
           />
         ))}
       </PresetTileList>
@@ -984,6 +1044,7 @@ function CollPresetPanel({ activeGroup, setActiveGroup, applyCasePreset }) {
               title={preset.label}
               label={preset.label}
               pattern={preset.pattern}
+              bottomColor={bottomColor}
             />
           ))}
         </PresetTileList>
@@ -991,7 +1052,7 @@ function CollPresetPanel({ activeGroup, setActiveGroup, applyCasePreset }) {
     </div>
   );
 }
-function ZbllPresetPanel({ activeFamily, setActiveFamily, activeColl, setActiveColl, applyCasePreset }) {
+function ZbllPresetPanel({ activeFamily, setActiveFamily, activeColl, setActiveColl, applyCasePreset, bottomColor }) {
   const family = ZBLL_GROUPS.find((item) => item.id === activeFamily);
   const collCase = family?.cases.find((item) => item.id === activeColl);
   return (
@@ -1009,6 +1070,7 @@ function ZbllPresetPanel({ activeFamily, setActiveFamily, activeColl, setActiveC
             title={group.label}
             label={group.label}
             pattern={group.preview}
+            bottomColor={bottomColor}
           />
         ))}
       </PresetTileList>
@@ -1023,6 +1085,7 @@ function ZbllPresetPanel({ activeFamily, setActiveFamily, activeColl, setActiveC
               title={preset.label}
               label={preset.label}
               pattern={preset.pattern}
+              bottomColor={bottomColor}
             />
           ))}
         </PresetTileList>
@@ -1037,6 +1100,7 @@ function ZbllPresetPanel({ activeFamily, setActiveFamily, activeColl, setActiveC
               title={preset.label}
               label={preset.label}
               pattern={preset.pattern}
+              bottomColor={bottomColor}
             />
           ))}
         </PresetTileList>
@@ -1044,7 +1108,7 @@ function ZbllPresetPanel({ activeFamily, setActiveFamily, activeColl, setActiveC
     </div>
   );
 }
-function ZblsPresetPanel({ activeF2l, setActiveF2l, applyCasePreset }) {
+function ZblsPresetPanel({ activeF2l, setActiveF2l, applyCasePreset, bottomColor }) {
   const group = ZBLS_GROUPS.find((item) => item.id === activeF2l);
   const visibleGroups = group ? [group] : ZBLS_GROUPS;
   return (
@@ -1060,6 +1124,7 @@ function ZblsPresetPanel({ activeF2l, setActiveF2l, applyCasePreset }) {
             label={`${item.label} (${item.cases.length})`}
             pattern={item.preview}
             previewVariant="zbls"
+            bottomColor={bottomColor}
           />
         ))}
       </PresetTileList>
@@ -1074,6 +1139,7 @@ function ZblsPresetPanel({ activeF2l, setActiveF2l, applyCasePreset }) {
               label={preset.label}
               pattern={preset.pattern}
               previewVariant="zbls"
+              bottomColor={bottomColor}
             />
           ))}
         </PresetTileList>
@@ -1081,11 +1147,11 @@ function ZblsPresetPanel({ activeF2l, setActiveF2l, applyCasePreset }) {
     </div>
   );
 }
-function CasePresetPanel({ category, collGroupOpen, setCollGroupOpen, zbllFamilyOpen, setZbllFamilyOpen, zbllCollOpen, setZbllCollOpen, zblsF2lOpen, setZblsF2lOpen, applyCasePreset }) {
-  if (category === "COLL") return <CollPresetPanel activeGroup={collGroupOpen} setActiveGroup={setCollGroupOpen} applyCasePreset={applyCasePreset} />;
-  if (category === "ZBLL") return <ZbllPresetPanel activeFamily={zbllFamilyOpen} setActiveFamily={setZbllFamilyOpen} activeColl={zbllCollOpen} setActiveColl={setZbllCollOpen} applyCasePreset={applyCasePreset} />;
-  if (category === "ZBLS") return <ZblsPresetPanel activeF2l={zblsF2lOpen} setActiveF2l={setZblsF2lOpen} applyCasePreset={applyCasePreset} />;
-  return <DirectPresetPanel category={category} applyCasePreset={applyCasePreset} />;
+function CasePresetPanel({ category, collGroupOpen, setCollGroupOpen, zbllFamilyOpen, setZbllFamilyOpen, zbllCollOpen, setZbllCollOpen, zblsF2lOpen, setZblsF2lOpen, applyCasePreset, bottomColor }) {
+  if (category === "COLL") return <CollPresetPanel activeGroup={collGroupOpen} setActiveGroup={setCollGroupOpen} applyCasePreset={applyCasePreset} bottomColor={bottomColor} />;
+  if (category === "ZBLL") return <ZbllPresetPanel activeFamily={zbllFamilyOpen} setActiveFamily={setZbllFamilyOpen} activeColl={zbllCollOpen} setActiveColl={setZbllCollOpen} applyCasePreset={applyCasePreset} bottomColor={bottomColor} />;
+  if (category === "ZBLS") return <ZblsPresetPanel activeF2l={zblsF2lOpen} setActiveF2l={setZblsF2lOpen} applyCasePreset={applyCasePreset} bottomColor={bottomColor} />;
+  return <DirectPresetPanel category={category} applyCasePreset={applyCasePreset} bottomColor={bottomColor} />;
 }
 
 export default function App() {
@@ -1174,6 +1240,7 @@ export default function App() {
         zblsF2lOpen={zblsF2lOpen}
         setZblsF2lOpen={setZblsF2lOpen}
         applyCasePreset={applyCasePreset}
+        bottomColor={bottomColor}
       />
     </div>
   ) : null}
