@@ -110,23 +110,6 @@ function displayColorStyle(color, bottomFace) {
   return FACE_COLOR_STYLE[displayColorSymbol(color, bottomFace)] || FACE_COLOR_STYLE.X;
 }
 
-function bottomTransitionQuaternion(previousBottom, nextBottom) {
-  const previousMap = displayColorMapForBottom(previousBottom);
-  const nextMap = displayColorMapForBottom(nextBottom);
-  const previousFaceByColor = Object.fromEntries(
-    FACE_ORDER.map((face) => [previousMap[face], face]),
-  );
-  const worldNormalForLocalFace = (face) => new THREE.Vector3(
-    ...NORMAL[previousFaceByColor[nextMap[face]]],
-  );
-  const rotation = new THREE.Matrix4().makeBasis(
-    worldNormalForLocalFace("R"),
-    worldNormalForLocalFace("U"),
-    worldNormalForLocalFace("F"),
-  );
-  return new THREE.Quaternion().setFromRotationMatrix(rotation).normalize();
-}
-
 function vecCross(a, b) {
   return [
     a[1] * b[2] - a[2] * b[1],
@@ -1105,11 +1088,15 @@ function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor }) {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.domElement.setAttribute("data-testid", "cube-canvas");
     renderer.domElement.setAttribute("data-projection", "isometric");
-    renderer.domElement.setAttribute("data-interaction", "fixed");
+    renderer.domElement.setAttribute("data-interaction", "yaw-pitch");
     renderer.domElement.dataset.animating = "false";
+    renderer.domElement.dataset.dragging = "false";
+    renderer.domElement.dataset.pitch = "0.0000";
+    renderer.domElement.dataset.roll = "0.0000";
+    renderer.domElement.dataset.yaw = "0.0000";
     renderer.domElement.style.display = "block";
     renderer.domElement.style.height = "100%";
-    renderer.domElement.style.touchAction = "manipulation";
+    renderer.domElement.style.touchAction = "none";
     renderer.domElement.style.width = "100%";
     root.appendChild(renderer.domElement);
 
@@ -1149,11 +1136,25 @@ function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor }) {
 
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
-    const identityQuaternion = new THREE.Quaternion();
+    const view = { pitch: 0, yaw: 0 };
+    const drag = { active: false, moved: false, pointerId: null, startPitch: 0, startX: 0, startY: 0, startYaw: 0 };
+    const maxPitch = Math.PI * 0.49;
     let animationFrame = 0;
 
     function render() {
       renderer.render(scene, camera);
+    }
+
+    function normalizeAngle(angle) {
+      return Math.atan2(Math.sin(angle), Math.cos(angle));
+    }
+
+    function applyView() {
+      group.rotation.set(view.pitch, view.yaw, 0, "YXZ");
+      renderer.domElement.dataset.pitch = view.pitch.toFixed(4);
+      renderer.domElement.dataset.roll = "0.0000";
+      renderer.domElement.dataset.yaw = view.yaw.toFixed(4);
+      render();
     }
 
     function resize() {
@@ -1192,34 +1193,40 @@ function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor }) {
     function transitionBottomColor(previousBottom, nextBottom) {
       stopAnimation();
       bottomColorRef.current = nextBottom;
-      const startQuaternion = bottomTransitionQuaternion(previousBottom, nextBottom);
-      group.quaternion.copy(startQuaternion);
       paintStickerColors();
-      render();
-
+      const startPitch = view.pitch;
+      const startYaw = normalizeAngle(view.yaw);
       const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-      if (reducedMotion || startQuaternion.angleTo(identityQuaternion) < 0.001) {
-        group.quaternion.identity();
-        render();
+      if (reducedMotion) {
+        view.pitch = 0;
+        view.yaw = 0;
+        applyView();
         return;
       }
 
       const startedAt = performance.now();
-      const duration = 480;
+      const duration = 420;
+      const hasManualRotation = Math.abs(startPitch) + Math.abs(startYaw) > 0.001;
+      const direction = FACE_ORDER.indexOf(nextBottom) >= FACE_ORDER.indexOf(previousBottom) ? 1 : -1;
+      const cuePitch = hasManualRotation ? 0 : -0.1;
+      const cueYaw = hasManualRotation ? 0 : direction * 0.24;
       renderer.domElement.dataset.animating = "true";
       function animate(now) {
         const progress = Math.min(1, (now - startedAt) / duration);
         const eased = 1 - Math.pow(1 - progress, 3);
-        group.quaternion.slerpQuaternions(startQuaternion, identityQuaternion, eased);
-        render();
+        const cue = Math.sin(Math.PI * progress);
+        view.pitch = startPitch * (1 - eased) + cuePitch * cue;
+        view.yaw = startYaw * (1 - eased) + cueYaw * cue;
+        applyView();
         if (progress < 1) {
           animationFrame = requestAnimationFrame(animate);
           return;
         }
-        group.quaternion.identity();
+        view.pitch = 0;
+        view.yaw = 0;
         animationFrame = 0;
         renderer.domElement.dataset.animating = "false";
-        render();
+        applyView();
       }
       animationFrame = requestAnimationFrame(animate);
     }
@@ -1262,7 +1269,59 @@ function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor }) {
       if (nearest) setSticker(nearest.userData.face, nearest.userData.index);
     }
 
-    renderer.domElement.addEventListener("click", pickSticker);
+    function onPointerDown(event) {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      stopAnimation();
+      drag.active = true;
+      drag.moved = false;
+      drag.pointerId = event.pointerId;
+      drag.startPitch = view.pitch;
+      drag.startX = event.clientX;
+      drag.startY = event.clientY;
+      drag.startYaw = view.yaw;
+      renderer.domElement.dataset.dragging = "true";
+      renderer.domElement.setPointerCapture(event.pointerId);
+    }
+
+    function onPointerMove(event) {
+      if (!drag.active || event.pointerId !== drag.pointerId) return;
+      const dx = event.clientX - drag.startX;
+      const dy = event.clientY - drag.startY;
+      if (Math.hypot(dx, dy) > 3) drag.moved = true;
+      if (!drag.moved) return;
+      view.yaw = drag.startYaw + dx * 0.009;
+      view.pitch = Math.max(-maxPitch, Math.min(maxPitch, drag.startPitch + dy * 0.009));
+      applyView();
+    }
+
+    function finishPointer(event, pick) {
+      if (!drag.active || event.pointerId !== drag.pointerId) return;
+      if (renderer.domElement.hasPointerCapture(event.pointerId)) {
+        renderer.domElement.releasePointerCapture(event.pointerId);
+      }
+      if (pick && !drag.moved) pickSticker(event);
+      if (drag.moved) {
+        view.yaw = normalizeAngle(view.yaw);
+        applyView();
+      }
+      drag.active = false;
+      drag.pointerId = null;
+      renderer.domElement.dataset.dragging = "false";
+    }
+
+    function onPointerUp(event) {
+      finishPointer(event, true);
+    }
+
+    function onPointerCancel(event) {
+      finishPointer(event, false);
+    }
+
+    renderer.domElement.addEventListener("pointerdown", onPointerDown);
+    renderer.domElement.addEventListener("pointermove", onPointerMove);
+    renderer.domElement.addEventListener("pointerup", onPointerUp);
+    renderer.domElement.addEventListener("pointercancel", onPointerCancel);
 
     const resizeObserver = new ResizeObserver(resize);
     resizeObserver.observe(root);
@@ -1273,7 +1332,10 @@ function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor }) {
     return () => {
       stopAnimation();
       resizeObserver.disconnect();
-      renderer.domElement.removeEventListener("click", pickSticker);
+      renderer.domElement.removeEventListener("pointerdown", onPointerDown);
+      renderer.domElement.removeEventListener("pointermove", onPointerMove);
+      renderer.domElement.removeEventListener("pointerup", onPointerUp);
+      renderer.domElement.removeEventListener("pointercancel", onPointerCancel);
       sceneRef.current = null;
       root.removeChild(renderer.domElement);
       stickerGeometry.dispose();

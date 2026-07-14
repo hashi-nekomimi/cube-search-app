@@ -160,7 +160,7 @@ test("nested preset icons and applied nets use the generated color arrays", asyn
   await expectNetState(page, zbls.state);
 });
 
-test("dark-only pattern input supports bottom color animation and fixed cube clicking", async ({ page }) => {
+test("dark-only pattern input supports two-axis rotation, bottom reset, and cube clicking", async ({ page }) => {
   await openNetInput(page);
   await expect(page.locator(".dark-mode")).toHaveCount(1);
 
@@ -174,14 +174,25 @@ test("dark-only pattern input supports bottom color animation and fixed cube cli
   await expect(page.getByTestId("pattern-editor-net")).toHaveAttribute("aria-pressed", "true");
   await page.getByTestId("pattern-editor-cube").click();
   await expect(page.getByTestId("cube-editor")).toBeVisible();
-  await expect(page.getByTestId("cube-canvas")).toBeVisible();
-  await expect(page.getByTestId("cube-canvas")).toHaveAttribute("data-interaction", "fixed");
+  const cubeCanvas = page.getByTestId("cube-canvas");
+  await expect(cubeCanvas).toBeVisible();
+  await expect(cubeCanvas).toHaveAttribute("data-interaction", "yaw-pitch");
+  const initialBox = await cubeCanvas.boundingBox();
+  await page.mouse.move(initialBox.x + initialBox.width * 0.5, initialBox.y + initialBox.height * 0.5);
+  await page.mouse.down();
+  await page.mouse.move(initialBox.x + initialBox.width * 0.65, initialBox.y + initialBox.height * 0.6, { steps: 4 });
+  await page.mouse.up();
+  await expect(cubeCanvas).not.toHaveAttribute("data-yaw", "0.0000");
+  await expect(cubeCanvas).not.toHaveAttribute("data-pitch", "0.0000");
+  await expect(cubeCanvas).toHaveAttribute("data-roll", "0.0000");
 
   await expect(page.getByTestId("bottom-color-D")).toHaveAttribute("aria-pressed", "true");
   await page.getByTestId("bottom-color-U").click();
   await expect(page.getByTestId("bottom-color-U")).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByTestId("cube-canvas")).toHaveAttribute("data-animating", "true");
-  await expect(page.getByTestId("cube-canvas")).toHaveAttribute("data-animating", "false", { timeout: 1500 });
+  await expect(cubeCanvas).toHaveAttribute("data-animating", "true");
+  await expect(cubeCanvas).toHaveAttribute("data-animating", "false", { timeout: 1500 });
+  await expect(cubeCanvas).toHaveAttribute("data-yaw", "0.0000");
+  await expect(cubeCanvas).toHaveAttribute("data-pitch", "0.0000");
   await page.getByTestId("pattern-editor-net").click();
   await expect(page.getByTestId("net-D-4")).toHaveAttribute("data-display-color", "U");
   await expect(page.getByTestId("net-U-4")).toHaveAttribute("data-display-color", "D");
@@ -190,8 +201,7 @@ test("dark-only pattern input supports bottom color animation and fixed cube cli
   await expect(page.getByTestId("cube-canvas")).toHaveAttribute("data-animating", "false", { timeout: 1500 });
 
   await page.getByTestId("color-X").click();
-  const canvas = page.getByTestId("cube-canvas");
-  const box = await canvas.boundingBox();
+  const box = await cubeCanvas.boundingBox();
   await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.58);
   await page.getByTestId("pattern-editor-net").click();
   await expect(page.locator('[data-testid^="net-"][data-color="X"]')).toHaveCount(1);

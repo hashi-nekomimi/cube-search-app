@@ -60,7 +60,7 @@ test("ZBLS preset chooser renders cleanly on desktop and mobile", async ({ page 
   expect(consoleErrors).toEqual([]);
 });
 
-test("fixed isometric Three.js cube renders nonblank on desktop and mobile", async ({ page }, testInfo) => {
+test("two-axis isometric Three.js cube renders nonblank on desktop and mobile", async ({ page }, testInfo) => {
   const consoleErrors = [];
   page.on("console", (message) => {
     if (message.type() === "error") consoleErrors.push(message.text());
@@ -68,7 +68,7 @@ test("fixed isometric Three.js cube renders nonblank on desktop and mobile", asy
 
   await openCubeEditor(page);
   await expect(page.getByTestId("cube-canvas")).toHaveAttribute("data-projection", "isometric");
-  await expect(page.getByTestId("cube-canvas")).toHaveAttribute("data-interaction", "fixed");
+  await expect(page.getByTestId("cube-canvas")).toHaveAttribute("data-interaction", "yaw-pitch");
   await expectThreeCanvasPixels(page);
   await page.screenshot({ path: testInfo.outputPath("three-cube-desktop.png"), fullPage: true });
 
