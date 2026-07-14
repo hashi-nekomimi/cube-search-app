@@ -27,6 +27,9 @@ test("search results show regrip counts and can be sorted by metrics", async ({ 
   await page.getByRole("button", { name: "手順から探索" }).click();
 
   await expect(page.getByTestId("solution-card").first()).toBeVisible({ timeout: 20000 });
+  await expect(page.getByTestId("metric-effective").first()).toContainText(/STM\s*[0-9]/);
+  await expect(page.getByTestId("metric-symbol").first()).toContainText(/HTM\s*[0-9]/);
+  await expect(page.getByTestId("metric-quarter").first()).toContainText(/QTM\s*[0-9]/);
   await expect(page.getByTestId("metric-regrip").first()).toContainText(/リグリップ\s*[0-9—]/);
   await expect(page.getByTestId("solution-list")).not.toHaveClass(/md:grid-cols-2/);
 

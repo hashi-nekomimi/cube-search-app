@@ -100,6 +100,12 @@ function lastLayerPreviewColors(state) {
   ];
 }
 
+function collPreviewColors(state) {
+  const colors = lastLayerPreviewColors(state);
+  for (const index of [1, 5, 8, 9, 11, 12, 15, 19]) colors[index] = "X";
+  return colors;
+}
+
 async function expectPreviewColors(tile, expected) {
   await expect(tile.locator("[data-color]")).toHaveCount(expected.length);
   expect(await tile.locator("[data-color]").evaluateAll((elements) => elements.map((element) => element.dataset.color))).toEqual(expected);
@@ -128,7 +134,7 @@ test("nested preset icons and applied nets use the generated color arrays", asyn
   await openPresetPanel(page, "COLL");
   await page.getByTestId(`coll-group-${coll.family}`).click();
   const collTile = page.getByTestId(`preset-case-${coll.id}`);
-  await expectPreviewColors(collTile, lastLayerPreviewColors(coll.state));
+  await expectPreviewColors(collTile, collPreviewColors(coll.state));
   await collTile.click();
   await expectNetState(page, coll.state);
 
@@ -136,7 +142,9 @@ test("nested preset icons and applied nets use the generated color arrays", asyn
   const zbllColl = COLL_PRESET_DATA.find((record) => record.name === zbll.coll);
   await openPresetPanel(page, "ZBLL");
   await page.getByTestId(`zbll-family-${zbll.family}`).click();
-  await page.getByTestId(`zbll-coll-${zbllColl.id}`).click();
+  const zbllCollTile = page.getByTestId(`zbll-coll-${zbllColl.id}`);
+  await expectPreviewColors(zbllCollTile, collPreviewColors(zbllColl.state));
+  await zbllCollTile.click();
   const zbllTile = page.getByTestId(`preset-case-${zbll.id}`);
   await expectPreviewColors(zbllTile, lastLayerPreviewColors(zbll.state));
   await zbllTile.click();

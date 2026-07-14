@@ -696,12 +696,20 @@ function patternFromPresetState(state) {
   return stateStringToPattern(state);
 }
 
+function collPreviewPattern(pattern) {
+  const preview = clonePattern(pattern);
+  for (const index of [1, 3, 5, 7]) preview.U[index] = DONT_CARE;
+  for (const face of ["B", "L", "F", "R"]) preview[face][1] = DONT_CARE;
+  return preview;
+}
+
 const COLL_CASES = COLL_PRESET_DATA.map((record) => ({
   id: record.id,
   family: record.family,
   label: record.name,
   seedAlg: record.solution,
   pattern: patternFromPresetState(record.state),
+  previewPattern: collPreviewPattern(patternFromPresetState(record.state)),
 }));
 
 const COLL_GROUPS = COLL_FAMILY_META.map((family) => {
@@ -709,7 +717,7 @@ const COLL_GROUPS = COLL_FAMILY_META.map((family) => {
   return {
     ...family,
     label: `${family.label} (${cases.length})`,
-    preview: cases[0].pattern,
+    preview: cases[0].previewPattern,
     cases,
   };
 });
@@ -1293,9 +1301,9 @@ function SolutionCard({ solution, t, language, showMoveCounts, onSave, onCopy })
       <div data-testid="solution-alg" className="break-words font-mono text-base font-normal text-slate-900">{displayAlg || "(空)"}</div>
       {showMoveCounts ? (
         <div className="mt-3 grid grid-cols-2 gap-2 text-center text-xs sm:grid-cols-4">
-          <SolutionMetric testId="metric-effective" label={t.simultaneous} value={effectiveMoveCount(solution)} />
-          <SolutionMetric testId="metric-symbol" label={t.symbolMoves} value={symbolMoveCount(solution)} />
-          <SolutionMetric testId="metric-quarter" label={t.quarterTurns} value={quarterTurnCount(solution)} />
+          <SolutionMetric testId="metric-effective" label="STM" value={effectiveMoveCount(solution)} />
+          <SolutionMetric testId="metric-symbol" label="HTM" value={symbolMoveCount(solution)} />
+          <SolutionMetric testId="metric-quarter" label="QTM" value={quarterTurnCount(solution)} />
           <SolutionMetric testId="metric-regrip" label={localizedLabel(REGRIP_LABEL, language)} value={regrips === null ? "—" : regrips} />
         </div>
       ) : null}
@@ -1369,7 +1377,7 @@ function CollPresetPanel({ activeGroup, setActiveGroup, applyCasePreset, bottomC
               onClick={() => applyCasePreset(preset)}
               title={preset.label}
               label={preset.label}
-              pattern={preset.pattern}
+              pattern={preset.previewPattern}
               bottomColor={bottomColor}
             />
           ))}
@@ -1410,7 +1418,7 @@ function ZbllPresetPanel({ activeFamily, setActiveFamily, activeColl, setActiveC
               onClick={() => setActiveColl((prev) => (prev === preset.id ? null : preset.id))}
               title={preset.label}
               label={preset.label}
-              pattern={preset.pattern}
+              pattern={preset.previewPattern}
               bottomColor={bottomColor}
             />
           ))}
