@@ -28,6 +28,14 @@ const FACE_COLOR_STYLE = {
   X: "#111111",
 };
 const FACE_LABEL = { U: "白", R: "赤", F: "緑", D: "黄", L: "橙", B: "青", X: "dont care" };
+const FACE_AXIS = {
+  U: { col: [1, 0, 0], row: [0, 0, 1] },
+  D: { col: [1, 0, 0], row: [0, 0, -1] },
+  F: { col: [1, 0, 0], row: [0, -1, 0] },
+  B: { col: [-1, 0, 0], row: [0, -1, 0] },
+  R: { col: [0, 0, -1], row: [0, -1, 0] },
+  L: { col: [0, 0, 1], row: [0, -1, 0] },
+};
 const PARALLEL_GROUP = { U: "UD", D: "UD", R: "RL", L: "RL", F: "FB", B: "FB" };
 const PARALLEL_GROUP_FACES = { UD: ["U", "D"], RL: ["R", "L"], FB: ["F", "B"] };
 const TOKEN_RE = /([URFDLBMESxyzurfdlb](?:w)?)(2|')?/g;
@@ -64,6 +72,103 @@ function buildStickers() {
 }
 
 const { stickers: STICKERS, indexOf: INDEX_OF } = buildStickers();
+
+function vecDot(a, b) {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+function vecCross(a, b) {
+  return [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+  ];
+}
+
+function vecScale(v, scale) {
+  return [v[0] * scale, v[1] * scale, v[2] * scale];
+}
+
+function vecAdd(a, b) {
+  return [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+}
+
+function vecNormalize(v) {
+  const length = Math.hypot(v[0], v[1], v[2]) || 1;
+  return [v[0] / length, v[1] / length, v[2] / length];
+}
+
+function quatNormalize(q) {
+  const length = Math.hypot(q[0], q[1], q[2], q[3]) || 1;
+  return [q[0] / length, q[1] / length, q[2] / length, q[3] / length];
+}
+
+function quatMultiply(a, b) {
+  return [
+    a[0] * b[0] - a[1] * b[1] - a[2] * b[2] - a[3] * b[3],
+    a[0] * b[1] + a[1] * b[0] + a[2] * b[3] - a[3] * b[2],
+    a[0] * b[2] - a[1] * b[3] + a[2] * b[0] + a[3] * b[1],
+    a[0] * b[3] + a[1] * b[2] - a[2] * b[1] + a[3] * b[0],
+  ];
+}
+
+function quatFromAxisAngle(axis, angle) {
+  const unit = vecNormalize(axis);
+  const half = angle / 2;
+  const sin = Math.sin(half);
+  return quatNormalize([Math.cos(half), unit[0] * sin, unit[1] * sin, unit[2] * sin]);
+}
+
+function quatRotate(q, v) {
+  const u = [q[1], q[2], q[3]];
+  const uv = vecCross(u, v);
+  const uuv = vecCross(u, uv);
+  return vecAdd(v, vecAdd(vecScale(uv, 2 * q[0]), vecScale(uuv, 2)));
+}
+
+function quatFromMatrix(m) {
+  const trace = m[0][0] + m[1][1] + m[2][2];
+  if (trace > 0) {
+    const s = Math.sqrt(trace + 1) * 2;
+    return quatNormalize([0.25 * s, (m[2][1] - m[1][2]) / s, (m[0][2] - m[2][0]) / s, (m[1][0] - m[0][1]) / s]);
+  }
+  if (m[0][0] > m[1][1] && m[0][0] > m[2][2]) {
+    const s = Math.sqrt(1 + m[0][0] - m[1][1] - m[2][2]) * 2;
+    return quatNormalize([(m[2][1] - m[1][2]) / s, 0.25 * s, (m[0][1] + m[1][0]) / s, (m[0][2] + m[2][0]) / s]);
+  }
+  if (m[1][1] > m[2][2]) {
+    const s = Math.sqrt(1 + m[1][1] - m[0][0] - m[2][2]) * 2;
+    return quatNormalize([(m[0][2] - m[2][0]) / s, (m[0][1] + m[1][0]) / s, 0.25 * s, (m[1][2] + m[2][1]) / s]);
+  }
+  const s = Math.sqrt(1 + m[2][2] - m[0][0] - m[1][1]) * 2;
+  return quatNormalize([(m[1][0] - m[0][1]) / s, (m[0][2] + m[2][0]) / s, (m[1][2] + m[2][1]) / s, 0.25 * s]);
+}
+
+function rotationMatrixFromBasis(sourceAxes, targetAxes) {
+  const matrix = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  for (let axis = 0; axis < 3; axis += 1) {
+    for (let row = 0; row < 3; row += 1) {
+      for (let col = 0; col < 3; col += 1) {
+        matrix[row][col] += targetAxes[axis][row] * sourceAxes[axis][col];
+      }
+    }
+  }
+  return matrix;
+}
+
+const BASE_CUBE_VIEW_QUAT = quatNormalize(quatMultiply(quatFromAxisAngle([1, 0, 0], Math.PI / 6), quatFromAxisAngle([0, 1, 0], -Math.PI / 5)));
+
+function cubeOrientationForBottom(bottomFace) {
+  const downSource = NORMAL[bottomFace] || NORMAL.D;
+  const frontFace = FACE_ORDER.find((face) => face !== bottomFace && Math.abs(vecDot(NORMAL[face], downSource)) < 0.5) || "F";
+  const frontSource = NORMAL[frontFace];
+  const rightSource = vecNormalize(vecCross(frontSource, downSource));
+  const toStandard = quatFromMatrix(rotationMatrixFromBasis(
+    [rightSource, downSource, frontSource],
+    [[1, 0, 0], [0, -1, 0], [0, 0, 1]],
+  ));
+  return quatNormalize(quatMultiply(BASE_CUBE_VIEW_QUAT, toStandard));
+}
 
 function rot(v, axis, direction) {
   const [x, y, z] = v;
@@ -611,7 +716,8 @@ function pllPreviewCells(pattern) {
   ];
 }
 function cubePreviewPoint(x, y, z) {
-  return `${(30 + (x - z) * 8.5).toFixed(2)},${(24 + (x + z) * 4.2 - y * 6.8).toFixed(2)}`;
+  const point = quatRotate(BASE_CUBE_VIEW_QUAT, [x, y, z]);
+  return `${(32 + point[0] * 12.4).toFixed(2)},${(31 - point[1] * 12.4).toFixed(2)}`;
 }
 function cubePreviewPolygon(points) {
   return points.map(([x, y, z]) => cubePreviewPoint(x, y, z)).join(" ");
@@ -649,7 +755,7 @@ function MiniCubePreviewFace({ stickers, face }) {
 }
 function MiniZblsPreview({ pattern }) {
   return (
-    <svg data-zbls-cube-preview aria-hidden="true" viewBox="0 0 60 50" className="h-[50px] w-[60px] overflow-visible drop-shadow-sm">
+    <svg data-zbls-cube-preview aria-hidden="true" viewBox="0 0 64 58" className="h-[54px] w-[64px] overflow-visible drop-shadow-sm">
       <MiniCubePreviewFace face="U" stickers={pattern.U} />
       <MiniCubePreviewFace face="F" stickers={pattern.F} />
       <MiniCubePreviewFace face="R" stickers={pattern.R} />
@@ -665,6 +771,152 @@ function MiniPatternPreview({ pattern, previewMask, variant = "last-layer" }) {
   return <div className="grid grid-cols-5 gap-[2px]">{mask.split("").map((cell, idx) => <MiniSticker key={idx} corner={cell === "x" || idx === 0 || idx === 4 || idx === 20 || idx === 24} filled={cell === "1"} />)}</div>;
 }
 function NetEditor({ pattern, setPattern, selectedColor }) { function setSticker(face, idx) { if (idx === 4) return; setPattern((prev) => { const next = {}; for (const f of FACE_ORDER) next[f] = [...prev[f]]; next[face][idx] = selectedColor; return next; }); } const spacer = <div />; return <div className="mx-auto grid w-full max-w-[520px] grid-cols-4 gap-1.5 py-2 sm:gap-3">{spacer}<FaceGrid face="U" stickers={pattern.U} onStickerClick={(idx) => setSticker("U", idx)} />{spacer}{spacer}<FaceGrid face="L" stickers={pattern.L} onStickerClick={(idx) => setSticker("L", idx)} /><FaceGrid face="F" stickers={pattern.F} onStickerClick={(idx) => setSticker("F", idx)} /><FaceGrid face="R" stickers={pattern.R} onStickerClick={(idx) => setSticker("R", idx)} /><FaceGrid face="B" stickers={pattern.B} onStickerClick={(idx) => setSticker("B", idx)} />{spacer}<FaceGrid face="D" stickers={pattern.D} onStickerClick={(idx) => setSticker("D", idx)} />{spacer}{spacer}</div>; }
+function stickerPolygon(face, index, orientation) {
+  const row = Math.floor(index / 3);
+  const col = index % 3;
+  const center = facePos(face, row, col);
+  const axes = FACE_AXIS[face];
+  const half = 0.49;
+  const corners = [
+    vecAdd(center, vecAdd(vecScale(axes.col, -half), vecScale(axes.row, -half))),
+    vecAdd(center, vecAdd(vecScale(axes.col, half), vecScale(axes.row, -half))),
+    vecAdd(center, vecAdd(vecScale(axes.col, half), vecScale(axes.row, half))),
+    vecAdd(center, vecAdd(vecScale(axes.col, -half), vecScale(axes.row, half))),
+  ].map((point) => quatRotate(orientation, point));
+  const normal = quatRotate(orientation, NORMAL[face]);
+  const screenPoints = corners.map((point) => [160 + point[0] * 58, 134 - point[1] * 58]);
+  return {
+    face,
+    index,
+    corners,
+    normal,
+    faceDepth: quatRotate(orientation, vecScale(NORMAL[face], 1.5))[2],
+    depth: corners.reduce((sum, point) => sum + point[2], 0) / corners.length,
+    screenPoints,
+    points: screenPoints.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" "),
+  };
+}
+function pointInPolygon([x, y], points) {
+  let inside = false;
+  for (let i = 0, j = points.length - 1; i < points.length; j = i, i += 1) {
+    const [xi, yi] = points[i];
+    const [xj, yj] = points[j];
+    const crosses = (yi > y) !== (yj > y);
+    if (crosses && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-9) + xi) inside = !inside;
+  }
+  return inside;
+}
+function QuaternionCubeEditor({ pattern, setPattern, selectedColor, bottomColor }) {
+  const [orientationState, setOrientationState] = useState(() => ({ bottomColor, value: cubeOrientationForBottom(bottomColor) }));
+  const orientation = orientationState.bottomColor === bottomColor ? orientationState.value : cubeOrientationForBottom(bottomColor);
+  const dragRef = useRef(null);
+  const draggedRef = useRef(false);
+  function setSticker(face, idx) {
+    if (idx === 4 || draggedRef.current) return;
+    setPattern((prev) => {
+      const next = {};
+      for (const f of FACE_ORDER) next[f] = [...prev[f]];
+      next[face][idx] = selectedColor;
+      return next;
+    });
+  }
+  function onPointerDown(event) {
+    dragRef.current = { x: event.clientX, y: event.clientY, orientation, captured: false };
+    draggedRef.current = false;
+  }
+  function onPointerMove(event) {
+    if (!dragRef.current) return;
+    const dx = event.clientX - dragRef.current.x;
+    const dy = event.clientY - dragRef.current.y;
+    if (Math.abs(dx) + Math.abs(dy) > 3) {
+      draggedRef.current = true;
+      if (!dragRef.current.captured) {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        dragRef.current.captured = true;
+      }
+    }
+    const yaw = quatFromAxisAngle([0, 1, 0], dx * 0.01);
+    const pitch = quatFromAxisAngle([1, 0, 0], dy * 0.01);
+    setOrientationState({ bottomColor, value: quatNormalize(quatMultiply(yaw, quatMultiply(pitch, dragRef.current.orientation))) });
+  }
+  function onPointerUp(event) {
+    if (dragRef.current?.captured) event.currentTarget.releasePointerCapture(event.pointerId);
+    dragRef.current = null;
+    setTimeout(() => { draggedRef.current = false; }, 0);
+  }
+  const stickers = FACE_ORDER.flatMap((face) => pattern[face].map((_color, index) => stickerPolygon(face, index, orientation)))
+    .filter((item) => item.normal[2] > 0.02)
+    .sort((a, b) => a.faceDepth - b.faceDepth || a.depth - b.depth);
+  function onSvgClick(event) {
+    if (draggedRef.current) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const point = [
+      ((event.clientX - rect.left) / rect.width) * 320,
+      ((event.clientY - rect.top) / rect.height) * 268,
+    ];
+    const hit = [...stickers].reverse().find((item) => item.index !== 4 && pointInPolygon(point, item.screenPoints));
+    if (hit) setSticker(hit.face, hit.index);
+  }
+  return (
+    <div data-testid="quaternion-editor" className="mx-auto w-full max-w-[520px] touch-none select-none py-1">
+      <svg
+        viewBox="0 0 320 268"
+        className="mx-auto block w-full max-w-[480px]"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        onClick={onSvgClick}
+      >
+        <rect x="0" y="0" width="320" height="268" rx="18" fill="#27272a" />
+        {stickers.map((item) => {
+          const color = pattern[item.face][item.index];
+          const locked = item.index === 4;
+          return (
+            <polygon
+              key={`${item.face}-${item.index}`}
+              data-testid={`cube-sticker-${item.face}-${item.index}`}
+              data-color={color}
+              points={item.points}
+              fill={FACE_COLOR_STYLE[color] || FACE_COLOR_STYLE.X}
+              stroke={locked ? "#cbd5e1" : "#111827"}
+              strokeWidth={locked ? "2.2" : "1.2"}
+              strokeLinejoin="round"
+              vectorEffect="non-scaling-stroke"
+              className={locked ? "cursor-not-allowed" : "cursor-pointer"}
+            />
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+function ColorPicker({ selectedColor, setSelectedColor }) {
+  return <div className="mb-4 flex flex-wrap gap-2">{[...FACE_ORDER, DONT_CARE].map((face) => <button key={face} type="button" data-testid={`color-${face}`} onClick={() => setSelectedColor(face)} className={`flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-normal transition active:scale-95 ${selectedColor === face ? "border-slate-100 bg-zinc-700 shadow-md ring-2 ring-slate-300" : "border-zinc-600 bg-zinc-700 hover:bg-zinc-600"}`} title={FACE_LABEL[face] || face}><span className="inline-flex h-5 w-5 items-center justify-center rounded border text-[10px] font-normal text-white" style={{ background: FACE_COLOR_STYLE[face], borderColor: "#64748b" }}>{face === DONT_CARE ? "?" : ""}</span></button>)}</div>;
+}
+function PatternEditorControls({ editorMode, setEditorMode, bottomColor, setBottomColor }) {
+  return (
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <div className="flex rounded-xl border border-zinc-600 bg-zinc-800 p-1">
+        <button type="button" data-testid="pattern-editor-net" aria-pressed={editorMode === "net"} onClick={() => setEditorMode("net")} className={`h-8 rounded-lg px-3 text-xs transition ${editorMode === "net" ? "bg-zinc-100 text-zinc-950" : "text-zinc-200 hover:bg-zinc-700"}`}>展開図</button>
+        <button type="button" data-testid="pattern-editor-cube" aria-pressed={editorMode === "cube"} onClick={() => setEditorMode("cube")} className={`h-8 rounded-lg px-3 text-xs transition ${editorMode === "cube" ? "bg-zinc-100 text-zinc-950" : "text-zinc-200 hover:bg-zinc-700"}`}>立体</button>
+      </div>
+      <div className="flex flex-wrap items-center gap-2" data-testid="bottom-color-picker">
+        <span className="text-xs text-zinc-200">底面色</span>
+        {FACE_ORDER.map((face) => <button key={face} type="button" data-testid={`bottom-color-${face}`} aria-pressed={bottomColor === face} onClick={() => setBottomColor(face)} className={`flex h-8 w-8 items-center justify-center rounded-xl border transition active:scale-95 ${bottomColor === face ? "border-slate-100 bg-zinc-700 ring-2 ring-slate-300" : "border-zinc-600 bg-zinc-700 hover:bg-zinc-600"}`} title={FACE_LABEL[face]}><span className="h-4 w-4 rounded border border-slate-500" style={{ background: FACE_COLOR_STYLE[face] }} /></button>)}
+      </div>
+    </div>
+  );
+}
+function PatternInputEditor({ pattern, setPattern, selectedColor, setSelectedColor, editorMode, setEditorMode, bottomColor, setBottomColor }) {
+  return (
+    <>
+      <ColorPicker selectedColor={selectedColor} setSelectedColor={setSelectedColor} />
+      <PatternEditorControls editorMode={editorMode} setEditorMode={setEditorMode} bottomColor={bottomColor} setBottomColor={setBottomColor} />
+      {editorMode === "cube" ? <QuaternionCubeEditor pattern={pattern} setPattern={setPattern} selectedColor={selectedColor} bottomColor={bottomColor} /> : <NetEditor pattern={pattern} setPattern={setPattern} selectedColor={selectedColor} />}
+    </>
+  );
+}
 function SolutionCard({ solution, t, showMoveCounts, onSave, onCopy }) { const displayAlg = formatWithSimulUD(solution); return <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md"><div className="mb-3 flex justify-end gap-2"><button onClick={() => onCopy(displayAlg)} className="rounded-xl border border-slate-300 bg-white px-3 py-1 text-xs font-normal text-slate-700 transition hover:bg-slate-50 active:scale-95">{t.copy}</button><button onClick={() => onSave(solution)} className="rounded-xl border border-slate-300 bg-white px-3 py-1 text-xs font-normal text-slate-700 transition hover:bg-slate-50 active:scale-95">{t.favorite}</button></div><div className="break-words font-mono text-base font-normal text-slate-900">{displayAlg || "(空)"}</div>{showMoveCounts ? <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs"><div className="rounded-xl bg-slate-100 p-2"><div className="text-slate-500">{t.simultaneous}</div><div className="text-lg font-normal">{effectiveMoveCount(solution)}</div></div><div className="rounded-xl bg-slate-100 p-2"><div className="text-slate-500">{t.symbolMoves}</div><div className="text-lg font-normal">{symbolMoveCount(solution)}</div></div><div className="rounded-xl bg-slate-100 p-2"><div className="text-slate-500">{t.quarterTurns}</div><div className="text-lg font-normal">{quarterTurnCount(solution)}</div></div></div> : null}</div>; }
 function ThinkingCard({ foundCount, t }) { return <div className="rounded-2xl border border-slate-300 bg-white p-4 shadow-sm"><div className="flex items-center gap-3"><div className="flex gap-1"><span className="h-2.5 w-2.5 animate-bounce rounded-full bg-slate-500 [animation-delay:0ms]" /><span className="h-2.5 w-2.5 animate-bounce rounded-full bg-slate-500 [animation-delay:120ms]" /><span className="h-2.5 w-2.5 animate-bounce rounded-full bg-slate-500 [animation-delay:240ms]" /></div><div><div className="font-normal text-slate-900">{t.thinkingTitle}</div><div className="text-sm text-slate-600">{t.thinkingBody(foundCount)}</div></div></div></div>; }
 function ResultSummaryCard({ text, className = "" }) { return <div className={`rounded-2xl border border-slate-300 bg-white p-4 shadow-sm ${className}`}><div className="flex min-h-[34px] items-center justify-center text-sm text-slate-600">{text}</div></div>; }
@@ -841,9 +1093,10 @@ export default function App() {
   if (initialShareRef.current === undefined) initialShareRef.current = readInitialShareState();
   const initialShare = initialShareRef.current;
   const workerUrlRef = useRef(new WeakMap());
-  const [isDark, setIsDark] = useState(() => typeof initialShare.isDark === "boolean" ? initialShare.isDark : false);
   const [showMoveCounts, setShowMoveCounts] = useState(() => typeof initialShare.showMoveCounts === "boolean" ? initialShare.showMoveCounts : false);
   const [showNetInput, setShowNetInput] = useState(() => typeof initialShare.showNetInput === "boolean" ? initialShare.showNetInput : false);
+  const [patternEditorMode, setPatternEditorMode] = useState(() => initialShare.patternEditorMode === "cube" ? "cube" : "net");
+  const [bottomColor, setBottomColor] = useState(() => FACE_ORDER.includes(initialShare.bottomColor) ? initialShare.bottomColor : "D");
   const [menuOpen, setMenuOpen] = useState(false);
   const [languageOpen, setLanguageOpen] = useState(false);
   const [language, setLanguage] = useState(() => typeof initialShare.language === "string" && TEXT[initialShare.language] ? initialShare.language : "ja");
@@ -879,7 +1132,7 @@ export default function App() {
   function createSearchWorker() { const source = `(${workerMain.toString()})();`; const blob = new Blob([source], { type: "text/javascript" }); const url = URL.createObjectURL(blob); const worker = new Worker(url); workerUrlRef.current.set(worker, url); return worker; }
   function terminateSearchWorker(worker) { if (!worker) return; worker.terminate(); const url = workerUrlRef.current.get(worker); if (url) URL.revokeObjectURL(url); workerUrlRef.current.delete(worker); }
   useEffect(() => () => { if (workerRef.current) terminateSearchWorker(workerRef.current); if (shareMessageTimerRef.current) clearTimeout(shareMessageTimerRef.current); }, []);
-  function currentShareState() { return { targetAlg, targetPattern, selectedColor, casePresetCategory, collGroupOpen, zbllFamilyOpen, zbllCollOpen, zblsF2lOpen, showNetInput, searchMovesText, requiredPartsText, maxSymbolDepth, limit, isDark, showMoveCounts, language }; }
+  function currentShareState() { return { targetAlg, targetPattern, selectedColor, casePresetCategory, collGroupOpen, zbllFamilyOpen, zbllCollOpen, zblsF2lOpen, showNetInput, patternEditorMode, bottomColor, searchMovesText, requiredPartsText, maxSymbolDepth, limit, showMoveCounts, language }; }
   function showTemporaryMessage(message) { if (shareMessageTimerRef.current) clearTimeout(shareMessageTimerRef.current); setShareMessage(message); shareMessageTimerRef.current = setTimeout(() => { setShareMessage(""); shareMessageTimerRef.current = null; }, 1600); }
   async function shareUrl() { const hash = `#s=${encodeShareState(currentShareState())}`; const url = `${window.location.origin}${window.location.pathname}${hash}`; window.history.replaceState(null, "", hash); try { await navigator.clipboard.writeText(url); showTemporaryMessage(t.copied); } catch { showTemporaryMessage(url); } }
   function saveHistoryItem(mode) { const item = { id: Date.now(), mode, targetAlg, targetPattern, searchMovesText, requiredPartsText, maxSymbolDepth, limit }; const itemKey = JSON.stringify({ mode, targetAlg, targetPattern, searchMovesText, requiredPartsText, maxSymbolDepth, limit }); const next = [item, ...history.filter((x) => JSON.stringify({ mode: x.mode, targetAlg: x.targetAlg, targetPattern: x.targetPattern, searchMovesText: x.searchMovesText, requiredPartsText: x.requiredPartsText || "", maxSymbolDepth: x.maxSymbolDepth, limit: x.limit }) !== itemKey)].slice(0, 12); setHistory(next); writeStorageList(STORAGE_KEYS.history, next); }
@@ -890,7 +1143,7 @@ export default function App() {
   function stopSearch() { searchSessionRef.current += 1; if (workerRef.current) { terminateSearchWorker(workerRef.current); workerRef.current = null; } setIsSearching(false); setCanContinueUnsafe(false); setSearchExhausted(false); }
   function continuePausedSearch() { if (!workerRef.current) { runSearch(lastSearchModeRef.current, { allowUnsafe: true }); return; } setError(""); setCanContinueUnsafe(false); setIsSearching(true); workerRef.current.postMessage({ command: "continue" }); }
   async function runSearch(mode, options = {}) { const currentSession = searchSessionRef.current + 1; lastSearchModeRef.current = mode; searchSessionRef.current = currentSession; if (workerRef.current) { terminateSearchWorker(workerRef.current); workerRef.current = null; } setError(""); setCanContinueUnsafe(false); setHasSearched(true); setIsSearching(true); setSearchExhausted(false); setSolutions([]); saveHistoryItem(mode); const worker = createSearchWorker(); workerRef.current = worker; let receivedAnySolution = false; worker.onmessage = (event) => { if (searchSessionRef.current !== currentSession) return; const data = event.data; if (data.type === "solution") { const maxResults = Math.max(1, Number(limit) || 1); if (!receivedAnySolution) { receivedAnySolution = true; setSolutions(insertSolutionSorted([], data.solution, maxResults)); } else setSolutions((prev) => insertSolutionSorted(prev, data.solution, maxResults)); return; } if (data.type === "paused") { setError(data.message); setCanContinueUnsafe(true); setIsSearching(false); return; } if (data.type === "error") { setError(data.message); setCanContinueUnsafe(String(data.message || "").includes("探索が大きすぎ")); setIsSearching(false); terminateSearchWorker(worker); if (workerRef.current === worker) workerRef.current = null; return; } if (data.type === "done") { if (!receivedAnySolution) setSolutions([]); setSearchExhausted(Boolean(data.completed)); setIsSearching(false); terminateSearchWorker(worker); if (workerRef.current === worker) workerRef.current = null; } }; worker.onerror = (event) => { if (searchSessionRef.current !== currentSession) return; setError(event.message || "Worker error"); setCanContinueUnsafe(String(event.message || "").includes("探索が大きすぎ")); setIsSearching(false); terminateSearchWorker(worker); if (workerRef.current === worker) workerRef.current = null; }; worker.postMessage({ mode, targetAlg, targetPattern, searchMovesText, requiredPartsText, maxSymbolDepth: Number(maxSymbolDepth), limit: Math.max(1, Number(limit) || 1), allowUnsafe: Boolean(options.allowUnsafe) }); }
-  return <div className={`${isDark ? "dark-mode" : "light-shell"} min-h-screen px-4 pb-4 pt-16 text-slate-900 md:px-8 md:pb-8 md:pt-16`}><style>{`body{background:#e2e8f0}.light-shell{background:#e2e8f0!important}.light-panel{background-color:#f8fafc!important}.light-inner{background-color:#e2e8f0!important}.dark-mode{background:#27272a!important;color:#f4f4f5!important}.dark-mode .bg-white,.dark-mode .light-panel{background-color:#3f3f46!important}.dark-mode .bg-slate-50,.dark-mode .light-inner{background-color:#34343a!important}.dark-mode .bg-slate-100{background-color:#52525b!important}.dark-mode .text-slate-900{color:#fafafa!important}.dark-mode .text-slate-700,.dark-mode .text-slate-600{color:#e5e7eb!important}.dark-mode .text-slate-500{color:#d4d4d8!important}.dark-mode .border-slate-200,.dark-mode .border-slate-300{border-color:#71717a!important}.dark-mode input,.dark-mode textarea{background-color:#52525b!important;color:#fff!important;border-color:#71717a!important}.dark-mode input::placeholder,.dark-mode textarea::placeholder{color:#d4d4d8!important}.dark-mode button.bg-white{background-color:#52525b!important;color:#fff!important}.dark-mode button.bg-white:hover{background-color:#60606a!important}.dark-mode .menu-button{background-color:#52525b!important;color:#fff!important;border-color:#a1a1aa!important}.dark-mode .menu-panel{background-color:#3f3f46!important;border-color:#a1a1aa!important}.dark-mode .menu-item{background-color:#52525b!important;color:#fff!important;border:1px solid #a1a1aa!important}.dark-mode .menu-item:hover{background-color:#63636d!important}.dark-mode .menu-item span{color:#fff!important}`}</style>{menuOpen ? <button type="button" aria-label="close menu" onClick={() => { setMenuOpen(false); setLanguageOpen(false); }} className="fixed inset-0 z-40 cursor-default bg-transparent" /> : null}<div className="fixed left-4 top-4 z-50"><button onClick={() => setMenuOpen((v) => !v)} className="menu-button flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-300 bg-white text-xl font-normal text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95" aria-label="menu">☰</button>{menuOpen ? <div className="menu-panel mt-2 w-48 rounded-2xl border border-slate-200 bg-white p-2 shadow-lg" onClick={(e) => e.stopPropagation()}><button onClick={() => setIsDark((v) => !v)} className="menu-item flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"><span>{t.darkMode}</span><span>{isDark ? "ON" : "OFF"}</span></button><button onClick={() => setShowMoveCounts((v) => !v)} className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"><span>{t.showMoveCounts}</span><span>{showMoveCounts ? "ON" : "OFF"}</span></button><button data-testid="toggle-net-input" onClick={() => setShowNetInput((v) => !v)} className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"><span>{t.netInput}</span><span>{showNetInput ? t.netMode : t.algMode}</span></button><button onClick={shareUrl} className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"><span>{t.shareUrl}</span><span>↗</span></button><button onClick={() => setSavedOpen((v) => !v)} className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"><span>{t.saved}</span><span>{savedOpen ? "▴" : favorites.length}</span></button>{savedOpen ? <div className="mt-2 max-h-52 overflow-auto rounded-xl border border-slate-200 p-2">{favorites.length ? favorites.map((item) => <button key={item.id} onClick={() => copyText(item.alg)} className="menu-item mb-1 block w-full rounded-xl px-3 py-2 text-left font-mono text-xs text-slate-900 transition hover:bg-slate-50 active:scale-95">{item.alg}</button>) : <div className="px-3 py-2 text-xs text-slate-500">0</div>}{favorites.length ? <button onClick={() => { setFavorites([]); writeStorageList(STORAGE_KEYS.favorites, []); }} className="menu-item mt-2 w-full rounded-xl px-3 py-2 text-xs text-slate-900">{t.clear}</button> : null}</div> : null}<button onClick={() => setHistoryOpen((v) => !v)} className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"><span>{t.history}</span><span>{historyOpen ? "▴" : history.length}</span></button>{historyOpen ? <div className="mt-2 max-h-52 overflow-auto rounded-xl border border-slate-200 p-2">{history.length ? history.map((item) => <button key={item.id} onClick={() => applyHistoryItem(item)} className="menu-item mb-1 block w-full rounded-xl px-3 py-2 text-left text-xs text-slate-900 transition hover:bg-slate-50 active:scale-95"><div className="font-mono">{item.searchMovesText}</div><div className="truncate text-slate-500">{item.mode === "alg" ? item.targetAlg : t.searchFromNet}</div></button>) : <div className="px-3 py-2 text-xs text-slate-500">0</div>}{history.length ? <button onClick={() => { setHistory([]); writeStorageList(STORAGE_KEYS.history, []); }} className="menu-item mt-2 w-full rounded-xl px-3 py-2 text-xs text-slate-900">{t.clear}</button> : null}</div> : null}<button onClick={() => setLanguageOpen((v) => !v)} className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"><span>{t.language}</span><span>{languageOpen ? "▴" : LANGUAGE_LABEL[language]}</span></button>{languageOpen ? <div className="mt-2 rounded-xl border border-slate-200 p-2">{Object.keys(TEXT).map((lang) => <button key={lang} onClick={() => { setLanguage(lang); setLanguageOpen(false); }} className={`menu-item mb-1 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95 ${language === lang ? "ring-2 ring-slate-400" : ""}`}><span>{LANGUAGE_LABEL[lang]}</span><span>{language === lang ? "✓" : ""}</span></button>)}</div> : null}</div> : null}</div><div className="mx-auto max-w-6xl"><h1 className="mb-6 text-center text-4xl font-normal tracking-tight text-slate-900 sm:text-5xl">{t.title}</h1><div className="light-panel mb-6 rounded-3xl p-6 shadow-sm ring-1 ring-slate-200"><div className="grid gap-4">{!showNetInput ? <div className="light-inner rounded-3xl border border-slate-200 p-4 shadow-sm"><textarea value={targetAlg} onChange={(e) => setTargetAlg(e.target.value)} placeholder={t.inputPlaceholder} className="h-14 w-full resize-none rounded-2xl border border-slate-300 bg-white px-3 py-4 font-mono text-sm leading-5 outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-slate-400" /><div className="mt-3 flex flex-wrap justify-end gap-2"><button onClick={() => isSearching ? stopSearch() : runSearch("alg")} className={`rounded-xl border px-4 py-2 text-sm font-normal shadow-sm transition hover:bg-slate-50 active:scale-95 ${isSearching ? "border-slate-500 bg-slate-800 text-white hover:bg-slate-700" : "border-slate-300 bg-white text-slate-900"}`}>{isSearching ? "停止" : t.searchFromAlg}</button></div></div> : <div className="light-inner overflow-hidden rounded-3xl border border-slate-200 p-3 sm:p-4"><div className="mb-4 rounded-2xl border border-slate-300 bg-white p-3">
+  return <div className="dark-mode min-h-screen px-4 pb-4 pt-16 text-slate-900 md:px-8 md:pb-8 md:pt-16"><style>{`body{background:#27272a}.dark-mode{background:#27272a!important;color:#f4f4f5!important}.dark-mode .bg-white,.dark-mode .light-panel{background-color:#3f3f46!important}.dark-mode .bg-slate-50,.dark-mode .light-inner{background-color:#34343a!important}.dark-mode .bg-slate-100{background-color:#52525b!important}.dark-mode .text-slate-900{color:#fafafa!important}.dark-mode .text-slate-700,.dark-mode .text-slate-600{color:#e5e7eb!important}.dark-mode .text-slate-500{color:#d4d4d8!important}.dark-mode .border-slate-200,.dark-mode .border-slate-300{border-color:#71717a!important}.dark-mode input,.dark-mode textarea{background-color:#52525b!important;color:#fff!important;border-color:#71717a!important}.dark-mode input::placeholder,.dark-mode textarea::placeholder{color:#d4d4d8!important}.dark-mode button.bg-white{background-color:#52525b!important;color:#fff!important}.dark-mode button.bg-white:hover{background-color:#60606a!important}.dark-mode .menu-button{background-color:#52525b!important;color:#fff!important;border-color:#a1a1aa!important}.dark-mode .menu-panel{background-color:#3f3f46!important;border-color:#a1a1aa!important}.dark-mode .menu-item{background-color:#52525b!important;color:#fff!important;border:1px solid #a1a1aa!important}.dark-mode .menu-item:hover{background-color:#63636d!important}.dark-mode .menu-item span{color:#fff!important}`}</style>{menuOpen ? <button type="button" aria-label="close menu" onClick={() => { setMenuOpen(false); setLanguageOpen(false); }} className="fixed inset-0 z-40 cursor-default bg-transparent" /> : null}<div className="fixed left-4 top-4 z-50"><button onClick={() => setMenuOpen((v) => !v)} className="menu-button flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-300 bg-white text-xl font-normal text-slate-900 shadow-sm transition hover:bg-slate-50 active:scale-95" aria-label="menu">☰</button>{menuOpen ? <div className="menu-panel mt-2 w-48 rounded-2xl border border-slate-200 bg-white p-2 shadow-lg" onClick={(e) => e.stopPropagation()}><button onClick={() => setShowMoveCounts((v) => !v)} className="menu-item flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"><span>{t.showMoveCounts}</span><span>{showMoveCounts ? "ON" : "OFF"}</span></button><button data-testid="toggle-net-input" onClick={() => setShowNetInput((v) => !v)} className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"><span>{t.netInput}</span><span>{showNetInput ? t.netMode : t.algMode}</span></button><button onClick={shareUrl} className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"><span>{t.shareUrl}</span><span>↗</span></button><button onClick={() => setSavedOpen((v) => !v)} className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"><span>{t.saved}</span><span>{savedOpen ? "▴" : favorites.length}</span></button>{savedOpen ? <div className="mt-2 max-h-52 overflow-auto rounded-xl border border-slate-200 p-2">{favorites.length ? favorites.map((item) => <button key={item.id} onClick={() => copyText(item.alg)} className="menu-item mb-1 block w-full rounded-xl px-3 py-2 text-left font-mono text-xs text-slate-900 transition hover:bg-slate-50 active:scale-95">{item.alg}</button>) : <div className="px-3 py-2 text-xs text-slate-500">0</div>}{favorites.length ? <button onClick={() => { setFavorites([]); writeStorageList(STORAGE_KEYS.favorites, []); }} className="menu-item mt-2 w-full rounded-xl px-3 py-2 text-xs text-slate-900">{t.clear}</button> : null}</div> : null}<button onClick={() => setHistoryOpen((v) => !v)} className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"><span>{t.history}</span><span>{historyOpen ? "▴" : history.length}</span></button>{historyOpen ? <div className="mt-2 max-h-52 overflow-auto rounded-xl border border-slate-200 p-2">{history.length ? history.map((item) => <button key={item.id} onClick={() => applyHistoryItem(item)} className="menu-item mb-1 block w-full rounded-xl px-3 py-2 text-left text-xs text-slate-900 transition hover:bg-slate-50 active:scale-95"><div className="font-mono">{item.searchMovesText}</div><div className="truncate text-slate-500">{item.mode === "alg" ? item.targetAlg : t.searchFromNet}</div></button>) : <div className="px-3 py-2 text-xs text-slate-500">0</div>}{history.length ? <button onClick={() => { setHistory([]); writeStorageList(STORAGE_KEYS.history, []); }} className="menu-item mt-2 w-full rounded-xl px-3 py-2 text-xs text-slate-900">{t.clear}</button> : null}</div> : null}<button onClick={() => setLanguageOpen((v) => !v)} className="menu-item mt-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95"><span>{t.language}</span><span>{languageOpen ? "▴" : LANGUAGE_LABEL[language]}</span></button>{languageOpen ? <div className="mt-2 rounded-xl border border-slate-200 p-2">{Object.keys(TEXT).map((lang) => <button key={lang} onClick={() => { setLanguage(lang); setLanguageOpen(false); }} className={`menu-item mb-1 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-normal text-slate-900 transition hover:bg-slate-50 active:scale-95 ${language === lang ? "ring-2 ring-slate-400" : ""}`}><span>{LANGUAGE_LABEL[lang]}</span><span>{language === lang ? "✓" : ""}</span></button>)}</div> : null}</div> : null}</div><div className="mx-auto max-w-6xl"><h1 className="mb-6 text-center text-4xl font-normal tracking-tight text-slate-900 sm:text-5xl">{t.title}</h1><div className="light-panel mb-6 rounded-3xl p-6 shadow-sm ring-1 ring-slate-200"><div className="grid gap-4">{!showNetInput ? <div className="light-inner rounded-3xl border border-slate-200 p-4 shadow-sm"><textarea value={targetAlg} onChange={(e) => setTargetAlg(e.target.value)} placeholder={t.inputPlaceholder} className="h-14 w-full resize-none rounded-2xl border border-slate-300 bg-white px-3 py-4 font-mono text-sm leading-5 outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-slate-400" /><div className="mt-3 flex flex-wrap justify-end gap-2"><button onClick={() => isSearching ? stopSearch() : runSearch("alg")} className={`rounded-xl border px-4 py-2 text-sm font-normal shadow-sm transition hover:bg-slate-50 active:scale-95 ${isSearching ? "border-slate-500 bg-slate-800 text-white hover:bg-slate-700" : "border-slate-300 bg-white text-slate-900"}`}>{isSearching ? "停止" : t.searchFromAlg}</button></div></div> : <div className="light-inner overflow-hidden rounded-3xl border border-slate-200 p-3 sm:p-4"><div className="mb-4 rounded-2xl border border-slate-300 bg-white p-3">
   <div className="flex flex-wrap gap-2">
     {CASE_PRESET_CATEGORIES.map((category) => (
       <button
@@ -924,5 +1177,5 @@ export default function App() {
       />
     </div>
   ) : null}
-</div><div className="mb-4 flex flex-wrap gap-2">{[...FACE_ORDER, DONT_CARE].map((face) => <button key={face} onClick={() => setSelectedColor(face)} className={`flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-normal transition active:scale-95 ${selectedColor === face ? "border-slate-900 bg-white shadow-md ring-2 ring-slate-400" : "border-slate-300 bg-white hover:bg-slate-50"}`}><span className="inline-flex h-5 w-5 items-center justify-center rounded border text-[10px] font-normal text-white" style={{ background: FACE_COLOR_STYLE[face], borderColor: "#64748b" }}>{face === DONT_CARE ? "?" : ""}</span></button>)}</div><NetEditor pattern={targetPattern} setPattern={setTargetPattern} selectedColor={selectedColor} /><div className="mt-4 flex justify-end"><button onClick={() => isSearching ? stopSearch() : runSearch("pattern")} className={`w-fit whitespace-nowrap rounded-xl border px-4 py-2 text-sm font-normal shadow-sm transition hover:bg-slate-50 active:scale-95 ${isSearching ? "border-slate-500 bg-slate-800 text-white hover:bg-slate-700" : "border-slate-300 bg-white text-slate-900"}`}>{isSearching ? "停止" : t.searchFromNet}</button></div></div>}<div className="grid items-start gap-4 sm:grid-cols-4"><label className="grid gap-1"><span className="text-sm font-normal">{t.generator}</span><input value={searchMovesText} onChange={(e) => setSearchMovesText(e.target.value)} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" placeholder="例: R U D / R U f / R U S / R U x" /><div className="mt-2 flex flex-wrap gap-1.5">{PRESET_GENS.map((preset) => <button key={preset} type="button" onClick={() => setSearchMovesText(preset)} className="rounded-lg border border-slate-300 bg-white px-2 py-1 font-mono text-xs text-slate-700 transition hover:bg-slate-50 active:scale-95">{preset}</button>)}</div></label><label className="grid gap-1"><span className="text-sm font-normal">{t.requiredParts}</span><input value={requiredPartsText} onChange={(e) => setRequiredPartsText(e.target.value)} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" placeholder={t.requiredPartsPlaceholder} /><div className="mt-2 flex flex-wrap gap-1.5">{REQUIRED_PART_PRESETS.map((preset) => <button key={preset} type="button" onClick={() => setRequiredPartsText((prev) => prev.trim() ? `${prev.trim()}${NL}${preset}` : preset)} className="rounded-lg border border-slate-300 bg-white px-2 py-1 font-mono text-xs text-slate-700 transition hover:bg-slate-50 active:scale-95">{preset}</button>)}</div></label><NumberInput label={t.depthLimit} value={maxSymbolDepth} onChange={setMaxSymbolDepth} min={1} max={30} /><NumberInput label={t.resultLimit} value={limit} onChange={setLimit} min={1} max={50} /></div></div></div>{error ? <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-300 bg-white p-4 text-sm text-slate-700"><span>{error}</span>{canContinueUnsafe ? <button type="button" onClick={continuePausedSearch} className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-normal text-slate-700 transition hover:bg-slate-50 active:scale-95">{t.unsafeContinue}</button> : null}</div> : null}{shareMessage ? <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-3 text-sm text-slate-600">{shareMessage}</div> : null}<div className="mb-4">{isSearching ? <ThinkingCard foundCount={solutions.length} t={t} /> : !error && hasSearched && searchExhausted && solutions.length > 0 && solutions.length < Math.max(1, Number(limit) || 1) ? <ResultSummaryCard text={typeof t.searchFinished === "function" ? t.searchFinished(solutions.length) : t.searchFinished} /> : null}</div><div className="grid gap-4 md:grid-cols-2">{solutions.map((solution, i) => <SolutionCard key={`${i}-${algToString(solution)}`} solution={solution} t={t} showMoveCounts={showMoveCounts} onSave={saveFavoriteSolution} onCopy={copyText} />)}</div>{!isSearching && !error && hasSearched && solutions.length === 0 ? <div className="mt-4"><EmptyCard text={t.noResults} /></div> : null}{!hasSearched && !isSearching ? <div className="mt-4"><EmptyCard text={t.initialHelp} /></div> : null}</div></div>;
+</div><PatternInputEditor pattern={targetPattern} setPattern={setTargetPattern} selectedColor={selectedColor} setSelectedColor={setSelectedColor} editorMode={patternEditorMode} setEditorMode={setPatternEditorMode} bottomColor={bottomColor} setBottomColor={setBottomColor} /><div className="mt-4 flex justify-end"><button onClick={() => isSearching ? stopSearch() : runSearch("pattern")} className={`w-fit whitespace-nowrap rounded-xl border px-4 py-2 text-sm font-normal shadow-sm transition hover:bg-slate-50 active:scale-95 ${isSearching ? "border-slate-500 bg-slate-800 text-white hover:bg-slate-700" : "border-slate-300 bg-white text-slate-900"}`}>{isSearching ? "停止" : t.searchFromNet}</button></div></div>}<div className="grid items-start gap-4 sm:grid-cols-4"><label className="grid gap-1"><span className="text-sm font-normal">{t.generator}</span><input value={searchMovesText} onChange={(e) => setSearchMovesText(e.target.value)} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" placeholder="例: R U D / R U f / R U S / R U x" /><div className="mt-2 flex flex-wrap gap-1.5">{PRESET_GENS.map((preset) => <button key={preset} type="button" onClick={() => setSearchMovesText(preset)} className="rounded-lg border border-slate-300 bg-white px-2 py-1 font-mono text-xs text-slate-700 transition hover:bg-slate-50 active:scale-95">{preset}</button>)}</div></label><label className="grid gap-1"><span className="text-sm font-normal">{t.requiredParts}</span><input value={requiredPartsText} onChange={(e) => setRequiredPartsText(e.target.value)} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" placeholder={t.requiredPartsPlaceholder} /><div className="mt-2 flex flex-wrap gap-1.5">{REQUIRED_PART_PRESETS.map((preset) => <button key={preset} type="button" onClick={() => setRequiredPartsText((prev) => prev.trim() ? `${prev.trim()}${NL}${preset}` : preset)} className="rounded-lg border border-slate-300 bg-white px-2 py-1 font-mono text-xs text-slate-700 transition hover:bg-slate-50 active:scale-95">{preset}</button>)}</div></label><NumberInput label={t.depthLimit} value={maxSymbolDepth} onChange={setMaxSymbolDepth} min={1} max={30} /><NumberInput label={t.resultLimit} value={limit} onChange={setLimit} min={1} max={50} /></div></div></div>{error ? <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-300 bg-white p-4 text-sm text-slate-700"><span>{error}</span>{canContinueUnsafe ? <button type="button" onClick={continuePausedSearch} className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-normal text-slate-700 transition hover:bg-slate-50 active:scale-95">{t.unsafeContinue}</button> : null}</div> : null}{shareMessage ? <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-3 text-sm text-slate-600">{shareMessage}</div> : null}<div className="mb-4">{isSearching ? <ThinkingCard foundCount={solutions.length} t={t} /> : !error && hasSearched && searchExhausted && solutions.length > 0 && solutions.length < Math.max(1, Number(limit) || 1) ? <ResultSummaryCard text={typeof t.searchFinished === "function" ? t.searchFinished(solutions.length) : t.searchFinished} /> : null}</div><div className="grid gap-4 md:grid-cols-2">{solutions.map((solution, i) => <SolutionCard key={`${i}-${algToString(solution)}`} solution={solution} t={t} showMoveCounts={showMoveCounts} onSave={saveFavoriteSolution} onCopy={copyText} />)}</div>{!isSearching && !error && hasSearched && solutions.length === 0 ? <div className="mt-4"><EmptyCard text={t.noResults} /></div> : null}{!hasSearched && !isSearching ? <div className="mt-4"><EmptyCard text={t.initialHelp} /></div> : null}</div></div>;
 }

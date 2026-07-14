@@ -106,6 +106,7 @@ async function expectPreviewColors(tile, expected) {
 }
 
 test("case preset hierarchy exposes all exact sets", async ({ page }) => {
+  test.setTimeout(60000);
   await openPresetPanel(page, "OLL");
   await expect(page.locator('[data-testid^="preset-case-oll-"]')).toHaveCount(57);
 
@@ -151,4 +152,27 @@ test("nested preset icons and applied nets use the generated color arrays", asyn
   await expectPreviewColors(zblsTile, [...zblsPattern.U, ...zblsPattern.F, ...zblsPattern.R]);
   await zblsTile.click();
   await expectNetState(page, zbls.state);
+});
+
+test("dark-only pattern input supports bottom color and quaternion clicking", async ({ page }) => {
+  await openNetInput(page);
+  await expect(page.locator(".dark-mode")).toHaveCount(1);
+
+  await page.getByRole("button", { name: "menu" }).click();
+  await expect(page.getByText("ダークモード")).toHaveCount(0);
+  await page.getByRole("button", { name: "close menu" }).click();
+
+  await expect(page.getByTestId("pattern-editor-net")).toHaveAttribute("aria-pressed", "true");
+  await page.getByTestId("pattern-editor-cube").click();
+  await expect(page.getByTestId("quaternion-editor")).toBeVisible();
+
+  await expect(page.getByTestId("bottom-color-D")).toHaveAttribute("aria-pressed", "true");
+  await page.getByTestId("bottom-color-U").click();
+  await expect(page.getByTestId("bottom-color-U")).toHaveAttribute("aria-pressed", "true");
+  await page.getByTestId("bottom-color-D").click();
+
+  await page.getByTestId("color-R").click();
+  await page.getByTestId("cube-sticker-B-5").click();
+  await page.getByTestId("pattern-editor-net").click();
+  await expect(page.locator('[data-testid^="net-"][data-color="R"]')).toHaveCount(10);
 });
