@@ -53,3 +53,23 @@ test("pattern search treats double turns as one searchable symbol move", async (
   await expect(page.getByTestId("solution-card").first()).toBeVisible({ timeout: 20000 });
   await expect(page.getByTestId("solution-alg").first()).toHaveText("R2");
 });
+
+test("V perm preset search returns the same eight RUD solutions", async ({ page }) => {
+  const displayedVPerm = "R' U R' U' R D' R' D R' ( U D' ) R2 U' R2 D R2";
+  const hash = encodeShareState({
+    showNetInput: true,
+    searchMovesText: "R U D",
+    maxSymbolDepth: 16,
+    showMoveCounts: true,
+    solutionSortKey: "symbol",
+    language: "ja",
+  });
+
+  await page.goto(`/#s=${hash}`);
+  await page.getByTestId("preset-category-PLL").click();
+  await page.getByTestId("preset-case-pll-19-v").click();
+  await page.getByRole("button", { name: "展開図から探索" }).click();
+
+  await expect(page.getByTestId("solution-card")).toHaveCount(8, { timeout: 30000 });
+  await expect(page.getByTestId("solution-alg").filter({ hasText: displayedVPerm })).toHaveCount(1);
+});
