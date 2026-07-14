@@ -3,9 +3,7 @@ import { expect, test } from "@playwright/test";
 async function openZblsPresets(page) {
   await page.goto("/");
   if (!(await page.getByTestId("preset-category-ZBLS").isVisible().catch(() => false))) {
-    await page.getByRole("button", { name: "menu" }).click();
-    await page.getByTestId("toggle-net-input").click();
-    await page.getByRole("button", { name: "close menu" }).click();
+    await page.getByTestId("input-mode-pattern").click();
   }
   await page.getByTestId("preset-category-ZBLS").click();
   await page.getByTestId("zbls-f2l-f2l-1").click();
@@ -14,9 +12,7 @@ async function openZblsPresets(page) {
 async function openCubeEditor(page) {
   await page.goto("/");
   if (!(await page.getByTestId("preset-category-ZBLS").isVisible().catch(() => false))) {
-    await page.getByRole("button", { name: "menu" }).click();
-    await page.getByTestId("toggle-net-input").click();
-    await page.getByRole("button", { name: "close menu" }).click();
+    await page.getByTestId("input-mode-pattern").click();
   }
   await page.getByTestId("pattern-editor-cube").click();
   await expect(page.getByTestId("cube-canvas")).toBeVisible();
@@ -64,13 +60,15 @@ test("ZBLS preset chooser renders cleanly on desktop and mobile", async ({ page 
   expect(consoleErrors).toEqual([]);
 });
 
-test("Three.js cube editor renders nonblank on desktop and mobile", async ({ page }, testInfo) => {
+test("fixed isometric Three.js cube renders nonblank on desktop and mobile", async ({ page }, testInfo) => {
   const consoleErrors = [];
   page.on("console", (message) => {
     if (message.type() === "error") consoleErrors.push(message.text());
   });
 
   await openCubeEditor(page);
+  await expect(page.getByTestId("cube-canvas")).toHaveAttribute("data-projection", "isometric");
+  await expect(page.getByTestId("cube-canvas")).toHaveAttribute("data-interaction", "fixed");
   await expectThreeCanvasPixels(page);
   await page.screenshot({ path: testInfo.outputPath("three-cube-desktop.png"), fullPage: true });
 

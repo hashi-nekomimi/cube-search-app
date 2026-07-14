@@ -11,9 +11,7 @@ const FACE_ORDER = ["U", "R", "F", "D", "L", "B"];
 async function openNetInput(page) {
   await page.goto("/");
   if (await page.getByTestId("preset-category-OLL").isVisible().catch(() => false)) return;
-  await page.getByRole("button", { name: "menu" }).click();
-  await page.getByTestId("toggle-net-input").click();
-  await page.getByRole("button", { name: "close menu" }).click();
+  await page.getByTestId("input-mode-pattern").click();
 }
 
 async function openPresetPanel(page, category) {
@@ -162,27 +160,34 @@ test("nested preset icons and applied nets use the generated color arrays", asyn
   await expectNetState(page, zbls.state);
 });
 
-test("dark-only pattern input supports bottom color and Three.js cube clicking", async ({ page }) => {
+test("dark-only pattern input supports bottom color animation and fixed cube clicking", async ({ page }) => {
   await openNetInput(page);
   await expect(page.locator(".dark-mode")).toHaveCount(1);
 
   await page.getByRole("button", { name: "menu" }).click();
   await expect(page.getByText("ダークモード")).toHaveCount(0);
+  await expect(page.getByText("手数を表示")).toHaveCount(0);
+  await expect(page.getByText("URL共有")).toHaveCount(0);
+  await expect(page.getByText("保存済み")).toHaveCount(0);
   await page.getByRole("button", { name: "close menu" }).click();
 
   await expect(page.getByTestId("pattern-editor-net")).toHaveAttribute("aria-pressed", "true");
   await page.getByTestId("pattern-editor-cube").click();
-  await expect(page.getByTestId("quaternion-editor")).toBeVisible();
+  await expect(page.getByTestId("cube-editor")).toBeVisible();
   await expect(page.getByTestId("cube-canvas")).toBeVisible();
+  await expect(page.getByTestId("cube-canvas")).toHaveAttribute("data-interaction", "fixed");
 
   await expect(page.getByTestId("bottom-color-D")).toHaveAttribute("aria-pressed", "true");
   await page.getByTestId("bottom-color-U").click();
   await expect(page.getByTestId("bottom-color-U")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("cube-canvas")).toHaveAttribute("data-animating", "true");
+  await expect(page.getByTestId("cube-canvas")).toHaveAttribute("data-animating", "false", { timeout: 1500 });
   await page.getByTestId("pattern-editor-net").click();
   await expect(page.getByTestId("net-D-4")).toHaveAttribute("data-display-color", "U");
   await expect(page.getByTestId("net-U-4")).toHaveAttribute("data-display-color", "D");
   await page.getByTestId("pattern-editor-cube").click();
   await page.getByTestId("bottom-color-D").click();
+  await expect(page.getByTestId("cube-canvas")).toHaveAttribute("data-animating", "false", { timeout: 1500 });
 
   await page.getByTestId("color-X").click();
   const canvas = page.getByTestId("cube-canvas");

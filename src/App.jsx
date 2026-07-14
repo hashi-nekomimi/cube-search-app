@@ -110,6 +110,23 @@ function displayColorStyle(color, bottomFace) {
   return FACE_COLOR_STYLE[displayColorSymbol(color, bottomFace)] || FACE_COLOR_STYLE.X;
 }
 
+function bottomTransitionQuaternion(previousBottom, nextBottom) {
+  const previousMap = displayColorMapForBottom(previousBottom);
+  const nextMap = displayColorMapForBottom(nextBottom);
+  const previousFaceByColor = Object.fromEntries(
+    FACE_ORDER.map((face) => [previousMap[face], face]),
+  );
+  const worldNormalForLocalFace = (face) => new THREE.Vector3(
+    ...NORMAL[previousFaceByColor[nextMap[face]]],
+  );
+  const rotation = new THREE.Matrix4().makeBasis(
+    worldNormalForLocalFace("R"),
+    worldNormalForLocalFace("U"),
+    worldNormalForLocalFace("F"),
+  );
+  return new THREE.Quaternion().setFromRotationMatrix(rotation).normalize();
+}
+
 function vecCross(a, b) {
   return [
     a[1] * b[2] - a[2] * b[1],
@@ -626,10 +643,10 @@ const TEXT = {
 const SORT_BY_LABEL = { ja: "並び順", en: "Sort", ur: "Sort", ko: "정렬", hi: "Sort", ar: "Sort" };
 const REGRIP_LABEL = { ja: "リグリップ", en: "Regrips", ur: "Regrips", ko: "리그립", hi: "Regrips", ar: "Regrips" };
 const SOLUTION_SORT_LABELS = {
-  effective: { ja: "同時回し順", en: "Simul", ur: "Simul", ko: "동시 회전", hi: "Simul", ar: "Simul" },
-  symbol: { ja: "記号手数順", en: "Moves", ur: "Moves", ko: "기호 수", hi: "Moves", ar: "Moves" },
-  quarter: { ja: "90度手数順", en: "Quarter", ur: "Quarter", ko: "90도", hi: "Quarter", ar: "Quarter" },
-  regrip: { ja: "リグリップ順", en: "Regrips", ur: "Regrips", ko: "리그립", hi: "Regrips", ar: "Regrips" },
+  effective: { ja: "STM", en: "STM", ur: "STM", ko: "STM", hi: "STM", ar: "STM" },
+  symbol: { ja: "HTM", en: "HTM", ur: "HTM", ko: "HTM", hi: "HTM", ar: "HTM" },
+  quarter: { ja: "QTM", en: "QTM", ur: "QTM", ko: "QTM", hi: "QTM", ar: "QTM" },
+  regrip: { ja: "リグリップ", en: "Regrips", ur: "Regrips", ko: "리그립", hi: "Regrips", ar: "Regrips" },
 };
 const WORKSPACE_TEXT = {
   ja: { target: "探索対象", conditions: "探索条件", results: "探索結果", input: "入力", output: "出力", stickerColor: "ステッカー", bottomColor: "底面色", found: (n) => `${n}件` },
@@ -777,19 +794,9 @@ const CASE_PRESETS = {
   ZBLS: ZBLS_CASES,
 };
 const CASE_PRESET_CATEGORIES = Object.keys(CASE_PRESETS);
-const STORAGE_KEYS = { favorites: "cube-search-favorites-v1", history: "cube-search-history-v1" };
-function encodeShareState(obj) { const bytes = new TextEncoder().encode(JSON.stringify(obj)); let binary = ""; for (const b of bytes) binary += String.fromCharCode(b); return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", ""); }
-function decodeShareState(text) { const padded = text.replaceAll("-", "+").replaceAll("_", "/") + "===".slice((text.length + 3) % 4); const binary = atob(padded); const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0)); return JSON.parse(new TextDecoder().decode(bytes)); }
+const STORAGE_KEYS = { history: "cube-search-history-v1" };
 function readStorageList(key) { try { const value = JSON.parse(localStorage.getItem(key) || "[]"); return Array.isArray(value) ? value : []; } catch { return []; } }
 function writeStorageList(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch { return false; } }
-function readInitialShareState() {
-  if (typeof window === "undefined" || !window.location.hash.startsWith("#s=")) return {};
-  try {
-    return decodeShareState(window.location.hash.slice(3));
-  } catch {
-    return {};
-  }
-}
 
 function workerMain() {
   const FACE_ORDER = ["U", "R", "F", "D", "L", "B"];
@@ -1080,7 +1087,13 @@ function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor }) {
   useLayoutEffect(() => { setPatternRef.current = setPattern; }, [setPattern]);
   useLayoutEffect(() => { patternRef.current = pattern; }, [pattern]);
   useLayoutEffect(() => { selectedColorRef.current = selectedColor; }, [selectedColor]);
-  useLayoutEffect(() => { bottomColorRef.current = bottomColor; }, [bottomColor]);
+  useLayoutEffect(() => {
+    const previousBottom = bottomColorRef.current;
+    bottomColorRef.current = bottomColor;
+    if (previousBottom !== bottomColor) {
+      sceneRef.current?.transitionBottomColor(previousBottom, bottomColor);
+    }
+  }, [bottomColor]);
 
   useEffect(() => {
     const root = rootRef.current;
@@ -1091,14 +1104,17 @@ function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor }) {
     renderer.setClearColor(0x111315, 1);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.domElement.setAttribute("data-testid", "cube-canvas");
+    renderer.domElement.setAttribute("data-projection", "isometric");
+    renderer.domElement.setAttribute("data-interaction", "fixed");
+    renderer.domElement.dataset.animating = "false";
     renderer.domElement.style.display = "block";
     renderer.domElement.style.height = "100%";
-    renderer.domElement.style.touchAction = "none";
+    renderer.domElement.style.touchAction = "manipulation";
     renderer.domElement.style.width = "100%";
     root.appendChild(renderer.domElement);
 
     const camera = new THREE.OrthographicCamera(-3, 3, 2.5, -2.5, 0.1, 100);
-    camera.position.set(5, 3.7, 5.5);
+    camera.position.set(6, 6, 6);
     camera.lookAt(0, 0, 0);
 
     const group = new THREE.Group();
@@ -1133,7 +1149,8 @@ function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor }) {
 
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
-    const dragRef = { active: false, captured: false, dragged: false, x: 0, y: 0, quaternion: new THREE.Quaternion() };
+    const identityQuaternion = new THREE.Quaternion();
+    let animationFrame = 0;
 
     function render() {
       renderer.render(scene, camera);
@@ -1144,7 +1161,7 @@ function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor }) {
       const height = Math.max(1, root.clientHeight);
       renderer.setSize(width, height, false);
       const aspect = width / height;
-      const viewHeight = 5.55;
+      const viewHeight = 5.35;
       camera.left = -viewHeight * aspect / 2;
       camera.right = viewHeight * aspect / 2;
       camera.top = viewHeight / 2;
@@ -1153,13 +1170,58 @@ function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor }) {
       render();
     }
 
-    function updateStickerColors() {
+    function paintStickerColors() {
       for (const mesh of stickerMeshes) {
         const { face, index } = mesh.userData;
         const color = patternRef.current[face][index];
         mesh.material.color.set(displayColorStyle(color, bottomColorRef.current));
       }
+    }
+
+    function updateStickerColors() {
+      paintStickerColors();
       render();
+    }
+
+    function stopAnimation() {
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+      animationFrame = 0;
+      renderer.domElement.dataset.animating = "false";
+    }
+
+    function transitionBottomColor(previousBottom, nextBottom) {
+      stopAnimation();
+      bottomColorRef.current = nextBottom;
+      const startQuaternion = bottomTransitionQuaternion(previousBottom, nextBottom);
+      group.quaternion.copy(startQuaternion);
+      paintStickerColors();
+      render();
+
+      const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+      if (reducedMotion || startQuaternion.angleTo(identityQuaternion) < 0.001) {
+        group.quaternion.identity();
+        render();
+        return;
+      }
+
+      const startedAt = performance.now();
+      const duration = 480;
+      renderer.domElement.dataset.animating = "true";
+      function animate(now) {
+        const progress = Math.min(1, (now - startedAt) / duration);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        group.quaternion.slerpQuaternions(startQuaternion, identityQuaternion, eased);
+        render();
+        if (progress < 1) {
+          animationFrame = requestAnimationFrame(animate);
+          return;
+        }
+        group.quaternion.identity();
+        animationFrame = 0;
+        renderer.domElement.dataset.animating = "false";
+        render();
+      }
+      animationFrame = requestAnimationFrame(animate);
     }
 
     function setSticker(face, index) {
@@ -1200,53 +1262,18 @@ function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor }) {
       if (nearest) setSticker(nearest.userData.face, nearest.userData.index);
     }
 
-    function onPointerDown(event) {
-      event.preventDefault();
-      dragRef.active = true;
-      dragRef.captured = true;
-      dragRef.dragged = false;
-      dragRef.x = event.clientX;
-      dragRef.y = event.clientY;
-      dragRef.quaternion.copy(group.quaternion);
-      renderer.domElement.setPointerCapture(event.pointerId);
-    }
-
-    function onPointerMove(event) {
-      if (!dragRef.active) return;
-      const dx = event.clientX - dragRef.x;
-      const dy = event.clientY - dragRef.y;
-      if (Math.abs(dx) + Math.abs(dy) > 3) dragRef.dragged = true;
-      const yaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), dx * 0.01);
-      const pitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), dy * 0.01);
-      group.quaternion.copy(yaw.multiply(pitch).multiply(dragRef.quaternion));
-      render();
-    }
-
-    function onPointerUp(event) {
-      if (!dragRef.active) return;
-      if (dragRef.captured) renderer.domElement.releasePointerCapture(event.pointerId);
-      if (!dragRef.dragged) pickSticker(event);
-      dragRef.active = false;
-      dragRef.captured = false;
-    }
-
-    renderer.domElement.addEventListener("pointerdown", onPointerDown);
-    renderer.domElement.addEventListener("pointermove", onPointerMove);
-    renderer.domElement.addEventListener("pointerup", onPointerUp);
-    renderer.domElement.addEventListener("pointercancel", onPointerUp);
+    renderer.domElement.addEventListener("click", pickSticker);
 
     const resizeObserver = new ResizeObserver(resize);
     resizeObserver.observe(root);
-    sceneRef.current = { updateStickerColors };
+    sceneRef.current = { transitionBottomColor, updateStickerColors };
     resize();
     updateStickerColors();
 
     return () => {
+      stopAnimation();
       resizeObserver.disconnect();
-      renderer.domElement.removeEventListener("pointerdown", onPointerDown);
-      renderer.domElement.removeEventListener("pointermove", onPointerMove);
-      renderer.domElement.removeEventListener("pointerup", onPointerUp);
-      renderer.domElement.removeEventListener("pointercancel", onPointerUp);
+      renderer.domElement.removeEventListener("click", pickSticker);
       sceneRef.current = null;
       root.removeChild(renderer.domElement);
       stickerGeometry.dispose();
@@ -1260,10 +1287,10 @@ function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor }) {
 
   useEffect(() => {
     sceneRef.current?.updateStickerColors();
-  }, [pattern, bottomColor]);
+  }, [pattern]);
 
   return (
-    <div data-testid="quaternion-editor" className="cube-editor-surface" ref={rootRef} />
+    <div data-testid="cube-editor" className="cube-editor-surface" ref={rootRef} />
   );
 }
 function ColorPicker({ selectedColor, setSelectedColor, bottomColor, label }) {
@@ -1314,26 +1341,23 @@ function SolutionMetric({ testId, label, value }) {
     </div>
   );
 }
-function SolutionCard({ solution, t, language, showMoveCounts, onSave, onCopy }) {
+function SolutionCard({ solution, t, language, onCopy }) {
   const displayAlg = formatWithSimulUD(solution);
   const regrips = regripCount(solution);
   return (
     <article data-testid="solution-card" className="solution-card">
       <div className="solution-card-top">
         <div data-testid="solution-alg" className="solution-alg">{displayAlg || "(空)"}</div>
-        <div className="solution-actions">
-          <button type="button" onClick={() => onCopy(displayAlg)}>{t.copy}</button>
-          <button type="button" onClick={() => onSave(solution)}>{t.favorite}</button>
-        </div>
-      </div>
-      {showMoveCounts ? (
         <div className="solution-metrics">
           <SolutionMetric testId="metric-effective" label="STM" value={effectiveMoveCount(solution)} />
           <SolutionMetric testId="metric-symbol" label="HTM" value={symbolMoveCount(solution)} />
           <SolutionMetric testId="metric-quarter" label="QTM" value={quarterTurnCount(solution)} />
           <SolutionMetric testId="metric-regrip" label={localizedLabel(REGRIP_LABEL, language)} value={regrips === null ? "—" : regrips} />
         </div>
-      ) : null}
+        <div className="solution-actions">
+          <button type="button" onClick={() => onCopy(displayAlg)}>{t.copy}</button>
+        </div>
+      </div>
     </article>
   );
 }
@@ -1516,115 +1540,35 @@ function CasePresetPanel({ category, collGroupOpen, setCollGroupOpen, zbllFamily
 }
 
 export default function App() {
-  const initialShareRef = useRef();
-  if (initialShareRef.current === undefined)
-    initialShareRef.current = readInitialShareState();
-  const initialShare = initialShareRef.current;
   const workerUrlRef = useRef(new WeakMap());
-  const [showMoveCounts, setShowMoveCounts] = useState(() =>
-    typeof initialShare.showMoveCounts === "boolean"
-      ? initialShare.showMoveCounts
-      : true,
-  );
-  const [showNetInput, setShowNetInput] = useState(() =>
-    typeof initialShare.showNetInput === "boolean"
-      ? initialShare.showNetInput
-      : false,
-  );
-  const [patternEditorMode, setPatternEditorMode] = useState(() =>
-    initialShare.patternEditorMode === "cube" ? "cube" : "net",
-  );
-  const [bottomColor, setBottomColor] = useState(() =>
-    FACE_ORDER.includes(initialShare.bottomColor)
-      ? initialShare.bottomColor
-      : "D",
-  );
+  const [showNetInput, setShowNetInput] = useState(false);
+  const [patternEditorMode, setPatternEditorMode] = useState("net");
+  const [bottomColor, setBottomColor] = useState("D");
   const [menuOpen, setMenuOpen] = useState(false);
   const [languageOpen, setLanguageOpen] = useState(false);
-  const [language, setLanguage] = useState(() =>
-    typeof initialShare.language === "string" && TEXT[initialShare.language]
-      ? initialShare.language
-      : "ja",
-  );
+  const [language, setLanguage] = useState("ja");
   const t = TEXT[language] || TEXT.ja;
   const ui = WORKSPACE_TEXT[language] || WORKSPACE_TEXT.en;
   const isRtl = language === "ar" || language === "ur";
-  const [savedOpen, setSavedOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [favorites, setFavorites] = useState(() =>
-    readStorageList(STORAGE_KEYS.favorites),
-  );
   const [history, setHistory] = useState(() =>
     readStorageList(STORAGE_KEYS.history),
   );
-  const [shareMessage, setShareMessage] = useState("");
-  const shareMessageTimerRef = useRef(null);
-  const [targetAlg, setTargetAlg] = useState(() =>
-    typeof initialShare.targetAlg === "string" ? initialShare.targetAlg : "",
-  );
-  const [targetPattern, setTargetPattern] = useState(
-    () => initialShare.targetPattern || solvedPattern(),
-  );
-  const [patternSeedAlg, setPatternSeedAlg] = useState(() =>
-    typeof initialShare.patternSeedAlg === "string"
-      ? initialShare.patternSeedAlg
-      : "",
-  );
-  const [selectedColor, setSelectedColor] = useState(() =>
-    typeof initialShare.selectedColor === "string"
-      ? initialShare.selectedColor
-      : "F",
-  );
-  const [casePresetCategory, setCasePresetCategory] = useState(() =>
-    typeof initialShare.casePresetCategory === "string" &&
-    CASE_PRESETS[initialShare.casePresetCategory]
-      ? initialShare.casePresetCategory
-      : "OLL",
-  );
+  const [toastMessage, setToastMessage] = useState("");
+  const messageTimerRef = useRef(null);
+  const [targetAlg, setTargetAlg] = useState("");
+  const [targetPattern, setTargetPattern] = useState(() => solvedPattern());
+  const [patternSeedAlg, setPatternSeedAlg] = useState("");
+  const [selectedColor, setSelectedColor] = useState("F");
   const [casePresetOpen, setCasePresetOpen] = useState(null);
-  const [collGroupOpen, setCollGroupOpen] = useState(() =>
-    typeof initialShare.collGroupOpen === "string"
-      ? initialShare.collGroupOpen
-      : null,
-  );
-  const [zbllFamilyOpen, setZbllFamilyOpen] = useState(() =>
-    typeof initialShare.zbllFamilyOpen === "string"
-      ? initialShare.zbllFamilyOpen
-      : null,
-  );
-  const [zbllCollOpen, setZbllCollOpen] = useState(() =>
-    typeof initialShare.zbllCollOpen === "string"
-      ? initialShare.zbllCollOpen
-      : null,
-  );
-  const [zblsF2lOpen, setZblsF2lOpen] = useState(() =>
-    typeof initialShare.zblsF2lOpen === "string"
-      ? initialShare.zblsF2lOpen
-      : null,
-  );
-  const [searchMovesText, setSearchMovesText] = useState(() =>
-    typeof initialShare.searchMovesText === "string"
-      ? initialShare.searchMovesText
-      : "",
-  );
-  const [requiredPartsText, setRequiredPartsText] = useState(() =>
-    typeof initialShare.requiredPartsText === "string"
-      ? initialShare.requiredPartsText
-      : "",
-  );
-  const [maxSymbolDepth, setMaxSymbolDepth] = useState(() =>
-    Number.isFinite(initialShare.maxSymbolDepth)
-      ? initialShare.maxSymbolDepth
-      : 15,
-  );
-  const [limit, setLimit] = useState(() =>
-    Number.isFinite(initialShare.limit) ? initialShare.limit : 5,
-  );
-  const [solutionSortKey, setSolutionSortKey] = useState(() =>
-    SOLUTION_SORT_KEYS.includes(initialShare.solutionSortKey)
-      ? initialShare.solutionSortKey
-      : "effective",
-  );
+  const [collGroupOpen, setCollGroupOpen] = useState(null);
+  const [zbllFamilyOpen, setZbllFamilyOpen] = useState(null);
+  const [zbllCollOpen, setZbllCollOpen] = useState(null);
+  const [zblsF2lOpen, setZblsF2lOpen] = useState(null);
+  const [searchMovesText, setSearchMovesText] = useState("");
+  const [requiredPartsText, setRequiredPartsText] = useState("");
+  const [maxSymbolDepth, setMaxSymbolDepth] = useState(15);
+  const [solutionSortKey, setSolutionSortKey] = useState("effective");
   const [solutions, setSolutions] = useState([]);
   const [error, setError] = useState("");
   const [isSearching, setIsSearching] = useState(false);
@@ -1652,56 +1596,22 @@ export default function App() {
   useEffect(
     () => () => {
       if (workerRef.current) terminateSearchWorker(workerRef.current);
-      if (shareMessageTimerRef.current)
-        clearTimeout(shareMessageTimerRef.current);
+      if (messageTimerRef.current)
+        clearTimeout(messageTimerRef.current);
     },
     [],
   );
   function selectInputMode(mode) {
     setShowNetInput(mode === "pattern");
   }
-  function currentShareState() {
-    return {
-      targetAlg,
-      targetPattern,
-      patternSeedAlg,
-      selectedColor,
-      casePresetCategory,
-      collGroupOpen,
-      zbllFamilyOpen,
-      zbllCollOpen,
-      zblsF2lOpen,
-      showNetInput,
-      patternEditorMode,
-      bottomColor,
-      searchMovesText,
-      requiredPartsText,
-      maxSymbolDepth,
-      limit,
-      showMoveCounts,
-      solutionSortKey,
-      language,
-    };
-  }
   function showTemporaryMessage(message) {
-    if (shareMessageTimerRef.current)
-      clearTimeout(shareMessageTimerRef.current);
-    setShareMessage(message);
-    shareMessageTimerRef.current = setTimeout(() => {
-      setShareMessage("");
-      shareMessageTimerRef.current = null;
+    if (messageTimerRef.current)
+      clearTimeout(messageTimerRef.current);
+    setToastMessage(message);
+    messageTimerRef.current = setTimeout(() => {
+      setToastMessage("");
+      messageTimerRef.current = null;
     }, 1600);
-  }
-  async function shareUrl() {
-    const hash = `#s=${encodeShareState(currentShareState())}`;
-    const url = `${window.location.origin}${window.location.pathname}${hash}`;
-    window.history.replaceState(null, "", hash);
-    try {
-      await navigator.clipboard.writeText(url);
-      showTemporaryMessage(t.copied);
-    } catch {
-      showTemporaryMessage(url);
-    }
   }
   function saveHistoryItem(mode) {
     const item = {
@@ -1713,7 +1623,6 @@ export default function App() {
       searchMovesText,
       requiredPartsText,
       maxSymbolDepth,
-      limit,
     };
     const itemKey = JSON.stringify({
       mode,
@@ -1723,7 +1632,6 @@ export default function App() {
       searchMovesText,
       requiredPartsText,
       maxSymbolDepth,
-      limit,
     });
     const next = [
       item,
@@ -1737,7 +1645,6 @@ export default function App() {
             searchMovesText: x.searchMovesText,
             requiredPartsText: x.requiredPartsText || "",
             maxSymbolDepth: x.maxSymbolDepth,
-            limit: x.limit,
           }) !== itemKey,
       ),
     ].slice(0, 12);
@@ -1754,16 +1661,8 @@ export default function App() {
       setRequiredPartsText(item.requiredPartsText || "");
     if (item.maxSymbolDepth !== undefined)
       setMaxSymbolDepth(item.maxSymbolDepth);
-    if (item.limit !== undefined) setLimit(item.limit);
     setShowNetInput(item.mode === "pattern");
     setMenuOpen(false);
-  }
-  function saveFavoriteSolution(solution) {
-    const alg = formatWithSimulUD(solution);
-    const item = { id: Date.now(), alg };
-    const next = [item, ...favorites.filter((x) => x.alg !== alg)].slice(0, 30);
-    setFavorites(next);
-    writeStorageList(STORAGE_KEYS.favorites, next);
   }
   async function copyText(text) {
     try {
@@ -1894,7 +1793,6 @@ export default function App() {
         <div className="topbar-inner">
           <h1 className="app-title">{t.title}</h1>
           <div className="header-actions">
-            <button type="button" className="header-share" onClick={shareUrl}>{t.shareUrl}</button>
             <div className="menu-anchor">
               <button
                 type="button"
@@ -1907,50 +1805,6 @@ export default function App() {
               </button>
               {menuOpen ? (
                 <div className="menu-panel">
-                  <button type="button" className="menu-row" onClick={() => setShowMoveCounts((value) => !value)}>
-                    <span>{t.showMoveCounts}</span>
-                    <span className="menu-value">{showMoveCounts ? "ON" : "OFF"}</span>
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="toggle-net-input"
-                    className="menu-row"
-                    onClick={() => selectInputMode(showNetInput ? "alg" : "pattern")}
-                  >
-                    <span>{t.netInput}</span>
-                    <span className="menu-value">{showNetInput ? t.netMode : t.algMode}</span>
-                  </button>
-                  <button type="button" className="menu-row" onClick={shareUrl}>
-                    <span>{t.shareUrl}</span>
-                    <span className="menu-value" aria-hidden="true">↗</span>
-                  </button>
-
-                  <div className="menu-divider" />
-
-                  <button type="button" className="menu-row" onClick={() => setSavedOpen((value) => !value)}>
-                    <span>{t.saved}</span>
-                    <span className="menu-value">{savedOpen ? "−" : favorites.length}</span>
-                  </button>
-                  {savedOpen ? (
-                    <div className="menu-list">
-                      {favorites.length ? favorites.map((item) => (
-                        <button key={item.id} type="button" className="menu-list-item algorithm" onClick={() => copyText(item.alg)}>{item.alg}</button>
-                      )) : <div className="menu-list-empty">0</div>}
-                      {favorites.length ? (
-                        <button
-                          type="button"
-                          className="menu-clear"
-                          onClick={() => {
-                            setFavorites([]);
-                            writeStorageList(STORAGE_KEYS.favorites, []);
-                          }}
-                        >
-                          {t.clear}
-                        </button>
-                      ) : null}
-                    </div>
-                  ) : null}
-
                   <button type="button" className="menu-row" onClick={() => setHistoryOpen((value) => !value)}>
                     <span>{t.history}</span>
                     <span className="menu-value">{historyOpen ? "−" : history.length}</span>
@@ -2061,7 +1915,6 @@ export default function App() {
                       aria-selected={casePresetOpen === category}
                       className={casePresetOpen === category ? "is-active" : ""}
                       onClick={() => {
-                        setCasePresetCategory(category);
                         setCasePresetOpen((previous) => previous === category ? null : category);
                       }}
                     >
@@ -2184,8 +2037,6 @@ export default function App() {
                 solution={solution}
                 t={t}
                 language={language}
-                showMoveCounts={showMoveCounts}
-                onSave={saveFavoriteSolution}
                 onCopy={copyText}
               />
             ))}
@@ -2202,7 +2053,7 @@ export default function App() {
         </section>
       </main>
 
-      {shareMessage ? <div className="toast" role="status">{shareMessage}</div> : null}
+      {toastMessage ? <div className="toast" role="status">{toastMessage}</div> : null}
     </div>
   );
 }

@@ -101,7 +101,6 @@ textarea:focus-visible {
   gap: 8px;
 }
 
-.header-share,
 .menu-button {
   height: 38px;
   border: 1px solid var(--border);
@@ -112,11 +111,6 @@ textarea:focus-visible {
   transition: border-color 140ms ease, color 140ms ease, background 140ms ease;
 }
 
-.header-share {
-  padding: 0 12px;
-  font-size: 13px;
-}
-
 .menu-button {
   display: inline-flex;
   width: 40px;
@@ -125,7 +119,6 @@ textarea:focus-visible {
   font-size: 14px;
 }
 
-.header-share:hover,
 .menu-button:hover {
   border-color: var(--border-strong);
   color: var(--text);
@@ -742,9 +735,13 @@ textarea:focus-visible {
   width: 100%;
   height: 360px;
   overflow: hidden;
-  touch-action: none;
+  touch-action: manipulation;
   user-select: none;
   background: #111315;
+}
+
+.cube-editor-surface canvas {
+  cursor: crosshair;
 }
 
 .solution-sort {
@@ -798,11 +795,11 @@ textarea:focus-visible {
 }
 
 .solution-card-top {
-  display: flex;
+  display: grid;
   min-width: 0;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
 }
 
 .solution-alg {
@@ -841,29 +838,31 @@ textarea:focus-visible {
 
 .solution-metrics {
   display: grid;
-  margin-top: 14px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  overflow: hidden;
+  grid-template-columns: repeat(4, auto);
   gap: 1px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
   background: var(--border);
 }
 
 .solution-metric {
   display: flex;
   min-width: 0;
-  height: 42px;
-  padding: 0 9px;
+  height: 34px;
+  padding: 0 8px;
   align-items: center;
   justify-content: space-between;
   gap: 6px;
   color: var(--muted);
   background: var(--surface-raised);
-  font-size: 9px;
+  font-size: 8px;
 }
 
 .solution-metric strong {
   color: var(--text);
   font-family: "SFMono-Regular", Consolas, monospace;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 560;
   font-variant-numeric: tabular-nums;
 }
@@ -1056,10 +1055,6 @@ textarea:focus-visible {
     font-size: 18px;
   }
 
-  .header-share {
-    display: none;
-  }
-
   .panel-header {
     flex-direction: column;
   }
@@ -1092,14 +1087,16 @@ textarea:focus-visible {
   }
 
   .solution-card-top {
-    flex-direction: column;
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .solution-actions {
-    align-self: flex-end;
+    grid-column: 2;
+    grid-row: 1;
   }
 
   .solution-metrics {
+    grid-column: 1 / -1;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
