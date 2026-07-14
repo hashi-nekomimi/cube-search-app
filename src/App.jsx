@@ -610,15 +610,50 @@ function pllPreviewCells(pattern) {
     null, pattern.F[0], pattern.F[1], pattern.F[2], null,
   ];
 }
-function MiniFacePreview({ stickers, face }) {
-  return <div data-preview-face={face} className="grid grid-cols-3 gap-[1px]">{stickers.map((color, index) => <span key={index} data-color={color} className="h-[7px] w-[7px] rounded-[1px] border border-slate-500/70" style={{ background: FACE_COLOR_STYLE[color] || FACE_COLOR_STYLE.X }} />)}</div>;
+function cubePreviewPoint(x, y, z) {
+  return `${(30 + (x - z) * 8.5).toFixed(2)},${(24 + (x + z) * 4.2 - y * 6.8).toFixed(2)}`;
+}
+function cubePreviewPolygon(points) {
+  return points.map(([x, y, z]) => cubePreviewPoint(x, y, z)).join(" ");
+}
+function MiniCubePreviewFace({ stickers, face }) {
+  return (
+    <g data-preview-face={face}>
+      {stickers.map((color, index) => {
+        const row = Math.floor(index / 3);
+        const col = index % 3;
+        let points;
+        if (face === "U") {
+          const x0 = col - 1.5;
+          const x1 = col - 0.5;
+          const z0 = row - 1.5;
+          const z1 = row - 0.5;
+          points = [[x0, 1.5, z0], [x1, 1.5, z0], [x1, 1.5, z1], [x0, 1.5, z1]];
+        } else if (face === "F") {
+          const x0 = col - 1.5;
+          const x1 = col - 0.5;
+          const y0 = 1.5 - row;
+          const y1 = 0.5 - row;
+          points = [[x0, y0, 1.5], [x1, y0, 1.5], [x1, y1, 1.5], [x0, y1, 1.5]];
+        } else {
+          const z0 = 1.5 - col;
+          const z1 = 0.5 - col;
+          const y0 = 1.5 - row;
+          const y1 = 0.5 - row;
+          points = [[1.5, y0, z0], [1.5, y0, z1], [1.5, y1, z1], [1.5, y1, z0]];
+        }
+        return <polygon key={index} data-color={color} points={cubePreviewPolygon(points)} fill={FACE_COLOR_STYLE[color] || FACE_COLOR_STYLE.X} stroke="#334155" strokeWidth="0.55" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />;
+      })}
+    </g>
+  );
 }
 function MiniZblsPreview({ pattern }) {
   return (
-    <div className="grid w-[47px] gap-[2px]">
-      <div className="ml-[8px]"><MiniFacePreview face="U" stickers={pattern.U} /></div>
-      <div className="flex gap-[2px]"><MiniFacePreview face="F" stickers={pattern.F} /><MiniFacePreview face="R" stickers={pattern.R} /></div>
-    </div>
+    <svg data-zbls-cube-preview aria-hidden="true" viewBox="0 0 60 50" className="h-[50px] w-[60px] overflow-visible drop-shadow-sm">
+      <MiniCubePreviewFace face="U" stickers={pattern.U} />
+      <MiniCubePreviewFace face="F" stickers={pattern.F} />
+      <MiniCubePreviewFace face="R" stickers={pattern.R} />
+    </svg>
   );
 }
 function MiniPatternPreview({ pattern, previewMask, variant = "last-layer" }) {
@@ -636,13 +671,14 @@ function ResultSummaryCard({ text, className = "" }) { return <div className={`r
 function EmptyCard({ text, className = "" }) { return <ResultSummaryCard text={text} className={className} />; }
 function NumberInput({ label, value, onChange, min = 1, max = 99 }) { function setClamped(nextValue) { const raw = String(nextValue); if (raw === "") { onChange(""); return; } const numeric = Number(raw); if (!Number.isFinite(numeric)) return; onChange(Math.min(max, Math.max(min, Math.trunc(numeric)))); } return <label className="grid gap-1"><span className="text-sm font-normal">{label}</span><input type="number" inputMode="numeric" pattern="[0-9]*" min={min} max={max} step="1" value={value} onChange={(e) => setClamped(e.target.value)} onBlur={() => { if (value === "") onChange(min); }} className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 text-center text-sm leading-5 outline-none focus:ring-2 focus:ring-slate-400" /></label>; }
 function PresetTile({ label, pattern, previewMask, previewVariant, title, testId, selected = false, onClick }) {
+  const isZblsPreview = previewVariant === "zbls";
   return (
     <button
       type="button"
       data-testid={testId}
       onClick={onClick}
       title={title || label}
-      className={`flex h-[88px] w-[78px] flex-col items-center justify-center gap-1 rounded-lg border bg-white p-2 transition hover:bg-slate-50 active:scale-95 ${selected ? "border-slate-900 ring-2 ring-slate-400" : "border-slate-300"}`}
+      className={`flex ${isZblsPreview ? "h-[96px] w-[88px]" : "h-[88px] w-[78px]"} flex-col items-center justify-center gap-1 rounded-lg border bg-white p-2 transition hover:bg-slate-50 active:scale-95 ${selected ? "border-slate-900 ring-2 ring-slate-400" : "border-slate-300"}`}
     >
       <MiniPatternPreview pattern={pattern} previewMask={previewMask} variant={previewVariant} />
       <span className="h-4 max-w-full truncate text-[11px] font-normal leading-4 text-slate-700">{label}</span>

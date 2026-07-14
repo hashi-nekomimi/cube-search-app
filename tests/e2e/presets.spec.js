@@ -145,6 +145,8 @@ test("nested preset icons and applied nets use the generated color arrays", asyn
   await openPresetPanel(page, "ZBLS");
   await page.getByTestId(`zbls-f2l-${zbls.f2l}`).click();
   const zblsTile = page.getByTestId(`preset-case-${zbls.id}`);
+  await expect(zblsTile.locator("[data-zbls-cube-preview]")).toHaveCount(1);
+  await expect(zblsTile.locator("[data-preview-face]")).toHaveCount(3);
   const zblsPattern = stateToPattern(zbls.state);
   await expectPreviewColors(zblsTile, [...zblsPattern.U, ...zblsPattern.F, ...zblsPattern.R]);
   await zblsTile.click();
