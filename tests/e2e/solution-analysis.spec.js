@@ -16,8 +16,8 @@ test("ease scoring rewards recognizable triggers", () => {
   expect(sexy.ease.formula).toEqual({
     totalMoves: 4,
     triggerMoves: 4,
-    unrecognizedMoves: 0,
     regrips: 0,
+    wideMoves: 0,
     regripKnown: true,
   });
   expect(sexy.ease.score).toBe(96);
@@ -59,6 +59,34 @@ test("mirrored algorithms use the equivalent left-thumb path", () => {
   expect(left.regrip.hand).toBe("left");
   expect(left.regrip.count).toBe(right.regrip.count);
   expect(left.regrip.steps.map((step) => step.move)).toEqual(moves("L' U' L U"));
+});
+
+test("wide turns reuse single-layer regrip paths with a small per-move penalty", () => {
+  const pairs = [
+    ["R U R U R", "r U r U r"],
+    ["L' U' L U", "l' U' l U"],
+    ["F U F'", "f U f'"],
+    ["B U B'", "b U b'"],
+    ["U R U'", "u R u'"],
+    ["D R D'", "d R d'"],
+  ];
+  for (const [singleAlgorithm, wideAlgorithm] of pairs) {
+    const singleAnalysis = analyzeSolutionMoves(moves(singleAlgorithm));
+    const wideAnalysis = analyzeSolutionMoves(moves(wideAlgorithm));
+    expect(wideAnalysis.regrip.count, wideAlgorithm).toBe(singleAnalysis.regrip.count);
+  }
+
+  const singleLayer = analyzeSolutionMoves(moves(pairs[0][0]));
+  const wide = analyzeSolutionMoves(moves(pairs[0][1]));
+  expect(wide.regrip.count).toBe(singleLayer.regrip.count);
+  expect(wide.regrip.hand).toBe(singleLayer.regrip.hand);
+  expect(wide.regrip.steps.map((step) => step.move)).toEqual(moves("r U r U r"));
+  expect(wide.ease.formula.wideMoves).toBe(3);
+  expect(wide.ease.score).toBe(singleLayer.ease.score - 3);
+
+  const leftWide = analyzeSolutionMoves(moves("l' U' l U"));
+  expect(leftWide.regrip.count).toBe(0);
+  expect(leftWide.regrip.hand).toBe("left");
 });
 
 test("AUF filters ignore a U move that belongs to a recognized trigger", () => {

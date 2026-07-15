@@ -77,7 +77,7 @@ test("search results show regrip counts and can be sorted by metrics", async ({ 
   await page.getByTestId("metric-ease").first().click();
   await expect(page.getByTestId("ease-detail").first()).toBeVisible();
   await expect(page.getByTestId("ease-feature-sexy").first()).toBeVisible();
-  await expect(page.getByTestId("ease-formula").first()).toContainText("100 - 3 × H + 2 × T - 8 × R");
+  await expect(page.getByTestId("ease-formula").first()).toContainText("100 - 3 × H + 2 × T - 8 × R - W");
   await expect(page.getByTestId("ease-calculation").first()).toContainText("= 96");
   await page.getByTestId("metric-ease").first().click();
 
@@ -85,6 +85,22 @@ test("search results show regrip counts and can be sorted by metrics", async ({ 
   await expect(page.getByTestId("solution-card")).toHaveCount(0);
   await page.getByTestId("filter-reset").click();
   await expect(page.getByTestId("solution-card").first()).toBeVisible();
+
+  await page.getByTestId("filter-feature").selectOption("sexy");
+  await expect(page.getByTestId("filter-feature")).toHaveClass(/is-active/);
+  await expect(page.getByTestId("solution-card").first().getByTestId("feature-highlight")).toHaveText(["R", "U", "R'", "U'"]);
+
+  await page.setViewportSize({ width: 320, height: 844 });
+  const filterBoxes = await page.locator(".solution-filter-field").evaluateAll((fields) => fields.map((field) => {
+    const rect = field.getBoundingClientRect();
+    return { top: rect.top, left: rect.left, right: rect.right };
+  }));
+  expect(Math.abs(filterBoxes[0].top - filterBoxes[1].top)).toBeLessThan(2);
+  expect(Math.abs(filterBoxes[2].top - filterBoxes[3].top)).toBeLessThan(2);
+  expect(filterBoxes[2].top).toBeGreaterThan(filterBoxes[0].top);
+  expect(Math.min(...filterBoxes.map((box) => box.left))).toBeGreaterThanOrEqual(0);
+  expect(Math.max(...filterBoxes.map((box) => box.right))).toBeLessThanOrEqual(320);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
 
   await page.getByTestId("filter-feature").selectOption("sune");
   await expect(page.getByTestId("solution-card")).toHaveCount(0);

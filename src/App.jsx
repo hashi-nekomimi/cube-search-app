@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import {
   COLL_PRESET_DATA,
@@ -392,19 +392,24 @@ function sortedSolutions(solutions, sortKey) {
   return [...solutions].sort((a, b) => compareSolutions(a, b, sortKey));
 }
 
-function formatWithSimulUD(moves) {
+function formatWithSimulUDSegments(moves) {
   const cleaned = cleanMoves(moves);
-  const parts = [];
+  const segments = [];
   for (let i = 0; i < cleaned.length;) {
     if (i + 1 < cleaned.length && isParallelPair(cleaned[i], cleaned[i + 1])) {
-      parts.push(`( ${cleaned[i]} ${cleaned[i + 1]} )`);
+      segments.push(
+        { text: "(", moveIndex: null },
+        { text: cleaned[i], moveIndex: i },
+        { text: cleaned[i + 1], moveIndex: i + 1 },
+        { text: ")", moveIndex: null },
+      );
       i += 2;
     } else {
-      parts.push(cleaned[i]);
+      segments.push({ text: cleaned[i], moveIndex: i });
       i += 1;
     }
   }
-  return parts.join(" ");
+  return segments;
 }
 
 function applyPermToString(state, perm) {
@@ -514,11 +519,11 @@ const RESULT_ANALYSIS_TEXT = {
     moveCountTitle: "手数の内訳",
     easeBands: { excellent: "非常に回しやすい", easy: "回しやすい", average: "標準", difficult: "やや難しい", hard: "難しい" },
     featureNames: { sexy: "セクシームーブ", sune: "スーン", commutator: "コミュテーター", sledge: "スレッジ" },
-    formula: "EASE = clamp(0, 100, 100 - 3 × H + 2 × T - 8 × R)",
-    formulaLegend: "H = HTM / T = 同値類トリガー手数 / R = リグリップ",
-    formulaRule: "逆手順・鏡手順・側面を替えた同値類もトリガーとして数え、重複する手数は1回だけ数えます。",
+    formula: "EASE = clamp(0, 100, 100 - 3 × H + 2 × T - 8 × R - W)",
+    formulaLegend: "H = HTM / T = 同値類トリガー手数 / R = リグリップ / W = 2層回し手数",
+    formulaRule: "逆手順・鏡手順・側面を替えた同値類もトリガーとして数え、重複する手数は1回だけ数えます。2層回しは対応する1層回しの経路で解析し、1記号につき1点減点します。",
     formulaUnknownRegrip: "リグリップを解析できない手順では、リグリップ項を暫定で0とします。",
-    breakdown: { totalMoves: "HTM", triggerMoves: "同値類トリガー", unrecognizedMoves: "非トリガー", regrips: "リグリップ" },
+    breakdown: { totalMoves: "HTM", triggerMoves: "同値類トリガー", regrips: "リグリップ", wideMoves: "2層回し" },
   },
   en: {
     filters: "Filters",
@@ -543,11 +548,11 @@ const RESULT_ANALYSIS_TEXT = {
     moveCountTitle: "Move counts",
     easeBands: { excellent: "Very easy", easy: "Easy", average: "Average", difficult: "Difficult", hard: "Hard" },
     featureNames: { sexy: "Sexy move", sune: "Sune", commutator: "Commutator", sledge: "Sledge" },
-    formula: "EASE = clamp(0, 100, 100 - 3 × H + 2 × T - 8 × R)",
-    formulaLegend: "H = HTM / T = equivalent-trigger moves / R = regrips",
-    formulaRule: "Inverse, mirror and side-rotated equivalents count as triggers; overlapping moves are counted once.",
+    formula: "EASE = clamp(0, 100, 100 - 3 × H + 2 × T - 8 × R - W)",
+    formulaLegend: "H = HTM / T = equivalent-trigger moves / R = regrips / W = wide moves",
+    formulaRule: "Inverse, mirror and side-rotated equivalents count as triggers; overlapping moves are counted once. Wide moves reuse the corresponding single-layer path and cost one point each.",
     formulaUnknownRegrip: "When regrips cannot be analyzed, the regrip term is provisionally set to 0.",
-    breakdown: { totalMoves: "HTM", triggerMoves: "Equivalent triggers", unrecognizedMoves: "Non-trigger", regrips: "Regrips" },
+    breakdown: { totalMoves: "HTM", triggerMoves: "Equivalent triggers", regrips: "Regrips", wideMoves: "Wide moves" },
   },
 };
 const WORKSPACE_TEXT = {
@@ -1404,7 +1409,17 @@ function SolutionFilterControls({ filters, setFilters, language }) {
   }
   return (
     <div data-testid="solution-filters" className="solution-filters">
-      <span className="solution-filter-heading">{labels.filters}{activeCount ? ` ${activeCount}` : ""}</span>
+      <div className="solution-filter-bar">
+        <span className="solution-filter-heading">
+          {labels.filters}
+          {activeCount ? <strong className="solution-filter-count">{activeCount}</strong> : null}
+        </span>
+        {activeCount ? (
+          <button type="button" data-testid="filter-reset" className="solution-filter-reset" onClick={() => setFilters(DEFAULT_SOLUTION_FILTERS)}>
+            {labels.reset}
+          </button>
+        ) : null}
+      </div>
       <div className="solution-filter-fields">
         {Object.keys(SOLUTION_FILTER_OPTIONS).map((key) => (
           <label key={key} className="solution-filter-field">
@@ -1412,6 +1427,7 @@ function SolutionFilterControls({ filters, setFilters, language }) {
             <select
               data-testid={`filter-${key}`}
               aria-label={`${labels.filters}: ${labels[key]}`}
+              className={filters[key] !== DEFAULT_SOLUTION_FILTERS[key] ? "is-active" : ""}
               value={filters[key]}
               onChange={(event) => updateFilter(key, event.target.value)}
             >
@@ -1421,11 +1437,6 @@ function SolutionFilterControls({ filters, setFilters, language }) {
             </select>
           </label>
         ))}
-        {activeCount ? (
-          <button type="button" data-testid="filter-reset" className="solution-filter-reset" onClick={() => setFilters(DEFAULT_SOLUTION_FILTERS)}>
-            {labels.reset}
-          </button>
-        ) : null}
       </div>
     </div>
   );
@@ -1523,15 +1534,15 @@ function EaseDetail({ analysis, language, id }) {
       ) : null}
       <code data-testid="ease-formula" className="ease-formula">{labels.formula}</code>
       <code data-testid="ease-calculation" className="ease-calculation">
-        {`= clamp(0, 100, 100 - 3 × ${formula.totalMoves} + 2 × ${formula.triggerMoves} - 8 × ${formula.regrips}) = ${analysis.ease.score}`}
+        {`= clamp(0, 100, 100 - 3 × ${formula.totalMoves} + 2 × ${formula.triggerMoves} - 8 × ${formula.regrips} - ${formula.wideMoves}) = ${analysis.ease.score}`}
       </code>
       <p className="ease-formula-legend">{labels.formulaLegend}</p>
       <dl className="ease-breakdown">
         {Object.entries({
           totalMoves: formula.totalMoves,
           triggerMoves: formula.triggerMoves,
-          unrecognizedMoves: formula.unrecognizedMoves,
           regrips: formula.regrips,
+          wideMoves: formula.wideMoves,
         }).map(([key, value]) => (
           <div key={key}>
             <dt>{labels.breakdown[key]}</dt>
@@ -1559,10 +1570,20 @@ function MoveCountDetail({ analysis, language, id }) {
     </section>
   );
 }
-function SolutionCard({ solution, t, language, onCopy }) {
-  const displayAlg = formatWithSimulUD(solution);
+function SolutionCard({ solution, t, language, onCopy, highlightFeature }) {
+  const displaySegments = formatWithSimulUDSegments(solution);
+  const displayAlg = displaySegments.map((segment) => segment.text).join(" ");
   const analysis = solutionAnalysis(solution);
   const labels = analysisText(language);
+  const highlightedMoves = new Map();
+  if (highlightFeature !== "all") {
+    for (const feature of analysis.features) {
+      if (highlightFeature !== "any" && feature.type !== highlightFeature) continue;
+      for (let index = feature.start; index < feature.end; index += 1) {
+        if (!highlightedMoves.has(index)) highlightedMoves.set(index, feature.type);
+      }
+    }
+  }
   const [detail, setDetail] = useState(null);
   const detailId = useId();
   return (
@@ -1576,7 +1597,24 @@ function SolutionCard({ solution, t, language, onCopy }) {
           title={t.copy}
           onClick={() => onCopy(displayAlg)}
         >
-          {displayAlg || "(空)"}
+          {displaySegments.length ? displaySegments.map((segment, index) => {
+            const featureType = highlightedMoves.get(segment.moveIndex);
+            return (
+              <Fragment key={`${segment.moveIndex ?? "group"}-${index}`}>
+                {index ? " " : null}
+                {featureType ? (
+                  <mark
+                    data-testid="feature-highlight"
+                    data-feature={featureType}
+                    className="solution-feature-highlight"
+                    title={labels.featureNames[featureType]}
+                  >
+                    {segment.text}
+                  </mark>
+                ) : segment.text}
+              </Fragment>
+            );
+          }) : "(空)"}
         </button>
         <div className="solution-metrics">
           <SolutionMetric
@@ -2290,7 +2328,7 @@ export default function App() {
             <h2>{ui.results}</h2>
             {hasSearched || isSearching ? (
               <span className="result-count">
-                {hasActiveSolutionFilters ? `${displayedSolutions.length} / ${ui.found(solutions.length)}` : ui.found(solutions.length)}
+                {hasActiveSolutionFilters ? `${displayedSolutions.length} / ${solutions.length}` : ui.found(solutions.length)}
               </span>
             ) : null}
           </header>
@@ -2319,6 +2357,7 @@ export default function App() {
                 t={t}
                 language={language}
                 onCopy={copyText}
+                highlightFeature={solutionFilters.feature}
               />
             ))}
           </div>

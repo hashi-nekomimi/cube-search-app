@@ -1,8 +1,14 @@
 const FACE_ORDER = ["U", "R", "F", "D", "L", "B"];
 const PARALLEL_GROUP = { U: "UD", D: "UD", R: "RL", L: "RL", F: "FB", B: "FB" };
 const ACTIVE_REGRIP_THUMBS = [-1, 0, 1];
-const Y_ROTATION_FACE = { U: "U", R: "B", B: "L", L: "F", F: "R", D: "D" };
-const MIRROR_FACE = { U: "U", R: "L", F: "F", D: "D", L: "R", B: "B" };
+const Y_ROTATION_FACE = {
+  U: "U", R: "B", B: "L", L: "F", F: "R", D: "D",
+  u: "u", r: "b", b: "l", l: "f", f: "r", d: "d",
+};
+const MIRROR_FACE = {
+  U: "U", R: "L", F: "F", D: "D", L: "R", B: "B",
+  u: "u", r: "l", f: "f", d: "d", l: "r", b: "b",
+};
 
 const REGRIP_SUFFIXES_BY_FACE = {
   R: ["'3", "'2", "'", "", "2", "3"],
@@ -60,8 +66,9 @@ function transformMove(move, faceMap, invertDirection = false) {
   const face = move[0];
   const mappedFace = faceMap[face];
   if (!mappedFace) return move;
-  const suffix = move.slice(1);
-  return mappedFace + (invertDirection ? invertTurnSuffix(suffix) : suffix);
+  const wideNotation = move[1] === "w" ? "w" : "";
+  const suffix = move.slice(wideNotation ? 2 : 1);
+  return mappedFace + wideNotation + (invertDirection ? invertTurnSuffix(suffix) : suffix);
 }
 
 function mirrorMove(move) {
@@ -81,11 +88,13 @@ function rotateYSequence(moves, turns) {
 }
 
 function splitRegripMove(move) {
-  const face = move[0];
-  const suffix = move.slice(1);
+  const rawFace = move[0];
+  const wideNotation = move[1] === "w";
+  const face = rawFace?.toUpperCase();
+  const suffix = move.slice(wideNotation ? 2 : 1);
   if (!FACE_ORDER.includes(face)) return null;
   if (!["", "'", "2", "'2", "3", "'3"].includes(suffix)) return null;
-  return [face, suffix];
+  return { face, suffix, wide: wideNotation || rawFace === rawFace.toLowerCase() };
 }
 
 function equivalentPhysicalSuffixes(face, suffix) {
@@ -103,18 +112,25 @@ function equivalentPhysicalSuffixes(face, suffix) {
 function choosePhysicalMove(move, thumb) {
   const parts = splitRegripMove(move);
   if (!parts) return null;
-  const [face, suffix] = parts;
+  const { face, suffix, wide } = parts;
   const suffixes = REGRIP_SUFFIXES_BY_FACE[face];
   const allowed = REGRIP_ALLOWED[thumb]?.[face];
   if (!suffixes || !allowed) return null;
   for (const physicalSuffix of equivalentPhysicalSuffixes(face, suffix)) {
-    if (suffixes.includes(physicalSuffix) && allowed[physicalSuffix]) return face + physicalSuffix;
+    if (suffixes.includes(physicalSuffix) && allowed[physicalSuffix]) {
+      return {
+        modelMove: face + physicalSuffix,
+        physicalMove: (wide ? face.toLowerCase() : face) + physicalSuffix,
+      };
+    }
   }
   return null;
 }
 
 function nextThumbForPhysicalMove(physicalMove, thumb) {
-  const [face, suffix] = splitRegripMove(physicalMove);
+  const parts = splitRegripMove(physicalMove);
+  if (!parts) return null;
+  const { face, suffix } = parts;
   if (face !== "R") return thumb;
   const delta = { "'3": -3, "'2": -2, "'": -1, "": 1, 2: 2, 3: 3 }[suffix];
   const next = thumb + delta;
@@ -148,20 +164,20 @@ function analyzeRightHandRegrips(normalized) {
     const nextStates = new Map();
     for (const state of states.values()) {
       for (const gripThumb of ACTIVE_REGRIP_THUMBS) {
-        const physicalMove = choosePhysicalMove(move, gripThumb);
-        if (!physicalMove) continue;
-        const afterThumb = nextThumbForPhysicalMove(physicalMove, gripThumb);
+        const physical = choosePhysicalMove(move, gripThumb);
+        if (!physical) continue;
+        const afterThumb = nextThumbForPhysicalMove(physical.modelMove, gripThumb);
         if (afterThumb === null || !ACTIVE_REGRIP_THUMBS.includes(afterThumb)) continue;
         const changedGrip = gripThumb !== state.thumb;
         const candidate = {
           startThumb: state.startThumb,
           thumb: afterThumb,
           count: state.count + (changedGrip ? 1 : 0),
-          physicalVariants: state.physicalVariants + (physicalMove === move ? 0 : 1),
+          physicalVariants: state.physicalVariants + (physical.physicalMove === move ? 0 : 1),
           steps: [...state.steps, {
             index: index + 1,
             move,
-            physicalMove,
+            physicalMove: physical.physicalMove,
             beforeThumb: gripThumb,
             afterThumb,
             regripFrom: changedGrip ? state.thumb : null,
@@ -179,7 +195,7 @@ function analyzeRightHandRegrips(normalized) {
         startThumb: null,
         endThumb: null,
         steps: [],
-        unsupportedMoves: [...new Set(normalized.filter((item) => !REGRIP_SUFFIXES_BY_FACE[item[0]]))],
+        unsupportedMoves: [...new Set(normalized.filter((item) => !splitRegripMove(item)))],
         hand: "right",
       };
     }
@@ -373,9 +389,9 @@ function analyzeEase(moves, metrics, regrip, features) {
 
   const totalMoves = metrics.symbolMoves;
   const triggerMoves = coveredMoves.size;
-  const unrecognizedMoves = Math.max(0, totalMoves - triggerMoves);
   const regrips = regrip.count ?? 0;
-  const rawScore = 100 - 3 * totalMoves + 2 * triggerMoves - 8 * regrips;
+  const wideMoves = moves.filter((move) => "urfdlb".includes(move[0]) || /^[URFDLB]w/.test(move)).length;
+  const rawScore = 100 - 3 * totalMoves + 2 * triggerMoves - 8 * regrips - wideMoves;
   const score = Math.max(0, Math.min(100, rawScore));
   const band = score >= 90 ? "excellent" : score >= 78 ? "easy" : score >= 65 ? "average" : score >= 50 ? "difficult" : "hard";
 
@@ -386,8 +402,8 @@ function analyzeEase(moves, metrics, regrip, features) {
     formula: {
       totalMoves,
       triggerMoves,
-      unrecognizedMoves,
       regrips,
+      wideMoves,
       regripKnown: regrip.count !== null,
     },
   };

@@ -750,38 +750,62 @@ select:focus-visible {
 }
 
 .solution-filters {
-  display: flex;
+  display: grid;
   padding: 10px 0 13px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
   border-bottom: 1px solid var(--border);
   color: var(--muted);
   font-size: 11px;
 }
 
+.solution-filter-bar {
+  display: flex;
+  min-height: 22px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .solution-filter-heading {
+  display: inline-flex;
   flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.solution-filter-count {
+  display: inline-grid;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  place-items: center;
+  border-radius: 9px;
+  color: #07140d;
+  background: var(--accent);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
 }
 
 .solution-filter-fields {
-  display: flex;
+  display: grid;
+  width: 100%;
   min-width: 0;
-  flex-wrap: wrap;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   align-items: flex-end;
-  justify-content: flex-end;
   gap: 5px;
 }
 
 .solution-filter-field {
   display: grid;
+  min-width: 0;
   gap: 3px;
   font-size: 8px;
 }
 
 .solution-filter-field select {
+  width: 100%;
   height: 28px;
-  min-width: 78px;
+  min-width: 0;
   padding: 0 24px 0 7px;
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -794,6 +818,12 @@ select:focus-visible {
 .solution-filter-field select:hover {
   border-color: var(--border-strong);
   color: var(--text);
+}
+
+.solution-filter-field select.is-active {
+  border-color: rgba(83, 217, 140, 0.55);
+  color: var(--accent-strong);
+  background: rgba(83, 217, 140, 0.08);
 }
 
 .solution-filter-reset {
@@ -865,6 +895,14 @@ select:focus-visible {
 .solution-alg:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+.solution-feature-highlight {
+  padding: 2px 1px;
+  border-radius: 2px;
+  color: #eafff2;
+  background: rgba(83, 217, 140, 0.22);
+  box-shadow: inset 0 -1px 0 rgba(83, 217, 140, 0.72);
 }
 
 .error-banner button {
@@ -1054,6 +1092,11 @@ select:focus-visible {
   font-size: 10px;
   line-height: 1.6;
   white-space: normal;
+}
+
+.ease-formula-legend {
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 9px;
 }
 
 .ease-calculation {
@@ -1258,14 +1301,6 @@ select:focus-visible {
     height: 310px;
   }
 
-  .solution-filter-fields {
-    justify-content: flex-start;
-  }
-
-  .solution-filters {
-    align-items: flex-start;
-    flex-direction: column;
-  }
 }
 
 @media (max-width: 480px) {
@@ -1337,6 +1372,11 @@ select:focus-visible {
 
   .solution-metric {
     grid-column: auto;
+  }
+
+  .solution-filter-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
   }
 
   .solution-detail {
