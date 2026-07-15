@@ -39,7 +39,12 @@ async function setNetPattern(page, state) {
 }
 
 test("search results show regrip counts and can be sorted by metrics", async ({ page }) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto("/");
+
+  await expect(page.getByTestId("solution-card")).toHaveCount(0);
+  await expect(page.locator(".result-count")).toHaveCount(0);
+  await expect(page.locator(".results-placeholder")).toHaveCount(0);
 
   await page.getByPlaceholder("既存の手順を入力…").fill("R U R' U'");
   await page.getByLabel("生成系").fill("R U");
@@ -56,6 +61,13 @@ test("search results show regrip counts and can be sorted by metrics", async ({ 
   await expect(page.getByTestId("sort-symbol")).toHaveText("HTM");
   await expect(page.getByTestId("sort-quarter")).toHaveText("QTM");
   await expect(page.getByRole("button", { name: "保存", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "コピー", exact: true })).toHaveCount(0);
+
+  const firstAlgorithm = page.getByTestId("solution-alg").first();
+  const copiedAlgorithm = await firstAlgorithm.textContent();
+  await firstAlgorithm.click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(copiedAlgorithm);
+  await expect(page.getByRole("status")).toHaveText("コピーしました");
 
   for (const sortKey of ["symbol", "quarter", "regrip", "effective"]) {
     await page.getByTestId(`sort-${sortKey}`).click();

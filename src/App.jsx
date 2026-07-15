@@ -1486,23 +1486,28 @@ function SolutionCard({ solution, t, language, onCopy }) {
   return (
     <article data-testid="solution-card" className="solution-card">
       <div className="solution-card-top">
-        <div data-testid="solution-alg" className="solution-alg">{displayAlg || "(空)"}</div>
+        <button
+          type="button"
+          data-testid="solution-alg"
+          className="solution-alg"
+          aria-label={`${displayAlg || "(空)"} ${t.copy}`}
+          title={t.copy}
+          onClick={() => onCopy(displayAlg)}
+        >
+          {displayAlg || "(空)"}
+        </button>
         <div className="solution-metrics">
           <SolutionMetric testId="metric-effective" label="STM" value={effectiveMoveCount(solution)} />
           <SolutionMetric testId="metric-symbol" label="HTM" value={symbolMoveCount(solution)} />
           <SolutionMetric testId="metric-quarter" label="QTM" value={quarterTurnCount(solution)} />
           <SolutionMetric testId="metric-regrip" label={localizedLabel(REGRIP_LABEL, language)} value={regrips === null ? "—" : regrips} />
         </div>
-        <div className="solution-actions">
-          <button type="button" onClick={() => onCopy(displayAlg)}>{t.copy}</button>
-        </div>
       </div>
     </article>
   );
 }
 function ThinkingCard({ foundCount, t }) { return <div className="search-status is-searching"><div className="thinking-dots" aria-hidden="true"><span /><span /><span /></div><div><strong>{t.thinkingTitle}</strong><span>{t.thinkingBody(foundCount)}</span></div></div>; }
-function ResultSummaryCard({ text, className = "" }) { return <div className={`search-status ${className}`}>{text}</div>; }
-function EmptyCard({ text, className = "" }) { return <ResultSummaryCard text={text} className={className} />; }
+function EmptyCard({ text }) { return <div className="search-status">{text}</div>; }
 function NumberInput({ label, value, onChange, min = 1, max = 99 }) { function setClamped(nextValue) { const raw = String(nextValue); if (raw === "") { onChange(""); return; } const numeric = Number(raw); if (!Number.isFinite(numeric)) return; onChange(Math.min(max, Math.max(min, Math.trunc(numeric)))); } return <label className="field"><span>{label}</span><input type="number" inputMode="numeric" pattern="[0-9]*" min={min} max={max} step="1" value={value} onChange={(e) => setClamped(e.target.value)} onBlur={() => { if (value === "") onChange(min); }} /></label>; }
 function PresetTile({ label, pattern, previewMask, previewVariant, title, testId, selected = false, bottomColor, onClick }) {
   const isZblsPreview = previewVariant === "zbls";
@@ -1713,7 +1718,6 @@ export default function App() {
   const [error, setError] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
-  const [searchExhausted, setSearchExhausted] = useState(false);
   const [canContinueUnsafe, setCanContinueUnsafe] = useState(false);
   const searchSessionRef = useRef(0);
   const workerRef = useRef(null);
@@ -1814,12 +1818,24 @@ export default function App() {
     setMenuOpen(false);
   }
   async function copyText(text) {
+    let copied;
     try {
       await navigator.clipboard.writeText(text);
-      showTemporaryMessage(t.copied);
+      copied = true;
     } catch {
-      showTemporaryMessage(text);
+      const activeElement = document.activeElement;
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      copied = document.execCommand("copy");
+      textarea.remove();
+      if (activeElement instanceof HTMLElement) activeElement.focus();
     }
+    showTemporaryMessage(copied ? t.copied : text);
   }
   function applyCasePreset(preset) {
     setPatternBottomColor(bottomColor);
@@ -1840,7 +1856,6 @@ export default function App() {
     }
     setIsSearching(false);
     setCanContinueUnsafe(false);
-    setSearchExhausted(false);
   }
   function continuePausedSearch() {
     if (!workerRef.current) {
@@ -1864,7 +1879,6 @@ export default function App() {
     setCanContinueUnsafe(false);
     setHasSearched(true);
     setIsSearching(true);
-    setSearchExhausted(false);
     setSolutions([]);
     saveHistoryItem(mode);
     const worker = createSearchWorker();
@@ -1896,7 +1910,6 @@ export default function App() {
       }
       if (data.type === "done") {
         if (!receivedAnySolution) setSolutions([]);
-        setSearchExhausted(Boolean(data.completed));
         setIsSearching(false);
         terminateSearchWorker(worker);
         if (workerRef.current === worker) workerRef.current = null;
@@ -2014,10 +2027,7 @@ export default function App() {
       <main className={"workspace" + (showNetInput ? " pattern-mode" : "")}>
         <section className="input-panel">
           <header className="panel-header">
-            <div>
-              <span className="panel-kicker">{ui.input}</span>
-              <h2>{ui.target}</h2>
-            </div>
+            <h2>{ui.target}</h2>
             <div className="segmented-control input-mode-control" role="tablist" aria-label={t.netInput}>
               <button
                 type="button"
@@ -2158,11 +2168,8 @@ export default function App() {
 
         <section className="results-panel" aria-live="polite">
           <header className="results-header">
-            <div>
-              <span className="panel-kicker">{ui.output}</span>
-              <h2>{ui.results}</h2>
-            </div>
-            <span className="result-count">{ui.found(displayedSolutions.length)}</span>
+            <h2>{ui.results}</h2>
+            {hasSearched || isSearching ? <span className="result-count">{ui.found(displayedSolutions.length)}</span> : null}
           </header>
 
           {solutions.length ? (
@@ -2177,9 +2184,6 @@ export default function App() {
           ) : null}
 
           {isSearching ? <ThinkingCard foundCount={displayedSolutions.length} t={t} /> : null}
-          {!isSearching && !error && hasSearched && searchExhausted && solutions.length > 0 ? (
-            <ResultSummaryCard text={typeof t.searchFinished === "function" ? t.searchFinished(displayedSolutions.length) : t.searchFinished} />
-          ) : null}
 
           <div data-testid="solution-list" className="solution-list">
             {displayedSolutions.map((solution) => (
@@ -2194,13 +2198,6 @@ export default function App() {
           </div>
 
           {!isSearching && !error && hasSearched && solutions.length === 0 ? <EmptyCard text={t.noResults} /> : null}
-          {!hasSearched && !isSearching ? (
-            <div className="results-placeholder" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </div>
-          ) : null}
         </section>
       </main>
 
