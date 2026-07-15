@@ -43,6 +43,41 @@ async function expectThreeCanvasPixels(page) {
   expect(stats.bright).toBeGreaterThan(500);
 }
 
+async function expectMobilePresetLayout(page, width) {
+  await page.setViewportSize({ width, height: 844 });
+  await page.goto("/");
+  await page.getByTestId("input-mode-pattern").click();
+
+  const categoryTabs = page.locator('[data-testid^="preset-category-"]');
+  await expect(categoryTabs).toHaveCount(5);
+  const tabBoxes = await categoryTabs.evaluateAll((tabs) => tabs.map((tab) => {
+    const rect = tab.getBoundingClientRect();
+    return { left: rect.left, right: rect.right, top: rect.top };
+  }));
+  expect(Math.max(...tabBoxes.map((box) => box.top)) - Math.min(...tabBoxes.map((box) => box.top))).toBeLessThan(2);
+  expect(Math.min(...tabBoxes.map((box) => box.left))).toBeGreaterThanOrEqual(0);
+  expect(Math.max(...tabBoxes.map((box) => box.right))).toBeLessThanOrEqual(width);
+
+  for (const category of ["OLL", "PLL", "COLL", "ZBLL", "ZBLS"]) {
+    await page.getByTestId(`preset-category-${category}`).click();
+    const panel = page.getByTestId("preset-panel");
+    await expect(panel).toBeVisible();
+    const tile = panel.locator(".preset-tile").first();
+    await expect(tile).toBeVisible();
+    const [panelBox, tileBox] = await Promise.all([panel.boundingBox(), tile.boundingBox()]);
+    expect(panelBox.x).toBeGreaterThanOrEqual(0);
+    expect(panelBox.x + panelBox.width).toBeLessThanOrEqual(width);
+    expect(tileBox.x).toBeGreaterThanOrEqual(panelBox.x);
+    expect(tileBox.x + tileBox.width).toBeLessThanOrEqual(panelBox.x + panelBox.width);
+    expect(tileBox.width).toBeGreaterThanOrEqual(60);
+  }
+
+  await page.getByTestId("zbls-f2l-f2l-1").click();
+  await expect(page.getByTestId("preset-case-zbls-f2l-1-1")).toBeVisible();
+  const horizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(horizontalOverflow).toBeLessThanOrEqual(1);
+}
+
 test("ZBLS preset chooser renders cleanly on desktop and mobile", async ({ page }, testInfo) => {
   const consoleErrors = [];
   page.on("console", (message) => {
@@ -56,6 +91,20 @@ test("ZBLS preset chooser renders cleanly on desktop and mobile", async ({ page 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByTestId("preset-panel")).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("zbls-mobile.png"), fullPage: true });
+
+  expect(consoleErrors).toEqual([]);
+});
+
+test("all preset categories fit 320px and 390px mobile widths", async ({ page }, testInfo) => {
+  const consoleErrors = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+
+  for (const width of [320, 390]) {
+    await expectMobilePresetLayout(page, width);
+    await page.screenshot({ path: testInfo.outputPath(`presets-${width}.png`), fullPage: true });
+  }
 
   expect(consoleErrors).toEqual([]);
 });

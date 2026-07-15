@@ -53,17 +53,21 @@ test("search results show regrip counts and can be sorted by metrics", async ({ 
 
   await expect(page.getByTestId("solution-card").first()).toBeVisible({ timeout: 20000 });
   await expect(page.getByTestId("metric-ease").first()).toContainText(/EASE\s*[0-9]/);
-  await expect(page.getByTestId("metric-effective").first()).toContainText(/STM\s*[0-9]/);
   await expect(page.getByTestId("metric-symbol").first()).toContainText(/HTM\s*[0-9]/);
-  await expect(page.getByTestId("metric-quarter").first()).toContainText(/QTM\s*[0-9]/);
   await expect(page.getByTestId("metric-regrip").first()).toContainText(/リグリップ\s*[0-9—]/);
+  await expect(page.getByTestId("metric-effective")).toHaveCount(0);
+  await expect(page.getByTestId("metric-quarter")).toHaveCount(0);
   await expect(page.getByTestId("solution-list")).not.toHaveClass(/md:grid-cols-2/);
-  await expect(page.getByTestId("sort-effective")).toHaveText("STM");
-  await expect(page.getByTestId("sort-ease")).toHaveText("EASE");
-  await expect(page.getByTestId("sort-symbol")).toHaveText("HTM");
-  await expect(page.getByTestId("sort-quarter")).toHaveText("QTM");
+  await expect(page.getByTestId("solution-sort-select")).toHaveValue("symbol");
+  await expect(page.getByTestId("solution-sort-select").locator("option")).toHaveText(["HTM", "EASE", "リグリップ", "STM", "QTM"]);
   await expect(page.getByRole("button", { name: "保存", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "コピー", exact: true })).toHaveCount(0);
+
+  await page.getByTestId("metric-symbol").first().click();
+  await expect(page.getByTestId("move-count-detail").first()).toContainText("STM");
+  await expect(page.getByTestId("move-count-detail").first()).toContainText("HTM");
+  await expect(page.getByTestId("move-count-detail").first()).toContainText("QTM");
+  await page.getByTestId("metric-symbol").first().click();
 
   await page.getByTestId("metric-regrip").first().click();
   await expect(page.getByTestId("regrip-detail").first()).toBeVisible();
@@ -73,6 +77,8 @@ test("search results show regrip counts and can be sorted by metrics", async ({ 
   await page.getByTestId("metric-ease").first().click();
   await expect(page.getByTestId("ease-detail").first()).toBeVisible();
   await expect(page.getByTestId("ease-feature-sexy").first()).toBeVisible();
+  await expect(page.getByTestId("ease-formula").first()).toContainText("100 - 3 × H + 2 × T - 8 × R");
+  await expect(page.getByTestId("ease-calculation").first()).toContainText("= 96");
   await page.getByTestId("metric-ease").first().click();
 
   await page.getByTestId("filter-auf").selectOption("any");
@@ -93,8 +99,8 @@ test("search results show regrip counts and can be sorted by metrics", async ({ 
   await expect(page.getByRole("status")).toHaveText("コピーしました");
 
   for (const sortKey of ["ease", "symbol", "quarter", "regrip", "effective"]) {
-    await page.getByTestId(`sort-${sortKey}`).click();
-    await expect(page.getByTestId(`sort-${sortKey}`)).toHaveAttribute("aria-pressed", "true");
+    await page.getByTestId("solution-sort-select").selectOption(sortKey);
+    await expect(page.getByTestId("solution-sort-select")).toHaveValue(sortKey);
     await expect(page.getByTestId("solution-card").first()).toBeVisible();
   }
 });

@@ -347,7 +347,7 @@ function readabilityPenalty(moves) {
   return penalty;
 }
 
-const SOLUTION_SORT_KEYS = ["ease", "effective", "symbol", "quarter", "regrip"];
+const SOLUTION_SORT_KEYS = ["symbol", "ease", "regrip", "effective", "quarter"];
 const DEFAULT_SOLUTION_FILTERS = { auf: "all", regrip: "all", ease: "all", feature: "all" };
 const SOLUTION_FILTER_OPTIONS = {
   auf: ["all", "none", "any", "start", "end", "both"],
@@ -503,16 +503,22 @@ const RESULT_ANALYSIS_TEXT = {
     feature: "特徴",
     featureOptions: { all: "すべて", any: "トリガーあり", sexy: "セクシームーブ", sune: "スーン", commutator: "コミュテーター", sledge: "スレッジ" },
     filteredEmpty: "絞り込み条件に一致する手順がありません。",
-    regripTitle: "右親指の移動",
-    regripUnavailable: "この手順は現在の右手リグリップモデルでは解析できません。",
+    regripTitle: "最小リグリップ経路",
+    regripTitles: { right: "右親指の最小経路", left: "左親指の最小経路" },
+    regripUnavailable: "この手順は現在の左右リグリップモデルでは解析できません。",
     start: "開始",
     end: "終了",
     regripAction: "持ち替え",
     physicalAs: "として回す",
     easeTitle: "回しやすさの内訳",
+    moveCountTitle: "手数の内訳",
     easeBands: { excellent: "非常に回しやすい", easy: "回しやすい", average: "標準", difficult: "やや難しい", hard: "難しい" },
     featureNames: { sexy: "セクシームーブ", sune: "スーン", commutator: "コミュテーター", sledge: "スレッジ" },
-    breakdown: { base: "基準", recognition: "認識しやすい形", length: "手順の長さ", halfTurns: "半回転", regrips: "リグリップ", difficultFaces: "F・B・L・持ち替え系" },
+    formula: "EASE = clamp(0, 100, 100 - 3 × H + 2 × T - 8 × R)",
+    formulaLegend: "H = HTM / T = 同値類トリガー手数 / R = リグリップ",
+    formulaRule: "逆手順・鏡手順・側面を替えた同値類もトリガーとして数え、重複する手数は1回だけ数えます。",
+    formulaUnknownRegrip: "リグリップを解析できない手順では、リグリップ項を暫定で0とします。",
+    breakdown: { totalMoves: "HTM", triggerMoves: "同値類トリガー", unrecognizedMoves: "非トリガー", regrips: "リグリップ" },
   },
   en: {
     filters: "Filters",
@@ -526,16 +532,22 @@ const RESULT_ANALYSIS_TEXT = {
     feature: "Feature",
     featureOptions: { all: "All", any: "Any trigger", sexy: "Sexy move", sune: "Sune", commutator: "Commutator", sledge: "Sledge" },
     filteredEmpty: "No algorithms match the current filters.",
-    regripTitle: "Right-thumb path",
-    regripUnavailable: "This algorithm is not supported by the current right-hand regrip model.",
+    regripTitle: "Minimum regrip path",
+    regripTitles: { right: "Minimum right-thumb path", left: "Minimum left-thumb path" },
+    regripUnavailable: "This algorithm is not supported by the current left/right regrip model.",
     start: "Start",
     end: "End",
     regripAction: "Regrip",
     physicalAs: "execute as",
     easeTitle: "Ease breakdown",
+    moveCountTitle: "Move counts",
     easeBands: { excellent: "Very easy", easy: "Easy", average: "Average", difficult: "Difficult", hard: "Hard" },
     featureNames: { sexy: "Sexy move", sune: "Sune", commutator: "Commutator", sledge: "Sledge" },
-    breakdown: { base: "Base", recognition: "Recognizable triggers", length: "Length", halfTurns: "Half turns", regrips: "Regrips", difficultFaces: "F, B, L, slices and rotations" },
+    formula: "EASE = clamp(0, 100, 100 - 3 × H + 2 × T - 8 × R)",
+    formulaLegend: "H = HTM / T = equivalent-trigger moves / R = regrips",
+    formulaRule: "Inverse, mirror and side-rotated equivalents count as triggers; overlapping moves are counted once.",
+    formulaUnknownRegrip: "When regrips cannot be analyzed, the regrip term is provisionally set to 0.",
+    breakdown: { totalMoves: "HTM", triggerMoves: "Equivalent triggers", unrecognizedMoves: "Non-trigger", regrips: "Regrips" },
   },
 };
 const WORKSPACE_TEXT = {
@@ -1364,14 +1376,20 @@ function PatternInputEditor({ pattern, setPattern, selectedColor, setSelectedCol
   );
 }
 function SolutionSortControls({ sortKey, setSortKey, language }) {
+  const label = localizedLabel(SORT_BY_LABEL, language);
   return (
     <div className="solution-sort">
-      <span>{localizedLabel(SORT_BY_LABEL, language)}</span>
-      <div className="sort-options">{SOLUTION_SORT_KEYS.map((key) => (
-        <button key={key} type="button" data-testid={`sort-${key}`} aria-pressed={sortKey === key} onClick={() => setSortKey(key)} className={sortKey === key ? "is-active" : ""}>
-          {localizedLabel(SOLUTION_SORT_LABELS[key], language)}
-        </button>
-      ))}</div>
+      <span>{label}</span>
+      <select
+        data-testid="solution-sort-select"
+        aria-label={label}
+        value={sortKey}
+        onChange={(event) => setSortKey(event.target.value)}
+      >
+        {SOLUTION_SORT_KEYS.map((key) => (
+          <option key={key} value={key}>{localizedLabel(SOLUTION_SORT_LABELS[key], language)}</option>
+        ))}
+      </select>
     </div>
   );
 }
@@ -1443,10 +1461,11 @@ function thumbPositionLabel(thumb, language) {
 function RegripDetail({ analysis, language, id }) {
   const labels = analysisText(language);
   const { regrip } = analysis;
+  const title = labels.regripTitles?.[regrip.hand] || labels.regripTitle;
   if (regrip.count === null) {
     return (
       <section id={id} data-testid="regrip-detail" className="solution-detail">
-        <strong>{labels.regripTitle}</strong>
+        <strong>{title}</strong>
         <p>{labels.regripUnavailable}{regrip.unsupportedMoves.length ? ` (${regrip.unsupportedMoves.join(", ")})` : ""}</p>
       </section>
     );
@@ -1454,7 +1473,7 @@ function RegripDetail({ analysis, language, id }) {
   return (
     <section id={id} data-testid="regrip-detail" className="solution-detail">
       <header className="solution-detail-header">
-        <strong>{labels.regripTitle}</strong>
+        <strong>{title}</strong>
         <span>{language === "ja" ? `${regrip.count}回` : `${regrip.count}`}</span>
       </header>
       <div className="regrip-summary">
@@ -1484,6 +1503,7 @@ function RegripDetail({ analysis, language, id }) {
 }
 function EaseDetail({ analysis, language, id }) {
   const labels = analysisText(language);
+  const { formula } = analysis.ease;
   const featureCounts = analysis.features.reduce((counts, feature) => {
     counts[feature.type] = (counts[feature.type] || 0) + 1;
     return counts;
@@ -1501,13 +1521,40 @@ function EaseDetail({ analysis, language, id }) {
           ))}
         </div>
       ) : null}
+      <code data-testid="ease-formula" className="ease-formula">{labels.formula}</code>
+      <code data-testid="ease-calculation" className="ease-calculation">
+        {`= clamp(0, 100, 100 - 3 × ${formula.totalMoves} + 2 × ${formula.triggerMoves} - 8 × ${formula.regrips}) = ${analysis.ease.score}`}
+      </code>
+      <p className="ease-formula-legend">{labels.formulaLegend}</p>
       <dl className="ease-breakdown">
-        {Object.entries(analysis.ease.components).filter(([, value]) => value !== 0).map(([key, value]) => (
+        {Object.entries({
+          totalMoves: formula.totalMoves,
+          triggerMoves: formula.triggerMoves,
+          unrecognizedMoves: formula.unrecognizedMoves,
+          regrips: formula.regrips,
+        }).map(([key, value]) => (
           <div key={key}>
             <dt>{labels.breakdown[key]}</dt>
-            <dd>{value > 0 && key !== "base" ? "+" : ""}{value}</dd>
+            <dd>{value}</dd>
           </div>
         ))}
+      </dl>
+      <p>{labels.formulaRule}</p>
+      {!formula.regripKnown ? <p>{labels.formulaUnknownRegrip}</p> : null}
+    </section>
+  );
+}
+function MoveCountDetail({ analysis, language, id }) {
+  const labels = analysisText(language);
+  return (
+    <section id={id} data-testid="move-count-detail" className="solution-detail">
+      <header className="solution-detail-header">
+        <strong>{labels.moveCountTitle}</strong>
+      </header>
+      <dl className="ease-breakdown move-count-breakdown">
+        <div><dt>STM</dt><dd>{analysis.metrics.effectiveMoves}</dd></div>
+        <div><dt>HTM</dt><dd>{analysis.metrics.symbolMoves}</dd></div>
+        <div><dt>QTM</dt><dd>{analysis.metrics.quarterTurns}</dd></div>
       </dl>
     </section>
   );
@@ -1542,9 +1589,15 @@ function SolutionCard({ solution, t, language, onCopy }) {
             controls={detailId}
             onClick={() => setDetail((previous) => previous === "ease" ? null : "ease")}
           />
-          <SolutionMetric testId="metric-effective" label="STM" value={analysis.metrics.effectiveMoves} />
-          <SolutionMetric testId="metric-symbol" label="HTM" value={analysis.metrics.symbolMoves} />
-          <SolutionMetric testId="metric-quarter" label="QTM" value={analysis.metrics.quarterTurns} />
+          <SolutionMetric
+            testId="metric-symbol"
+            label="HTM"
+            value={analysis.metrics.symbolMoves}
+            title={labels.moveCountTitle}
+            expanded={detail === "moves"}
+            controls={detailId}
+            onClick={() => setDetail((previous) => previous === "moves" ? null : "moves")}
+          />
           <SolutionMetric
             testId="metric-regrip"
             label={localizedLabel(REGRIP_LABEL, language)}
@@ -1557,6 +1610,7 @@ function SolutionCard({ solution, t, language, onCopy }) {
         </div>
         {detail === "regrip" ? <RegripDetail analysis={analysis} language={language} id={detailId} /> : null}
         {detail === "ease" ? <EaseDetail analysis={analysis} language={language} id={detailId} /> : null}
+        {detail === "moves" ? <MoveCountDetail analysis={analysis} language={language} id={detailId} /> : null}
       </div>
     </article>
   );
@@ -1769,7 +1823,7 @@ export default function App() {
   const [searchMovesText, setSearchMovesText] = useState("");
   const [requiredPartsText, setRequiredPartsText] = useState("");
   const [maxSymbolDepth, setMaxSymbolDepth] = useState(15);
-  const [solutionSortKey, setSolutionSortKey] = useState("effective");
+  const [solutionSortKey, setSolutionSortKey] = useState("symbol");
   const [solutionFilters, setSolutionFilters] = useState(DEFAULT_SOLUTION_FILTERS);
   const [solutions, setSolutions] = useState([]);
   const [error, setError] = useState("");

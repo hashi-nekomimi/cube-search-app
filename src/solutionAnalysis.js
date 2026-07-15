@@ -1,6 +1,8 @@
 const FACE_ORDER = ["U", "R", "F", "D", "L", "B"];
 const PARALLEL_GROUP = { U: "UD", D: "UD", R: "RL", L: "RL", F: "FB", B: "FB" };
 const ACTIVE_REGRIP_THUMBS = [-1, 0, 1];
+const Y_ROTATION_FACE = { U: "U", R: "B", B: "L", L: "F", F: "R", D: "D" };
+const MIRROR_FACE = { U: "U", R: "L", F: "F", D: "D", L: "R", B: "B" };
 
 const REGRIP_SUFFIXES_BY_FACE = {
   R: ["'3", "'2", "'", "", "2", "3"],
@@ -44,6 +46,38 @@ function inverseMove(move) {
 
 function inverseSequence(moves) {
   return [...moves].reverse().map(inverseMove);
+}
+
+function invertTurnSuffix(suffix) {
+  if (suffix === "") return "'";
+  if (suffix === "'") return "";
+  if (suffix === "3") return "'3";
+  if (suffix === "'3") return "3";
+  return suffix;
+}
+
+function transformMove(move, faceMap, invertDirection = false) {
+  const face = move[0];
+  const mappedFace = faceMap[face];
+  if (!mappedFace) return move;
+  const suffix = move.slice(1);
+  return mappedFace + (invertDirection ? invertTurnSuffix(suffix) : suffix);
+}
+
+function mirrorMove(move) {
+  return transformMove(move, MIRROR_FACE, true);
+}
+
+function mirrorSequence(moves) {
+  return moves.map(mirrorMove);
+}
+
+function rotateYSequence(moves, turns) {
+  let rotated = [...moves];
+  for (let turn = 0; turn < turns; turn += 1) {
+    rotated = rotated.map((move) => transformMove(move, Y_ROTATION_FACE));
+  }
+  return rotated;
 }
 
 function splitRegripMove(move) {
@@ -100,12 +134,7 @@ function isBetterRegripPath(candidate, current) {
   return startThumbRank(candidate.startThumb) < startThumbRank(current.startThumb);
 }
 
-export function analyzeRegrips(moves) {
-  const normalized = [...moves];
-  const key = normalized.join(" ");
-  const cacheKey = `regrip:${key}`;
-  if (ANALYSIS_CACHE.has(cacheKey)) return ANALYSIS_CACHE.get(cacheKey);
-
+function analyzeRightHandRegrips(normalized) {
   let states = new Map(ACTIVE_REGRIP_THUMBS.map((thumb) => [thumb, {
     startThumb: thumb,
     thumb,
@@ -145,15 +174,14 @@ export function analyzeRegrips(moves) {
       }
     }
     if (!nextStates.size) {
-      const result = {
+      return {
         count: null,
         startThumb: null,
         endThumb: null,
         steps: [],
         unsupportedMoves: [...new Set(normalized.filter((item) => !REGRIP_SUFFIXES_BY_FACE[item[0]]))],
+        hand: "right",
       };
-      ANALYSIS_CACHE.set(cacheKey, result);
-      return result;
     }
     states = nextStates;
   }
@@ -162,13 +190,50 @@ export function analyzeRegrips(moves) {
   for (const state of states.values()) {
     if (isBetterRegripPath(state, best)) best = state;
   }
-  const result = {
+  return {
     count: best?.count ?? 0,
     startThumb: best?.startThumb ?? 0,
     endThumb: best?.thumb ?? 0,
     steps: best?.steps ?? [],
     unsupportedMoves: [],
+    hand: "right",
+    physicalVariants: best?.physicalVariants ?? 0,
   };
+}
+
+function mirroredRegripResult(moves) {
+  const mirrored = analyzeRightHandRegrips(mirrorSequence(moves));
+  if (mirrored.count === null) return { ...mirrored, hand: "left" };
+  return {
+    ...mirrored,
+    hand: "left",
+    steps: mirrored.steps.map((step, index) => ({
+      ...step,
+      move: moves[index],
+      physicalMove: mirrorMove(step.physicalMove),
+    })),
+  };
+}
+
+function isBetterHandPath(candidate, current) {
+  if (candidate.count === null) return false;
+  if (!current || current.count === null) return true;
+  if (candidate.count !== current.count) return candidate.count < current.count;
+  if (candidate.physicalVariants !== current.physicalVariants) {
+    return candidate.physicalVariants < current.physicalVariants;
+  }
+  return candidate.hand === "right" && current.hand !== "right";
+}
+
+export function analyzeRegrips(moves) {
+  const normalized = [...moves];
+  const key = normalized.join(" ");
+  const cacheKey = `regrip:${key}`;
+  if (ANALYSIS_CACHE.has(cacheKey)) return ANALYSIS_CACHE.get(cacheKey);
+
+  const right = analyzeRightHandRegrips(normalized);
+  const left = mirroredRegripResult(normalized);
+  const result = isBetterHandPath(left, right) ? left : right;
   ANALYSIS_CACHE.set(cacheKey, result);
   return result;
 }
@@ -176,25 +241,28 @@ export function analyzeRegrips(moves) {
 const BASE_FEATURE_SIGNATURES = [
   { type: "sune", variant: "Sune", moves: ["R", "U", "R'", "U", "R", "U2", "R'"] },
   { type: "sune", variant: "Anti-Sune", moves: ["R", "U2", "R'", "U'", "R", "U'", "R'"] },
-  { type: "sune", variant: "Left Sune", moves: ["L'", "U'", "L", "U'", "L'", "U2", "L"] },
-  { type: "sune", variant: "Left Anti-Sune", moves: ["L'", "U2", "L", "U", "L'", "U", "L"] },
   { type: "sexy", variant: "Sexy Move", moves: ["R", "U", "R'", "U'"] },
-  { type: "sexy", variant: "Reverse Sexy", moves: ["R'", "U'", "R", "U"] },
-  { type: "sexy", variant: "Left Sexy", moves: ["L'", "U'", "L", "U"] },
-  { type: "sexy", variant: "Left Reverse Sexy", moves: ["L", "U", "L'", "U'"] },
   { type: "sledge", variant: "Sledgehammer", moves: ["R'", "F", "R", "F'"] },
-  { type: "sledge", variant: "Left Sledgehammer", moves: ["L", "F'", "L'", "F"] },
 ];
 
 function makeFeatureSignatures() {
   const signatures = [];
   const seen = new Set();
   for (const feature of BASE_FEATURE_SIGNATURES) {
-    for (const moves of [feature.moves, inverseSequence(feature.moves)]) {
-      const key = `${feature.type}:${moves.join(" ")}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      signatures.push({ ...feature, moves });
+    for (let yTurns = 0; yTurns < 4; yTurns += 1) {
+      const rotated = rotateYSequence(feature.moves, yTurns);
+      for (const [mirrored, oriented] of [[false, rotated], [true, mirrorSequence(rotated)]]) {
+        for (const [inverted, moves] of [[false, oriented], [true, inverseSequence(oriented)]]) {
+          const key = `${feature.type}:${moves.join(" ")}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          signatures.push({
+            ...feature,
+            variant: `${feature.variant}${mirrored ? " / mirror" : ""}${inverted ? " / inverse" : ""}`,
+            moves,
+          });
+        }
+      }
     }
   }
   return signatures.sort((a, b) => b.moves.length - a.moves.length);
@@ -233,8 +301,8 @@ function findCommutators(moves, namedFeatures) {
   const seenRanges = new Set(namedFeatures.map((feature) => `${feature.start}:${feature.end}`));
   for (let start = 0; start < moves.length; start += 1) {
     let best = null;
-    for (let aLength = 1; aLength <= 4; aLength += 1) {
-      for (let bLength = 1; bLength <= 4; bLength += 1) {
+    for (let aLength = 1; start + (aLength + 1) * 2 <= moves.length; aLength += 1) {
+      for (let bLength = 1; start + (aLength + bLength) * 2 <= moves.length; bLength += 1) {
         const end = start + (aLength + bLength) * 2;
         if (end > moves.length || seenRanges.has(`${start}:${end}`)) continue;
         const a = moves.slice(start, start + aLength);
@@ -283,14 +351,6 @@ function calculateMetrics(moves) {
   };
 }
 
-function moveDifficultyPenalty(move) {
-  const face = move[0];
-  if ("xyz".includes(face)) return 4.5;
-  if ("MES".includes(face)) return 2.4;
-  if (face === face.toLowerCase() && "urfdlb".includes(face)) return 1.8;
-  return { B: 1.5, L: 0.9, F: 0.65, D: 0.35 }[face] || 0;
-}
-
 function detectAuf(moves, features) {
   const covered = new Set();
   for (const feature of features) {
@@ -311,31 +371,24 @@ function analyzeEase(moves, metrics, regrip, features) {
     for (let index = feature.start; index < feature.end; index += 1) coveredMoves.add(index);
   }
 
-  const lengthPenalty = Math.max(0, metrics.effectiveMoves - 6) * 1.35;
-  const halfTurnPenalty = Math.max(0, metrics.quarterTurns - metrics.symbolMoves) * 0.45;
-  const regripPenalty = regrip.count === null ? 8 : regrip.count * 8.5;
-  const facePenalty = moves.reduce((total, move) => total + moveDifficultyPenalty(move), 0);
-  const coverageBonus = metrics.symbolMoves ? (coveredMoves.size / metrics.symbolMoves) * 12 : 0;
-  const typeBonus = (featureTypes.has("sune") ? 6 : 0)
-    + (featureTypes.has("commutator") ? 5 : 0)
-    + (featureTypes.has("sexy") ? 3 : 0)
-    + (featureTypes.has("sledge") ? 2 : 0);
-  const recognitionBonus = Math.min(18, coverageBonus + typeBonus);
-  const rawScore = 88 + recognitionBonus - lengthPenalty - halfTurnPenalty - regripPenalty - facePenalty;
-  const score = Math.max(0, Math.min(100, Math.round(rawScore)));
+  const totalMoves = metrics.symbolMoves;
+  const triggerMoves = coveredMoves.size;
+  const unrecognizedMoves = Math.max(0, totalMoves - triggerMoves);
+  const regrips = regrip.count ?? 0;
+  const rawScore = 100 - 3 * totalMoves + 2 * triggerMoves - 8 * regrips;
+  const score = Math.max(0, Math.min(100, rawScore));
   const band = score >= 90 ? "excellent" : score >= 78 ? "easy" : score >= 65 ? "average" : score >= 50 ? "difficult" : "hard";
 
   return {
     score,
     band,
     featureTypes: [...featureTypes],
-    components: {
-      base: 88,
-      recognition: Math.round(recognitionBonus),
-      length: -Math.round(lengthPenalty),
-      halfTurns: -Math.round(halfTurnPenalty),
-      regrips: -Math.round(regripPenalty),
-      difficultFaces: -Math.round(facePenalty),
+    formula: {
+      totalMoves,
+      triggerMoves,
+      unrecognizedMoves,
+      regrips,
+      regripKnown: regrip.count !== null,
     },
   };
 }

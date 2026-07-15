@@ -1,7 +1,6 @@
 import { expect, test } from "@playwright/test";
 import {
   analyzeSolutionMoves,
-  detectAlgorithmFeatures,
   matchesSolutionFilters,
 } from "../../src/solutionAnalysis.js";
 
@@ -11,16 +10,36 @@ function moves(algorithm) {
 
 test("ease scoring rewards recognizable triggers", () => {
   const sexy = analyzeSolutionMoves(moves("R U R' U'"));
-  const awkward = analyzeSolutionMoves(moves("B D2 F' L"));
+  const plain = analyzeSolutionMoves(moves("R U R U"));
 
   expect(sexy.features.some((feature) => feature.type === "sexy")).toBe(true);
-  expect(sexy.ease.score).toBeGreaterThan(awkward.ease.score);
-  expect(sexy.ease.score).toBeGreaterThanOrEqual(90);
+  expect(sexy.ease.formula).toEqual({
+    totalMoves: 4,
+    triggerMoves: 4,
+    unrecognizedMoves: 0,
+    regrips: 0,
+    regripKnown: true,
+  });
+  expect(sexy.ease.score).toBe(96);
+  expect(plain.ease.score).toBe(88);
 });
 
-test("Sune and commutator structures are recognized", () => {
-  expect(detectAlgorithmFeatures(moves("R U R' U R U2 R'")).some((feature) => feature.type === "sune")).toBe(true);
-  expect(detectAlgorithmFeatures(moves("R D R' D'")).some((feature) => feature.type === "commutator")).toBe(true);
+test("inverse, mirror and side-rotated trigger equivalents receive the same credit", () => {
+  const equivalentClasses = [
+    { type: "sexy", algorithms: ["R U R' U'", "U R U' R'", "L' U' L U", "B U B' U'"] },
+    { type: "sune", algorithms: ["R U R' U R U2 R'", "R U2 R' U' R U' R'", "L' U' L U' L' U2 L", "B U B' U B U2 B'"] },
+    { type: "sledge", algorithms: ["R' F R F'", "F R' F' R", "L F' L' F", "B' R B R'"] },
+    { type: "commutator", algorithms: ["R D R' D'", "D R D' R'", "L' D' L D", "B D B' D'", "R U R' U' R D R' U R U' R' D'"] },
+  ];
+
+  for (const equivalentClass of equivalentClasses) {
+    for (const algorithm of equivalentClass.algorithms) {
+      const analysis = analyzeSolutionMoves(moves(algorithm));
+      expect(analysis.features.some((feature) => feature.type === equivalentClass.type), algorithm).toBe(true);
+      expect(analysis.ease.formula.triggerMoves, algorithm).toBe(analysis.metrics.symbolMoves);
+      expect(analysis.ease.score, algorithm).toBe(100 - analysis.metrics.symbolMoves - 8 * analysis.ease.formula.regrips);
+    }
+  }
 });
 
 test("regrip analysis reconstructs a concrete minimum path", () => {
@@ -30,6 +49,16 @@ test("regrip analysis reconstructs a concrete minimum path", () => {
   expect(analysis.regrip.steps).toHaveLength(5);
   expect(analysis.regrip.steps.some((step) => step.regripFrom !== null)).toBe(true);
   expect(analysis.regrip.steps.every((step) => Number.isInteger(step.beforeThumb) && Number.isInteger(step.afterThumb))).toBe(true);
+});
+
+test("mirrored algorithms use the equivalent left-thumb path", () => {
+  const right = analyzeSolutionMoves(moves("R U R' U'"));
+  const left = analyzeSolutionMoves(moves("L' U' L U"));
+
+  expect(right.regrip.hand).toBe("right");
+  expect(left.regrip.hand).toBe("left");
+  expect(left.regrip.count).toBe(right.regrip.count);
+  expect(left.regrip.steps.map((step) => step.move)).toEqual(moves("L' U' L U"));
 });
 
 test("AUF filters ignore a U move that belongs to a recognized trigger", () => {
