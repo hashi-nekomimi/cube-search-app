@@ -160,7 +160,7 @@ test("nested preset icons and applied nets use the generated color arrays", asyn
   await expectNetState(page, zbls.state);
 });
 
-test("dark-only pattern input supports two-axis rotation, bottom reset, and cube clicking", async ({ page }) => {
+test("dark-only pattern input supports independent azimuth-elevation orbit, bottom reset, and cube clicking", async ({ page }) => {
   await openNetInput(page);
   await expect(page.locator(".dark-mode")).toHaveCount(1);
 
@@ -176,14 +176,23 @@ test("dark-only pattern input supports two-axis rotation, bottom reset, and cube
   await expect(page.getByTestId("cube-editor")).toBeVisible();
   const cubeCanvas = page.getByTestId("cube-canvas");
   await expect(cubeCanvas).toBeVisible();
-  await expect(cubeCanvas).toHaveAttribute("data-interaction", "yaw-pitch");
+  await expect(cubeCanvas).toHaveAttribute("data-interaction", "azimuth-elevation");
+  await expect(cubeCanvas).toHaveAttribute("data-cube-rotation", "fixed");
   const initialBox = await cubeCanvas.boundingBox();
   await page.mouse.move(initialBox.x + initialBox.width * 0.5, initialBox.y + initialBox.height * 0.5);
   await page.mouse.down();
+  await page.mouse.move(initialBox.x + initialBox.width * 0.65, initialBox.y + initialBox.height * 0.5, { steps: 4 });
+  await page.mouse.up();
+  await expect(cubeCanvas).not.toHaveAttribute("data-azimuth", "0.0000");
+  await expect(cubeCanvas).toHaveAttribute("data-elevation", "0.0000");
+  const horizontalAzimuth = await cubeCanvas.getAttribute("data-azimuth");
+
+  await page.mouse.move(initialBox.x + initialBox.width * 0.65, initialBox.y + initialBox.height * 0.5);
+  await page.mouse.down();
   await page.mouse.move(initialBox.x + initialBox.width * 0.65, initialBox.y + initialBox.height * 0.6, { steps: 4 });
   await page.mouse.up();
-  await expect(cubeCanvas).not.toHaveAttribute("data-yaw", "0.0000");
-  await expect(cubeCanvas).not.toHaveAttribute("data-pitch", "0.0000");
+  await expect(cubeCanvas).toHaveAttribute("data-azimuth", horizontalAzimuth);
+  await expect(cubeCanvas).not.toHaveAttribute("data-elevation", "0.0000");
   await expect(cubeCanvas).toHaveAttribute("data-roll", "0.0000");
 
   await expect(page.getByTestId("bottom-color-D")).toHaveAttribute("aria-pressed", "true");
@@ -191,8 +200,8 @@ test("dark-only pattern input supports two-axis rotation, bottom reset, and cube
   await expect(page.getByTestId("bottom-color-U")).toHaveAttribute("aria-pressed", "true");
   await expect(cubeCanvas).toHaveAttribute("data-animating", "true");
   await expect(cubeCanvas).toHaveAttribute("data-animating", "false", { timeout: 1500 });
-  await expect(cubeCanvas).toHaveAttribute("data-yaw", "0.0000");
-  await expect(cubeCanvas).toHaveAttribute("data-pitch", "0.0000");
+  await expect(cubeCanvas).toHaveAttribute("data-azimuth", "0.0000");
+  await expect(cubeCanvas).toHaveAttribute("data-elevation", "0.0000");
   await page.getByTestId("pattern-editor-net").click();
   await expect(page.getByTestId("net-D-4")).toHaveAttribute("data-display-color", "U");
   await expect(page.getByTestId("net-U-4")).toHaveAttribute("data-display-color", "D");

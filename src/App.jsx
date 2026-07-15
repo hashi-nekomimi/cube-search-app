@@ -1088,12 +1088,13 @@ function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor }) {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.domElement.setAttribute("data-testid", "cube-canvas");
     renderer.domElement.setAttribute("data-projection", "isometric");
-    renderer.domElement.setAttribute("data-interaction", "yaw-pitch");
+    renderer.domElement.setAttribute("data-interaction", "azimuth-elevation");
+    renderer.domElement.setAttribute("data-cube-rotation", "fixed");
     renderer.domElement.dataset.animating = "false";
+    renderer.domElement.dataset.azimuth = "0.0000";
     renderer.domElement.dataset.dragging = "false";
-    renderer.domElement.dataset.pitch = "0.0000";
+    renderer.domElement.dataset.elevation = "0.0000";
     renderer.domElement.dataset.roll = "0.0000";
-    renderer.domElement.dataset.yaw = "0.0000";
     renderer.domElement.style.display = "block";
     renderer.domElement.style.height = "100%";
     renderer.domElement.style.touchAction = "none";
@@ -1136,9 +1137,21 @@ function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor }) {
 
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
-    const view = { pitch: 0, yaw: 0 };
-    const drag = { active: false, moved: false, pointerId: null, startPitch: 0, startX: 0, startY: 0, startYaw: 0 };
-    const maxPitch = Math.PI * 0.49;
+    const orbitRadius = Math.sqrt(108);
+    const defaultAzimuth = Math.PI / 4;
+    const defaultElevation = Math.atan(1 / Math.sqrt(2));
+    const minElevation = -Math.PI / 2 + 0.08;
+    const maxElevation = Math.PI / 2 - 0.08;
+    const view = { azimuth: 0, elevation: 0 };
+    const drag = {
+      active: false,
+      moved: false,
+      pointerId: null,
+      startAzimuth: 0,
+      startElevation: 0,
+      startX: 0,
+      startY: 0,
+    };
     let animationFrame = 0;
 
     function render() {
@@ -1149,11 +1162,26 @@ function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor }) {
       return Math.atan2(Math.sin(angle), Math.cos(angle));
     }
 
+    function clampElevation(elevation) {
+      const absoluteElevation = defaultElevation + elevation;
+      return Math.max(minElevation, Math.min(maxElevation, absoluteElevation)) - defaultElevation;
+    }
+
     function applyView() {
-      group.rotation.set(view.pitch, view.yaw, 0, "YXZ");
-      renderer.domElement.dataset.pitch = view.pitch.toFixed(4);
+      const azimuth = defaultAzimuth + view.azimuth;
+      const elevation = defaultElevation + view.elevation;
+      const horizontalRadius = orbitRadius * Math.cos(elevation);
+      camera.position.set(
+        horizontalRadius * Math.sin(azimuth),
+        orbitRadius * Math.sin(elevation),
+        horizontalRadius * Math.cos(azimuth),
+      );
+      camera.up.set(0, 1, 0);
+      camera.lookAt(0, 0, 0);
+      camera.updateMatrixWorld();
+      renderer.domElement.dataset.azimuth = view.azimuth.toFixed(4);
+      renderer.domElement.dataset.elevation = view.elevation.toFixed(4);
       renderer.domElement.dataset.roll = "0.0000";
-      renderer.domElement.dataset.yaw = view.yaw.toFixed(4);
       render();
     }
 
@@ -1194,36 +1222,36 @@ function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor }) {
       stopAnimation();
       bottomColorRef.current = nextBottom;
       paintStickerColors();
-      const startPitch = view.pitch;
-      const startYaw = normalizeAngle(view.yaw);
+      const startAzimuth = normalizeAngle(view.azimuth);
+      const startElevation = view.elevation;
       const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
       if (reducedMotion) {
-        view.pitch = 0;
-        view.yaw = 0;
+        view.azimuth = 0;
+        view.elevation = 0;
         applyView();
         return;
       }
 
       const startedAt = performance.now();
       const duration = 420;
-      const hasManualRotation = Math.abs(startPitch) + Math.abs(startYaw) > 0.001;
+      const hasManualRotation = Math.abs(startAzimuth) + Math.abs(startElevation) > 0.001;
       const direction = FACE_ORDER.indexOf(nextBottom) >= FACE_ORDER.indexOf(previousBottom) ? 1 : -1;
-      const cuePitch = hasManualRotation ? 0 : -0.1;
-      const cueYaw = hasManualRotation ? 0 : direction * 0.24;
+      const cueAzimuth = hasManualRotation ? 0 : direction * 0.24;
+      const cueElevation = hasManualRotation ? 0 : -0.1;
       renderer.domElement.dataset.animating = "true";
       function animate(now) {
         const progress = Math.min(1, (now - startedAt) / duration);
         const eased = 1 - Math.pow(1 - progress, 3);
         const cue = Math.sin(Math.PI * progress);
-        view.pitch = startPitch * (1 - eased) + cuePitch * cue;
-        view.yaw = startYaw * (1 - eased) + cueYaw * cue;
+        view.azimuth = startAzimuth * (1 - eased) + cueAzimuth * cue;
+        view.elevation = clampElevation(startElevation * (1 - eased) + cueElevation * cue);
         applyView();
         if (progress < 1) {
           animationFrame = requestAnimationFrame(animate);
           return;
         }
-        view.pitch = 0;
-        view.yaw = 0;
+        view.azimuth = 0;
+        view.elevation = 0;
         animationFrame = 0;
         renderer.domElement.dataset.animating = "false";
         applyView();
@@ -1276,10 +1304,10 @@ function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor }) {
       drag.active = true;
       drag.moved = false;
       drag.pointerId = event.pointerId;
-      drag.startPitch = view.pitch;
+      drag.startAzimuth = view.azimuth;
+      drag.startElevation = view.elevation;
       drag.startX = event.clientX;
       drag.startY = event.clientY;
-      drag.startYaw = view.yaw;
       renderer.domElement.dataset.dragging = "true";
       renderer.domElement.setPointerCapture(event.pointerId);
     }
@@ -1290,8 +1318,8 @@ function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor }) {
       const dy = event.clientY - drag.startY;
       if (Math.hypot(dx, dy) > 3) drag.moved = true;
       if (!drag.moved) return;
-      view.yaw = drag.startYaw + dx * 0.009;
-      view.pitch = Math.max(-maxPitch, Math.min(maxPitch, drag.startPitch + dy * 0.009));
+      view.azimuth = drag.startAzimuth - dx * 0.009;
+      view.elevation = clampElevation(drag.startElevation + dy * 0.009);
       applyView();
     }
 
@@ -1302,7 +1330,7 @@ function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor }) {
       }
       if (pick && !drag.moved) pickSticker(event);
       if (drag.moved) {
-        view.yaw = normalizeAngle(view.yaw);
+        view.azimuth = normalizeAngle(view.azimuth);
         applyView();
       }
       drag.active = false;
