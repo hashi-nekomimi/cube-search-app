@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import {
   COLL_PRESET_DATA,
@@ -6,6 +6,7 @@ import {
   ZBLS_F2L_PRESET_DATA,
   ZBLS_PRESET_DATA,
 } from "./presetData.generated.js";
+import { analyzeSolutionMoves, matchesSolutionFilters } from "./solutionAnalysis.js";
 import "./App.css";
 
 const FACE_ORDER = ["U", "R", "F", "D", "L", "B"];
@@ -335,29 +336,6 @@ function cleanMoves(moves) {
   }
 }
 
-function symbolMoveCount(moves) {
-  return cleanMoves(moves).length;
-}
-
-function quarterTurnCount(moves) {
-  return cleanMoves(moves).reduce((acc, move) => acc + (move.endsWith("2") ? 2 : 1), 0);
-}
-
-function effectiveMoveCount(moves) {
-  const cleaned = cleanMoves(moves);
-  let count = 0;
-  for (let i = 0; i < cleaned.length;) {
-    if (i + 1 < cleaned.length && isParallelPair(cleaned[i], cleaned[i + 1])) {
-      count += 1;
-      i += 2;
-    } else {
-      count += 1;
-      i += 1;
-    }
-  }
-  return count;
-}
-
 function readabilityPenalty(moves) {
   const cleaned = cleanMoves(moves);
   let penalty = 0;
@@ -369,157 +347,32 @@ function readabilityPenalty(moves) {
   return penalty;
 }
 
-const REGRIP_SUFFIXES_BY_FACE = {
-  R: ["'3", "'2", "'", "", "2", "3"],
-  U: ["'2", "'", "", "2"],
-  D: ["'2", "'", "", "2"],
-  F: ["'", "", "2"],
-  B: ["'", "", "2"],
+const SOLUTION_SORT_KEYS = ["ease", "effective", "symbol", "quarter", "regrip"];
+const DEFAULT_SOLUTION_FILTERS = { auf: "all", regrip: "all", ease: "all", feature: "all" };
+const SOLUTION_FILTER_OPTIONS = {
+  auf: ["all", "none", "any", "start", "end", "both"],
+  regrip: ["all", "0", "1", "2", "known"],
+  ease: ["all", "90", "78", "65"],
+  feature: ["all", "any", "sexy", "sune", "commutator", "sledge"],
 };
-const REGRIP_ALLOWED = {
-  "-2": {
-    R: { "'3": false, "'2": false, "'": false, "": true, 2: true, 3: true },
-    U: { "'2": true, "'": true, "": true, 2: false },
-    D: { "'2": false, "'": true, "": true, 2: true },
-    F: { "'": false, "": false, 2: false },
-    B: { "'": false, "": false, 2: false },
-  },
-  "-1": {
-    R: { "'3": false, "'2": false, "'": true, "": true, 2: true, 3: true },
-    U: { "'2": true, "'": true, "": true, 2: false },
-    D: { "'2": false, "'": true, "": true, 2: true },
-    F: { "'": true, "": true, 2: true },
-    B: { "'": true, "": true, 2: true },
-  },
-  0: {
-    R: { "'3": false, "'2": true, "'": true, "": true, 2: true, 3: false },
-    U: { "'2": true, "'": true, "": true, 2: true },
-    D: { "'2": true, "'": true, "": true, 2: true },
-    F: { "'": false, "": false, 2: false },
-    B: { "'": false, "": false, 2: false },
-  },
-  1: {
-    R: { "'3": true, "'2": true, "'": true, "": true, 2: false, 3: false },
-    U: { "'2": true, "'": true, "": true, 2: false },
-    D: { "'2": false, "'": true, "": true, 2: true },
-    F: { "'": true, "": true, 2: true },
-    B: { "'": true, "": true, 2: true },
-  },
-  2: {
-    R: { "'3": true, "'2": true, "'": true, "": false, 2: false, 3: false },
-    U: { "'2": true, "'": true, "": true, 2: false },
-    D: { "'2": false, "'": true, "": true, 2: true },
-    F: { "'": false, "": false, 2: false },
-    B: { "'": false, "": false, 2: false },
-  },
-};
-const REGRIP_COUNT_CACHE = new Map();
-const SOLUTION_SORT_KEYS = ["effective", "symbol", "quarter", "regrip"];
 
-function activeRegripThumbs(useBThumb = false) {
-  return useBThumb ? [-2, -1, 0, 1, 2] : [-1, 0, 1];
-}
-
-function splitRegripMove(move) {
-  const face = move[0];
-  const suffix = move.slice(1);
-  if (!FACE_ORDER.includes(face)) return null;
-  if (!["", "'", "2", "'2", "3", "'3"].includes(suffix)) return null;
-  return [face, suffix];
-}
-
-function equivalentPhysicalSuffixes(face, suffix) {
-  if (face === "R") {
-    if (suffix === "" || suffix === "'3") return ["", "'3"];
-    if (suffix === "'" || suffix === "3") return ["'", "3"];
-    if (suffix === "2" || suffix === "'2") return suffix === "2" ? ["2", "'2"] : ["'2", "2"];
-  }
-  if ((face === "U" || face === "D") && (suffix === "2" || suffix === "'2")) {
-    return suffix === "2" ? ["2", "'2"] : ["'2", "2"];
-  }
-  return [suffix];
-}
-
-function choosePhysicalMoveForRegrip(move, thumb) {
-  const parts = splitRegripMove(move);
-  if (!parts) return null;
-  const [face, suffix] = parts;
-  const suffixes = REGRIP_SUFFIXES_BY_FACE[face];
-  const allowedForThumb = REGRIP_ALLOWED[thumb]?.[face];
-  if (!suffixes || !allowedForThumb) return null;
-  for (const physicalSuffix of equivalentPhysicalSuffixes(face, suffix)) {
-    if (suffixes.includes(physicalSuffix) && allowedForThumb[physicalSuffix]) return face + physicalSuffix;
-  }
-  return null;
-}
-
-function nextRegripThumb(move, thumb) {
-  const physicalMove = choosePhysicalMoveForRegrip(move, thumb);
-  if (!physicalMove) return null;
-  const [face, suffix] = splitRegripMove(physicalMove);
-  if (face !== "R") return thumb;
-  const delta = { "'3": -3, "'2": -2, "'": -1, "": 1, 2: 2, 3: 3 }[suffix];
-  const next = thumb + delta;
-  return REGRIP_ALLOWED[next] ? next : null;
-}
-
-function countRegripsFromStart(moves, startThumb, useBThumb = false) {
-  const activeThumbs = activeRegripThumbs(useBThumb);
-  let states = new Map([[startThumb, 0]]);
-  for (const move of moves) {
-    const nextStates = new Map();
-    for (const [thumb, cost] of states) {
-      const nextThumb = nextRegripThumb(move, thumb);
-      if (nextThumb !== null && activeThumbs.includes(nextThumb)) {
-        const oldCost = nextStates.get(nextThumb);
-        if (oldCost === undefined || cost < oldCost) nextStates.set(nextThumb, cost);
-        continue;
-      }
-      for (const regrippedThumb of activeThumbs) {
-        if (regrippedThumb === thumb) continue;
-        const nextAfterRegrip = nextRegripThumb(move, regrippedThumb);
-        if (nextAfterRegrip === null || !activeThumbs.includes(nextAfterRegrip)) continue;
-        const newCost = cost + 1;
-        const oldCost = nextStates.get(nextAfterRegrip);
-        if (oldCost === undefined || newCost < oldCost) nextStates.set(nextAfterRegrip, newCost);
-      }
-    }
-    if (!nextStates.size) return null;
-    states = nextStates;
-  }
-  return Math.min(...states.values());
-}
-
-function regripCount(moves) {
-  const cleaned = cleanMoves(moves);
-  const key = algToString(cleaned);
-  if (REGRIP_COUNT_CACHE.has(key)) return REGRIP_COUNT_CACHE.get(key);
-  let best = Infinity;
-  for (const startThumb of activeRegripThumbs(false)) {
-    const count = countRegripsFromStart(cleaned, startThumb, false);
-    if (count !== null) best = Math.min(best, count);
-  }
-  const result = Number.isFinite(best) ? best : null;
-  REGRIP_COUNT_CACHE.set(key, result);
-  return result;
-}
-
-function regripSortValue(moves) {
-  const count = regripCount(moves);
-  return count === null ? Number.POSITIVE_INFINITY : count;
+function solutionAnalysis(solution) {
+  return analyzeSolutionMoves(cleanMoves(solution));
 }
 
 function solutionMetricValue(solution, sortKey) {
-  if (sortKey === "symbol") return symbolMoveCount(solution);
-  if (sortKey === "quarter") return quarterTurnCount(solution);
-  if (sortKey === "regrip") return regripSortValue(solution);
-  return effectiveMoveCount(solution);
+  const analysis = solutionAnalysis(solution);
+  if (sortKey === "ease") return -analysis.ease.score;
+  if (sortKey === "symbol") return analysis.metrics.symbolMoves;
+  if (sortKey === "quarter") return analysis.metrics.quarterTurns;
+  if (sortKey === "regrip") return analysis.regrip.count ?? Number.POSITIVE_INFINITY;
+  return analysis.metrics.effectiveMoves;
 }
 
 function compareSolutions(a, b, sortKey = "effective") {
-  const fallbackKeys = sortKey === "regrip"
-    ? ["regrip", "effective", "symbol", "quarter"]
-    : [sortKey, "regrip", "effective", "symbol", "quarter"];
+  const fallbackKeys = sortKey === "ease"
+    ? ["ease", "regrip", "effective", "symbol", "quarter"]
+    : [sortKey, "regrip", "ease", "effective", "symbol", "quarter"];
   const seen = new Set();
   for (const key of fallbackKeys) {
     if (seen.has(key)) continue;
@@ -631,10 +484,59 @@ const TEXT = {
 const SORT_BY_LABEL = { ja: "並び順", en: "Sort", ur: "Sort", ko: "정렬", hi: "Sort", ar: "Sort" };
 const REGRIP_LABEL = { ja: "リグリップ", en: "Regrips", ur: "Regrips", ko: "리그립", hi: "Regrips", ar: "Regrips" };
 const SOLUTION_SORT_LABELS = {
+  ease: { ja: "EASE", en: "EASE", ur: "EASE", ko: "EASE", hi: "EASE", ar: "EASE" },
   effective: { ja: "STM", en: "STM", ur: "STM", ko: "STM", hi: "STM", ar: "STM" },
   symbol: { ja: "HTM", en: "HTM", ur: "HTM", ko: "HTM", hi: "HTM", ar: "HTM" },
   quarter: { ja: "QTM", en: "QTM", ur: "QTM", ko: "QTM", hi: "QTM", ar: "QTM" },
   regrip: { ja: "リグリップ", en: "Regrips", ur: "Regrips", ko: "리그립", hi: "Regrips", ar: "Regrips" },
+};
+const RESULT_ANALYSIS_TEXT = {
+  ja: {
+    filters: "絞り込み",
+    reset: "リセット",
+    auf: "AUF",
+    aufOptions: { all: "すべて", none: "なし", any: "あり", start: "先頭のみ", end: "末尾のみ", both: "両端" },
+    regrip: "リグリップ",
+    regripOptions: { all: "すべて", 0: "0回", 1: "1回以下", 2: "2回以下", known: "解析可能" },
+    ease: "回しやすさ",
+    easeOptions: { all: "すべて", 90: "90以上", 78: "78以上", 65: "65以上" },
+    feature: "特徴",
+    featureOptions: { all: "すべて", any: "トリガーあり", sexy: "セクシームーブ", sune: "スーン", commutator: "コミュテーター", sledge: "スレッジ" },
+    filteredEmpty: "絞り込み条件に一致する手順がありません。",
+    regripTitle: "右親指の移動",
+    regripUnavailable: "この手順は現在の右手リグリップモデルでは解析できません。",
+    start: "開始",
+    end: "終了",
+    regripAction: "持ち替え",
+    physicalAs: "として回す",
+    easeTitle: "回しやすさの内訳",
+    easeBands: { excellent: "非常に回しやすい", easy: "回しやすい", average: "標準", difficult: "やや難しい", hard: "難しい" },
+    featureNames: { sexy: "セクシームーブ", sune: "スーン", commutator: "コミュテーター", sledge: "スレッジ" },
+    breakdown: { base: "基準", recognition: "認識しやすい形", length: "手順の長さ", halfTurns: "半回転", regrips: "リグリップ", difficultFaces: "F・B・L・持ち替え系" },
+  },
+  en: {
+    filters: "Filters",
+    reset: "Reset",
+    auf: "AUF",
+    aufOptions: { all: "All", none: "None", any: "Any", start: "Start only", end: "End only", both: "Both ends" },
+    regrip: "Regrips",
+    regripOptions: { all: "All", 0: "0", 1: "1 or less", 2: "2 or less", known: "Analyzed" },
+    ease: "Ease",
+    easeOptions: { all: "All", 90: "90+", 78: "78+", 65: "65+" },
+    feature: "Feature",
+    featureOptions: { all: "All", any: "Any trigger", sexy: "Sexy move", sune: "Sune", commutator: "Commutator", sledge: "Sledge" },
+    filteredEmpty: "No algorithms match the current filters.",
+    regripTitle: "Right-thumb path",
+    regripUnavailable: "This algorithm is not supported by the current right-hand regrip model.",
+    start: "Start",
+    end: "End",
+    regripAction: "Regrip",
+    physicalAs: "execute as",
+    easeTitle: "Ease breakdown",
+    easeBands: { excellent: "Very easy", easy: "Easy", average: "Average", difficult: "Difficult", hard: "Hard" },
+    featureNames: { sexy: "Sexy move", sune: "Sune", commutator: "Commutator", sledge: "Sledge" },
+    breakdown: { base: "Base", recognition: "Recognizable triggers", length: "Length", halfTurns: "Half turns", regrips: "Regrips", difficultFaces: "F, B, L, slices and rotations" },
+  },
 };
 const WORKSPACE_TEXT = {
   ja: { target: "探索対象", conditions: "探索条件", results: "探索結果", input: "入力", output: "出力", stickerColor: "ステッカー", bottomColor: "底面色", found: (n) => `${n}件` },
@@ -712,8 +614,9 @@ function patternFromPresetState(state) {
 
 function collPreviewPattern(pattern) {
   const preview = clonePattern(pattern);
-  for (const index of [1, 3, 5, 7]) preview.U[index] = DONT_CARE;
-  for (const face of ["B", "L", "F", "R"]) preview[face][1] = DONT_CARE;
+  for (const [face, index] of [["U", 1], ["U", 3], ["U", 5], ["U", 7], ["B", 1], ["L", 1], ["F", 1], ["R", 1]]) {
+    preview[face][index] = preview[face][index] === "U" ? "U" : DONT_CARE;
+  }
   return preview;
 }
 
@@ -1472,17 +1375,149 @@ function SolutionSortControls({ sortKey, setSortKey, language }) {
     </div>
   );
 }
-function SolutionMetric({ testId, label, value }) {
+function analysisText(language) {
+  return RESULT_ANALYSIS_TEXT[language] || RESULT_ANALYSIS_TEXT.en;
+}
+function SolutionFilterControls({ filters, setFilters, language }) {
+  const labels = analysisText(language);
+  const activeCount = Object.entries(filters).filter(([key, value]) => value !== DEFAULT_SOLUTION_FILTERS[key]).length;
+  function updateFilter(key, value) {
+    setFilters((previous) => ({ ...previous, [key]: value }));
+  }
   return (
-    <div data-testid={testId} className="solution-metric">
-      <span>{label}</span>
-      <strong>{value}</strong>
+    <div data-testid="solution-filters" className="solution-filters">
+      <span className="solution-filter-heading">{labels.filters}{activeCount ? ` ${activeCount}` : ""}</span>
+      <div className="solution-filter-fields">
+        {Object.keys(SOLUTION_FILTER_OPTIONS).map((key) => (
+          <label key={key} className="solution-filter-field">
+            <span>{labels[key]}</span>
+            <select
+              data-testid={`filter-${key}`}
+              aria-label={`${labels.filters}: ${labels[key]}`}
+              value={filters[key]}
+              onChange={(event) => updateFilter(key, event.target.value)}
+            >
+              {SOLUTION_FILTER_OPTIONS[key].map((value) => (
+                <option key={value} value={value}>{labels[`${key}Options`][value]}</option>
+              ))}
+            </select>
+          </label>
+        ))}
+        {activeCount ? (
+          <button type="button" data-testid="filter-reset" className="solution-filter-reset" onClick={() => setFilters(DEFAULT_SOLUTION_FILTERS)}>
+            {labels.reset}
+          </button>
+        ) : null}
+      </div>
     </div>
+  );
+}
+function SolutionMetric({ testId, label, value, onClick, expanded = false, controls, title, className = "" }) {
+  const content = <><span>{label}</span><strong>{value}</strong></>;
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        data-testid={testId}
+        className={`solution-metric is-interactive ${className}`.trim()}
+        aria-expanded={expanded}
+        aria-controls={controls}
+        title={title}
+        onClick={onClick}
+      >
+        {content}
+      </button>
+    );
+  }
+  return (
+    <div data-testid={testId} className={`solution-metric ${className}`.trim()}>
+      {content}
+    </div>
+  );
+}
+function thumbPositionLabel(thumb, language) {
+  const face = { "-1": "D", 0: "F", 1: "U" }[thumb] || "?";
+  const signed = thumb > 0 ? `+${thumb}` : String(thumb);
+  return language === "ja" ? `${face}面 (${signed})` : `${face} face (${signed})`;
+}
+function RegripDetail({ analysis, language, id }) {
+  const labels = analysisText(language);
+  const { regrip } = analysis;
+  if (regrip.count === null) {
+    return (
+      <section id={id} data-testid="regrip-detail" className="solution-detail">
+        <strong>{labels.regripTitle}</strong>
+        <p>{labels.regripUnavailable}{regrip.unsupportedMoves.length ? ` (${regrip.unsupportedMoves.join(", ")})` : ""}</p>
+      </section>
+    );
+  }
+  return (
+    <section id={id} data-testid="regrip-detail" className="solution-detail">
+      <header className="solution-detail-header">
+        <strong>{labels.regripTitle}</strong>
+        <span>{language === "ja" ? `${regrip.count}回` : `${regrip.count}`}</span>
+      </header>
+      <div className="regrip-summary">
+        <span>{labels.start} {thumbPositionLabel(regrip.startThumb, language)}</span>
+        <span aria-hidden="true">→</span>
+        <span>{labels.end} {thumbPositionLabel(regrip.endThumb, language)}</span>
+      </div>
+      {regrip.steps.length ? (
+        <ol className="regrip-steps">
+          {regrip.steps.map((step) => (
+            <li key={step.index} data-testid="regrip-step" className={step.regripFrom !== null ? "has-regrip" : ""}>
+              <span className="regrip-step-index">{step.index}</span>
+              <code>{step.move}</code>
+              <span className="regrip-step-path">
+                {step.regripFrom !== null ? (
+                  <span className="regrip-event">{labels.regripAction}: {thumbPositionLabel(step.regripFrom, language)} → {thumbPositionLabel(step.regripTo, language)}</span>
+                ) : null}
+                <span>{thumbPositionLabel(step.beforeThumb, language)} → {thumbPositionLabel(step.afterThumb, language)}</span>
+                {step.physicalMove !== step.move ? <span>{step.physicalMove} {labels.physicalAs}</span> : null}
+              </span>
+            </li>
+          ))}
+        </ol>
+      ) : null}
+    </section>
+  );
+}
+function EaseDetail({ analysis, language, id }) {
+  const labels = analysisText(language);
+  const featureCounts = analysis.features.reduce((counts, feature) => {
+    counts[feature.type] = (counts[feature.type] || 0) + 1;
+    return counts;
+  }, {});
+  return (
+    <section id={id} data-testid="ease-detail" className="solution-detail">
+      <header className="solution-detail-header">
+        <strong>{labels.easeTitle}</strong>
+        <span>{analysis.ease.score} / 100 · {labels.easeBands[analysis.ease.band]}</span>
+      </header>
+      {Object.keys(featureCounts).length ? (
+        <div className="ease-features">
+          {Object.entries(featureCounts).map(([type, count]) => (
+            <span key={type} data-testid={`ease-feature-${type}`}>{labels.featureNames[type]}{count > 1 ? ` ×${count}` : ""}</span>
+          ))}
+        </div>
+      ) : null}
+      <dl className="ease-breakdown">
+        {Object.entries(analysis.ease.components).filter(([, value]) => value !== 0).map(([key, value]) => (
+          <div key={key}>
+            <dt>{labels.breakdown[key]}</dt>
+            <dd>{value > 0 && key !== "base" ? "+" : ""}{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
   );
 }
 function SolutionCard({ solution, t, language, onCopy }) {
   const displayAlg = formatWithSimulUD(solution);
-  const regrips = regripCount(solution);
+  const analysis = solutionAnalysis(solution);
+  const labels = analysisText(language);
+  const [detail, setDetail] = useState(null);
+  const detailId = useId();
   return (
     <article data-testid="solution-card" className="solution-card">
       <div className="solution-card-top">
@@ -1497,17 +1532,38 @@ function SolutionCard({ solution, t, language, onCopy }) {
           {displayAlg || "(空)"}
         </button>
         <div className="solution-metrics">
-          <SolutionMetric testId="metric-effective" label="STM" value={effectiveMoveCount(solution)} />
-          <SolutionMetric testId="metric-symbol" label="HTM" value={symbolMoveCount(solution)} />
-          <SolutionMetric testId="metric-quarter" label="QTM" value={quarterTurnCount(solution)} />
-          <SolutionMetric testId="metric-regrip" label={localizedLabel(REGRIP_LABEL, language)} value={regrips === null ? "—" : regrips} />
+          <SolutionMetric
+            testId="metric-ease"
+            label="EASE"
+            value={analysis.ease.score}
+            className={`ease-${analysis.ease.band}`}
+            title={labels.ease}
+            expanded={detail === "ease"}
+            controls={detailId}
+            onClick={() => setDetail((previous) => previous === "ease" ? null : "ease")}
+          />
+          <SolutionMetric testId="metric-effective" label="STM" value={analysis.metrics.effectiveMoves} />
+          <SolutionMetric testId="metric-symbol" label="HTM" value={analysis.metrics.symbolMoves} />
+          <SolutionMetric testId="metric-quarter" label="QTM" value={analysis.metrics.quarterTurns} />
+          <SolutionMetric
+            testId="metric-regrip"
+            label={localizedLabel(REGRIP_LABEL, language)}
+            value={analysis.regrip.count === null ? "—" : analysis.regrip.count}
+            title={labels.regripTitle}
+            expanded={detail === "regrip"}
+            controls={detailId}
+            onClick={() => setDetail((previous) => previous === "regrip" ? null : "regrip")}
+          />
         </div>
+        {detail === "regrip" ? <RegripDetail analysis={analysis} language={language} id={detailId} /> : null}
+        {detail === "ease" ? <EaseDetail analysis={analysis} language={language} id={detailId} /> : null}
       </div>
     </article>
   );
 }
 function ThinkingCard({ foundCount, t }) { return <div className="search-status is-searching"><div className="thinking-dots" aria-hidden="true"><span /><span /><span /></div><div><strong>{t.thinkingTitle}</strong><span>{t.thinkingBody(foundCount)}</span></div></div>; }
 function EmptyCard({ text }) { return <div className="search-status">{text}</div>; }
+function FilteredEmptyCard({ language, onReset }) { const labels = analysisText(language); return <div className="search-status filtered-empty"><span>{labels.filteredEmpty}</span><button type="button" onClick={onReset}>{labels.reset}</button></div>; }
 function NumberInput({ label, value, onChange, min = 1, max = 99 }) { function setClamped(nextValue) { const raw = String(nextValue); if (raw === "") { onChange(""); return; } const numeric = Number(raw); if (!Number.isFinite(numeric)) return; onChange(Math.min(max, Math.max(min, Math.trunc(numeric)))); } return <label className="field"><span>{label}</span><input type="number" inputMode="numeric" pattern="[0-9]*" min={min} max={max} step="1" value={value} onChange={(e) => setClamped(e.target.value)} onBlur={() => { if (value === "") onChange(min); }} /></label>; }
 function PresetTile({ label, pattern, previewMask, previewVariant, title, testId, selected = false, bottomColor, onClick }) {
   const isZblsPreview = previewVariant === "zbls";
@@ -1714,6 +1770,7 @@ export default function App() {
   const [requiredPartsText, setRequiredPartsText] = useState("");
   const [maxSymbolDepth, setMaxSymbolDepth] = useState(15);
   const [solutionSortKey, setSolutionSortKey] = useState("effective");
+  const [solutionFilters, setSolutionFilters] = useState(DEFAULT_SOLUTION_FILTERS);
   const [solutions, setSolutions] = useState([]);
   const [error, setError] = useState("");
   const [isSearching, setIsSearching] = useState(false);
@@ -1936,7 +1993,15 @@ export default function App() {
       allowUnsafe: Boolean(options.allowUnsafe),
     });
   }
-  const displayedSolutions = sortedSolutions(solutions, solutionSortKey);
+  const filteredSolutions = useMemo(
+    () => solutions.filter((solution) => matchesSolutionFilters(solutionAnalysis(solution), solutionFilters)),
+    [solutions, solutionFilters],
+  );
+  const displayedSolutions = useMemo(
+    () => sortedSolutions(filteredSolutions, solutionSortKey),
+    [filteredSolutions, solutionSortKey],
+  );
+  const hasActiveSolutionFilters = Object.entries(solutionFilters).some(([key, value]) => value !== DEFAULT_SOLUTION_FILTERS[key]);
 
   return (
     <div className="app-page dark-mode" dir={isRtl ? "rtl" : "ltr"}>
@@ -2169,11 +2234,18 @@ export default function App() {
         <section className="results-panel" aria-live="polite">
           <header className="results-header">
             <h2>{ui.results}</h2>
-            {hasSearched || isSearching ? <span className="result-count">{ui.found(displayedSolutions.length)}</span> : null}
+            {hasSearched || isSearching ? (
+              <span className="result-count">
+                {hasActiveSolutionFilters ? `${displayedSolutions.length} / ${ui.found(solutions.length)}` : ui.found(solutions.length)}
+              </span>
+            ) : null}
           </header>
 
           {solutions.length ? (
-            <SolutionSortControls sortKey={solutionSortKey} setSortKey={setSolutionSortKey} language={language} />
+            <div className="solution-controls">
+              <SolutionSortControls sortKey={solutionSortKey} setSortKey={setSolutionSortKey} language={language} />
+              <SolutionFilterControls filters={solutionFilters} setFilters={setSolutionFilters} language={language} />
+            </div>
           ) : null}
 
           {error ? (
@@ -2183,7 +2255,7 @@ export default function App() {
             </div>
           ) : null}
 
-          {isSearching ? <ThinkingCard foundCount={displayedSolutions.length} t={t} /> : null}
+          {isSearching ? <ThinkingCard foundCount={solutions.length} t={t} /> : null}
 
           <div data-testid="solution-list" className="solution-list">
             {displayedSolutions.map((solution) => (
@@ -2197,6 +2269,7 @@ export default function App() {
             ))}
           </div>
 
+          {!isSearching && !error && solutions.length > 0 && displayedSolutions.length === 0 ? <FilteredEmptyCard language={language} onReset={() => setSolutionFilters(DEFAULT_SOLUTION_FILTERS)} /> : null}
           {!isSearching && !error && hasSearched && solutions.length === 0 ? <EmptyCard text={t.noResults} /> : null}
         </section>
       </main>

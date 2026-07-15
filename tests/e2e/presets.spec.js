@@ -100,7 +100,7 @@ function lastLayerPreviewColors(state) {
 
 function collPreviewColors(state) {
   const colors = lastLayerPreviewColors(state);
-  for (const index of [1, 5, 8, 9, 11, 12, 15, 19]) colors[index] = "X";
+  for (const index of [1, 5, 8, 9, 11, 12, 15, 19]) colors[index] = colors[index] === "U" ? "U" : "X";
   return colors;
 }
 
@@ -130,6 +130,7 @@ test("case preset hierarchy exposes all exact sets", async ({ page }) => {
 test("nested preset icons and applied nets use the generated color arrays", async ({ page }) => {
   const coll = COLL_PRESET_DATA[0];
   await openPresetPanel(page, "COLL");
+  await expectPreviewColors(page.getByTestId(`coll-group-${coll.family}`), collPreviewColors(coll.state));
   await page.getByTestId(`coll-group-${coll.family}`).click();
   const collTile = page.getByTestId(`preset-case-${coll.id}`);
   await expectPreviewColors(collTile, collPreviewColors(coll.state));
