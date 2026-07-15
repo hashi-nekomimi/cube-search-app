@@ -102,6 +102,11 @@ function displayColorMapForBottom(bottomFace) {
   };
 }
 
+function logicalFaceForDisplayColor(bottomFace, displayColor) {
+  const colorMap = displayColorMapForBottom(bottomFace);
+  return FACE_ORDER.find((face) => colorMap[face] === displayColor) || displayColor;
+}
+
 function displayColorSymbol(color, bottomFace) {
   return displayColorMapForBottom(bottomFace)[color] || color;
 }
@@ -1058,23 +1063,31 @@ function MiniPatternPreview({ pattern, previewMask, variant = "last-layer", bott
   const mask = previewMask || fallbackPreviewMask(pattern);
   return <div className="grid grid-cols-5 gap-[2px]">{mask.split("").map((cell, idx) => <MiniSticker key={idx} corner={cell === "x" || idx === 0 || idx === 4 || idx === 20 || idx === 24} filled={cell === "1"} bottomColor={bottomColor} />)}</div>;
 }
-function NetEditor({ pattern, setPattern, selectedColor, bottomColor }) { function setSticker(face, idx) { if (idx === 4) return; setPattern((prev) => { const next = {}; for (const f of FACE_ORDER) next[f] = [...prev[f]]; next[face][idx] = selectedColor; return next; }); } const spacer = <div aria-hidden="true" />; return <div className="cube-net">{spacer}<FaceGrid face="U" stickers={pattern.U} bottomColor={bottomColor} onStickerClick={(idx) => setSticker("U", idx)} />{spacer}{spacer}<FaceGrid face="L" stickers={pattern.L} bottomColor={bottomColor} onStickerClick={(idx) => setSticker("L", idx)} /><FaceGrid face="F" stickers={pattern.F} bottomColor={bottomColor} onStickerClick={(idx) => setSticker("F", idx)} /><FaceGrid face="R" stickers={pattern.R} bottomColor={bottomColor} onStickerClick={(idx) => setSticker("R", idx)} /><FaceGrid face="B" stickers={pattern.B} bottomColor={bottomColor} onStickerClick={(idx) => setSticker("B", idx)} />{spacer}<FaceGrid face="D" stickers={pattern.D} bottomColor={bottomColor} onStickerClick={(idx) => setSticker("D", idx)} />{spacer}{spacer}</div>; }
-function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor }) {
+function NetEditor({ pattern, setPattern, selectedColor, displayBottomColor }) { function setSticker(face, idx) { if (idx === 4) return; setPattern((prev) => { const next = {}; for (const f of FACE_ORDER) next[f] = [...prev[f]]; next[face][idx] = selectedColor; return next; }); } const spacer = <div aria-hidden="true" />; return <div className="cube-net">{spacer}<FaceGrid face="U" stickers={pattern.U} bottomColor={displayBottomColor} onStickerClick={(idx) => setSticker("U", idx)} />{spacer}{spacer}<FaceGrid face="L" stickers={pattern.L} bottomColor={displayBottomColor} onStickerClick={(idx) => setSticker("L", idx)} /><FaceGrid face="F" stickers={pattern.F} bottomColor={displayBottomColor} onStickerClick={(idx) => setSticker("F", idx)} /><FaceGrid face="R" stickers={pattern.R} bottomColor={displayBottomColor} onStickerClick={(idx) => setSticker("R", idx)} /><FaceGrid face="B" stickers={pattern.B} bottomColor={displayBottomColor} onStickerClick={(idx) => setSticker("B", idx)} />{spacer}<FaceGrid face="D" stickers={pattern.D} bottomColor={displayBottomColor} onStickerClick={(idx) => setSticker("D", idx)} />{spacer}{spacer}</div>; }
+function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor, displayBottomColor }) {
   const rootRef = useRef(null);
   const sceneRef = useRef(null);
   const setPatternRef = useRef(setPattern);
   const patternRef = useRef(pattern);
   const selectedColorRef = useRef(selectedColor);
   const bottomColorRef = useRef(bottomColor);
+  const displayBottomColorRef = useRef(displayBottomColor);
 
   useLayoutEffect(() => { setPatternRef.current = setPattern; }, [setPattern]);
   useLayoutEffect(() => { patternRef.current = pattern; }, [pattern]);
   useLayoutEffect(() => { selectedColorRef.current = selectedColor; }, [selectedColor]);
   useLayoutEffect(() => {
+    const previousDisplayBottom = displayBottomColorRef.current;
+    displayBottomColorRef.current = displayBottomColor;
+    if (previousDisplayBottom !== displayBottomColor) {
+      sceneRef.current?.applyDisplayBottomColor(displayBottomColor);
+    }
+  }, [displayBottomColor]);
+  useLayoutEffect(() => {
     const previousBottom = bottomColorRef.current;
     bottomColorRef.current = bottomColor;
     if (previousBottom !== bottomColor) {
-      sceneRef.current?.transitionBottomColor(previousBottom, bottomColor);
+      sceneRef.current?.transitionBottomColor(bottomColor);
     }
   }, [bottomColor]);
 
@@ -1089,9 +1102,11 @@ function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor }) {
     renderer.domElement.setAttribute("data-testid", "cube-canvas");
     renderer.domElement.setAttribute("data-projection", "isometric");
     renderer.domElement.setAttribute("data-interaction", "azimuth-elevation");
-    renderer.domElement.setAttribute("data-cube-rotation", "fixed");
+    renderer.domElement.setAttribute("data-drag-target", "camera");
     renderer.domElement.dataset.animating = "false";
     renderer.domElement.dataset.azimuth = "0.0000";
+    renderer.domElement.dataset.bodyLocalBottom = "D";
+    renderer.domElement.dataset.bodyLocalFront = "F";
     renderer.domElement.dataset.dragging = "false";
     renderer.domElement.dataset.elevation = "0.0000";
     renderer.domElement.dataset.roll = "0.0000";
@@ -1167,6 +1182,29 @@ function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor }) {
       return Math.max(minElevation, Math.min(maxElevation, absoluteElevation)) - defaultElevation;
     }
 
+    function bodyOrientationForBottom(selectedBottom) {
+      const selectedFront = frontForBottom(selectedBottom);
+      const localBottom = logicalFaceForDisplayColor(displayBottomColorRef.current, selectedBottom);
+      const localFront = logicalFaceForDisplayColor(displayBottomColorRef.current, selectedFront);
+      const bottomAxis = new THREE.Vector3(...NORMAL[localBottom]);
+      const frontAxis = new THREE.Vector3(...NORMAL[localFront]);
+      const rightAxis = new THREE.Vector3().crossVectors(frontAxis, bottomAxis);
+      const upAxis = bottomAxis.clone().multiplyScalar(-1);
+      const localBasis = new THREE.Matrix4().makeBasis(rightAxis, upAxis, frontAxis);
+      return {
+        localBottom,
+        localFront,
+        quaternion: new THREE.Quaternion().setFromRotationMatrix(localBasis.invert()),
+      };
+    }
+
+    function applyBodyOrientation(orientation) {
+      group.quaternion.copy(orientation.quaternion);
+      group.updateMatrixWorld(true);
+      renderer.domElement.dataset.bodyLocalBottom = orientation.localBottom;
+      renderer.domElement.dataset.bodyLocalFront = orientation.localFront;
+    }
+
     function applyView() {
       const azimuth = defaultAzimuth + view.azimuth;
       const elevation = defaultElevation + view.elevation;
@@ -1203,7 +1241,7 @@ function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor }) {
       for (const mesh of stickerMeshes) {
         const { face, index } = mesh.userData;
         const color = patternRef.current[face][index];
-        mesh.material.color.set(displayColorStyle(color, bottomColorRef.current));
+        mesh.material.color.set(displayColorStyle(color, displayBottomColorRef.current));
       }
     }
 
@@ -1218,33 +1256,42 @@ function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor }) {
       renderer.domElement.dataset.animating = "false";
     }
 
-    function transitionBottomColor(previousBottom, nextBottom) {
+    function applyDisplayBottomColor(nextDisplayBottom) {
+      stopAnimation();
+      displayBottomColorRef.current = nextDisplayBottom;
+      paintStickerColors();
+      applyBodyOrientation(bodyOrientationForBottom(bottomColorRef.current));
+      applyView();
+    }
+
+    function transitionBottomColor(nextBottom) {
       stopAnimation();
       bottomColorRef.current = nextBottom;
-      paintStickerColors();
       const startAzimuth = normalizeAngle(view.azimuth);
       const startElevation = view.elevation;
+      const startBodyQuaternion = group.quaternion.clone();
+      const targetBodyOrientation = bodyOrientationForBottom(nextBottom);
+      renderer.domElement.dataset.bodyLocalBottom = targetBodyOrientation.localBottom;
+      renderer.domElement.dataset.bodyLocalFront = targetBodyOrientation.localFront;
       const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
       if (reducedMotion) {
         view.azimuth = 0;
         view.elevation = 0;
+        applyBodyOrientation(targetBodyOrientation);
         applyView();
         return;
       }
 
       const startedAt = performance.now();
       const duration = 420;
-      const hasManualRotation = Math.abs(startAzimuth) + Math.abs(startElevation) > 0.001;
-      const direction = FACE_ORDER.indexOf(nextBottom) >= FACE_ORDER.indexOf(previousBottom) ? 1 : -1;
-      const cueAzimuth = hasManualRotation ? 0 : direction * 0.24;
-      const cueElevation = hasManualRotation ? 0 : -0.1;
       renderer.domElement.dataset.animating = "true";
       function animate(now) {
         const progress = Math.min(1, (now - startedAt) / duration);
         const eased = 1 - Math.pow(1 - progress, 3);
-        const cue = Math.sin(Math.PI * progress);
-        view.azimuth = startAzimuth * (1 - eased) + cueAzimuth * cue;
-        view.elevation = clampElevation(startElevation * (1 - eased) + cueElevation * cue);
+        view.azimuth = startAzimuth * (1 - eased);
+        view.elevation = clampElevation(startElevation * (1 - eased));
+        group.quaternion.slerpQuaternions(startBodyQuaternion, targetBodyOrientation.quaternion, eased);
+        group.updateMatrixWorld(true);
         applyView();
         if (progress < 1) {
           animationFrame = requestAnimationFrame(animate);
@@ -1252,6 +1299,7 @@ function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor }) {
         }
         view.azimuth = 0;
         view.elevation = 0;
+        applyBodyOrientation(targetBodyOrientation);
         animationFrame = 0;
         renderer.domElement.dataset.animating = "false";
         applyView();
@@ -1353,8 +1401,9 @@ function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor }) {
 
     const resizeObserver = new ResizeObserver(resize);
     resizeObserver.observe(root);
-    sceneRef.current = { transitionBottomColor, updateStickerColors };
+    sceneRef.current = { applyDisplayBottomColor, transitionBottomColor, updateStickerColors };
     resize();
+    applyBodyOrientation(bodyOrientationForBottom(bottomColorRef.current));
     updateStickerColors();
 
     return () => {
@@ -1400,14 +1449,14 @@ function PatternEditorControls({ editorMode, setEditorMode, bottomColor, setBott
     </div>
   );
 }
-function PatternInputEditor({ pattern, setPattern, selectedColor, setSelectedColor, editorMode, setEditorMode, bottomColor, setBottomColor, labels }) {
+function PatternInputEditor({ pattern, setPattern, selectedColor, setSelectedColor, editorMode, setEditorMode, bottomColor, displayBottomColor, setBottomColor, labels }) {
   return (
     <div className="pattern-editor">
       <div className="pattern-editor-toolbar">
-        <ColorPicker selectedColor={selectedColor} setSelectedColor={setSelectedColor} bottomColor={bottomColor} label={labels.stickerColor} />
+        <ColorPicker selectedColor={selectedColor} setSelectedColor={setSelectedColor} bottomColor={displayBottomColor} label={labels.stickerColor} />
         <PatternEditorControls editorMode={editorMode} setEditorMode={setEditorMode} bottomColor={bottomColor} setBottomColor={setBottomColor} bottomColorLabel={labels.bottomColor} />
       </div>
-      <div className="editor-stage">{editorMode === "cube" ? <ThreeCubeEditor pattern={pattern} setPattern={setPattern} selectedColor={selectedColor} bottomColor={bottomColor} /> : <NetEditor pattern={pattern} setPattern={setPattern} selectedColor={selectedColor} bottomColor={bottomColor} />}</div>
+      <div className="editor-stage">{editorMode === "cube" ? <ThreeCubeEditor pattern={pattern} setPattern={setPattern} selectedColor={selectedColor} bottomColor={bottomColor} displayBottomColor={displayBottomColor} /> : <NetEditor pattern={pattern} setPattern={setPattern} selectedColor={selectedColor} displayBottomColor={displayBottomColor} />}</div>
     </div>
   );
 }
@@ -1634,6 +1683,7 @@ export default function App() {
   const [showNetInput, setShowNetInput] = useState(false);
   const [patternEditorMode, setPatternEditorMode] = useState("net");
   const [bottomColor, setBottomColor] = useState("D");
+  const [patternBottomColor, setPatternBottomColor] = useState("D");
   const [menuOpen, setMenuOpen] = useState(false);
   const [languageOpen, setLanguageOpen] = useState(false);
   const [language, setLanguage] = useState("ja");
@@ -1710,6 +1760,8 @@ export default function App() {
       targetAlg,
       targetPattern,
       patternSeedAlg,
+      bottomColor,
+      patternBottomColor,
       searchMovesText,
       requiredPartsText,
       maxSymbolDepth,
@@ -1719,6 +1771,8 @@ export default function App() {
       targetAlg,
       targetPattern,
       patternSeedAlg,
+      bottomColor,
+      patternBottomColor,
       searchMovesText,
       requiredPartsText,
       maxSymbolDepth,
@@ -1732,6 +1786,8 @@ export default function App() {
             targetAlg: x.targetAlg,
             targetPattern: x.targetPattern,
             patternSeedAlg: x.patternSeedAlg || "",
+            bottomColor: x.bottomColor || "D",
+            patternBottomColor: x.patternBottomColor || x.bottomColor || "D",
             searchMovesText: x.searchMovesText,
             requiredPartsText: x.requiredPartsText || "",
             maxSymbolDepth: x.maxSymbolDepth,
@@ -1744,6 +1800,9 @@ export default function App() {
   function applyHistoryItem(item) {
     if (item.targetAlg !== undefined) setTargetAlg(item.targetAlg);
     if (item.targetPattern) setTargetPattern(item.targetPattern);
+    const restoredPatternBottom = item.patternBottomColor || item.bottomColor || "D";
+    setBottomColor(item.bottomColor || restoredPatternBottom);
+    setPatternBottomColor(restoredPatternBottom);
     setPatternSeedAlg(item.patternSeedAlg || "");
     if (item.searchMovesText !== undefined)
       setSearchMovesText(item.searchMovesText);
@@ -1763,6 +1822,7 @@ export default function App() {
     }
   }
   function applyCasePreset(preset) {
+    setPatternBottomColor(bottomColor);
     setTargetPattern(clonePattern(preset.pattern));
     setPatternSeedAlg(preset.seedAlg || preset.alg || "");
     setSelectedColor(DONT_CARE);
@@ -2039,6 +2099,7 @@ export default function App() {
                 editorMode={patternEditorMode}
                 setEditorMode={setPatternEditorMode}
                 bottomColor={bottomColor}
+                displayBottomColor={patternBottomColor}
                 setBottomColor={setBottomColor}
                 labels={ui}
               />

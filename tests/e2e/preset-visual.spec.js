@@ -69,7 +69,7 @@ test("azimuth-elevation Three.js cube renders nonblank on desktop and mobile", a
   await openCubeEditor(page);
   await expect(page.getByTestId("cube-canvas")).toHaveAttribute("data-projection", "isometric");
   await expect(page.getByTestId("cube-canvas")).toHaveAttribute("data-interaction", "azimuth-elevation");
-  await expect(page.getByTestId("cube-canvas")).toHaveAttribute("data-cube-rotation", "fixed");
+  await expect(page.getByTestId("cube-canvas")).toHaveAttribute("data-drag-target", "camera");
   await expectThreeCanvasPixels(page);
   await page.screenshot({ path: testInfo.outputPath("three-cube-desktop.png"), fullPage: true });
 

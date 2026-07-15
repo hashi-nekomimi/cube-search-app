@@ -160,7 +160,7 @@ test("nested preset icons and applied nets use the generated color arrays", asyn
   await expectNetState(page, zbls.state);
 });
 
-test("dark-only pattern input supports independent azimuth-elevation orbit, bottom reset, and cube clicking", async ({ page }) => {
+test("dark-only pattern input supports camera orbit, bottom body rotation, and cube clicking", async ({ page }) => {
   await openNetInput(page);
   await expect(page.locator(".dark-mode")).toHaveCount(1);
 
@@ -177,7 +177,9 @@ test("dark-only pattern input supports independent azimuth-elevation orbit, bott
   const cubeCanvas = page.getByTestId("cube-canvas");
   await expect(cubeCanvas).toBeVisible();
   await expect(cubeCanvas).toHaveAttribute("data-interaction", "azimuth-elevation");
-  await expect(cubeCanvas).toHaveAttribute("data-cube-rotation", "fixed");
+  await expect(cubeCanvas).toHaveAttribute("data-drag-target", "camera");
+  await expect(cubeCanvas).toHaveAttribute("data-body-local-bottom", "D");
+  await expect(cubeCanvas).toHaveAttribute("data-body-local-front", "F");
   const initialBox = await cubeCanvas.boundingBox();
   await page.mouse.move(initialBox.x + initialBox.width * 0.5, initialBox.y + initialBox.height * 0.5);
   await page.mouse.down();
@@ -202,12 +204,15 @@ test("dark-only pattern input supports independent azimuth-elevation orbit, bott
   await expect(cubeCanvas).toHaveAttribute("data-animating", "false", { timeout: 1500 });
   await expect(cubeCanvas).toHaveAttribute("data-azimuth", "0.0000");
   await expect(cubeCanvas).toHaveAttribute("data-elevation", "0.0000");
+  await expect(cubeCanvas).toHaveAttribute("data-body-local-bottom", "U");
+  await expect(cubeCanvas).toHaveAttribute("data-body-local-front", "F");
   await page.getByTestId("pattern-editor-net").click();
-  await expect(page.getByTestId("net-D-4")).toHaveAttribute("data-display-color", "U");
-  await expect(page.getByTestId("net-U-4")).toHaveAttribute("data-display-color", "D");
+  await expect(page.getByTestId("net-D-4")).toHaveAttribute("data-display-color", "D");
+  await expect(page.getByTestId("net-U-4")).toHaveAttribute("data-display-color", "U");
   await page.getByTestId("pattern-editor-cube").click();
   await page.getByTestId("bottom-color-D").click();
   await expect(page.getByTestId("cube-canvas")).toHaveAttribute("data-animating", "false", { timeout: 1500 });
+  await expect(page.getByTestId("cube-canvas")).toHaveAttribute("data-body-local-bottom", "D");
 
   await page.getByTestId("color-X").click();
   const box = await cubeCanvas.boundingBox();
@@ -216,7 +221,7 @@ test("dark-only pattern input supports independent azimuth-elevation orbit, bott
   await expect(page.locator('[data-testid^="net-"][data-color="X"]')).toHaveCount(1);
 });
 
-test("bottom color recolors preset previews without changing logical pattern data", async ({ page }) => {
+test("bottom color leaves the editor painted until a preset is selected", async ({ page }) => {
   const zbls = ZBLS_PRESET_DATA[0];
   await openPresetPanel(page, "ZBLS");
   await page.getByTestId(`zbls-f2l-${zbls.f2l}`).click();
@@ -225,6 +230,12 @@ test("bottom color recolors preset previews without changing logical pattern dat
 
   await page.getByTestId("bottom-color-U").click();
   await expect(page.getByTestId("net-D-4")).toHaveAttribute("data-color", "D");
-  await expect(page.getByTestId("net-D-4")).toHaveAttribute("data-display-color", "U");
+  await expect(page.getByTestId("net-D-4")).toHaveAttribute("data-display-color", "D");
   await expect(zblsTile.locator('[data-color="D"][data-display-color="U"]').first()).toBeVisible();
+
+  await zblsTile.click();
+  await expect(page.getByTestId("net-D-4")).toHaveAttribute("data-color", "D");
+  await expect(page.getByTestId("net-D-4")).toHaveAttribute("data-display-color", "U");
+  await page.getByTestId("pattern-editor-cube").click();
+  await expect(page.getByTestId("cube-canvas")).toHaveAttribute("data-body-local-bottom", "D");
 });
