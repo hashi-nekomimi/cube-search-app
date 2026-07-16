@@ -88,6 +88,7 @@ test("search results show regrip counts and can be sorted by metrics", async ({ 
 
   await page.getByTestId("filter-feature").selectOption("sexy");
   await expect(page.getByTestId("filter-feature")).toHaveClass(/is-active/);
+  await expect(page.getByTestId("feature-highlight-hint")).toHaveText("色付き = セクシームーブに一致する箇所");
   await expect(page.getByTestId("solution-card").first().getByTestId("feature-highlight")).toHaveText(["R", "U", "R'", "U'"]);
 
   await page.setViewportSize({ width: 320, height: 844 });
@@ -106,6 +107,7 @@ test("search results show regrip counts and can be sorted by metrics", async ({ 
   await expect(page.getByTestId("solution-card")).toHaveCount(0);
   await expect(page.getByTestId("filter-reset")).toBeVisible();
   await page.getByTestId("filter-reset").click();
+  await expect(page.getByTestId("feature-highlight-hint")).toHaveCount(0);
   await expect(page.getByTestId("solution-card").first()).toBeVisible();
 
   const firstAlgorithm = page.getByTestId("solution-alg").first();

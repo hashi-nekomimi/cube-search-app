@@ -507,6 +507,7 @@ const RESULT_ANALYSIS_TEXT = {
     easeOptions: { all: "すべて", 90: "90以上", 78: "78以上", 65: "65以上" },
     feature: "特徴",
     featureOptions: { all: "すべて", any: "トリガーあり", sexy: "セクシームーブ", sune: "スーン", commutator: "コミュテーター", sledge: "スレッジ" },
+    featureHighlightHint: (feature) => `色付き = ${feature}に一致する箇所`,
     filteredEmpty: "絞り込み条件に一致する手順がありません。",
     regripTitle: "最小リグリップ経路",
     regripTitles: { right: "右親指の最小経路", left: "左親指の最小経路" },
@@ -536,6 +537,7 @@ const RESULT_ANALYSIS_TEXT = {
     easeOptions: { all: "All", 90: "90+", 78: "78+", 65: "65+" },
     feature: "Feature",
     featureOptions: { all: "All", any: "Any trigger", sexy: "Sexy move", sune: "Sune", commutator: "Commutator", sledge: "Sledge" },
+    featureHighlightHint: (feature) => `Highlighted = matches ${feature}`,
     filteredEmpty: "No algorithms match the current filters.",
     regripTitle: "Minimum regrip path",
     regripTitles: { right: "Minimum right-thumb path", left: "Minimum left-thumb path" },
@@ -1438,6 +1440,12 @@ function SolutionFilterControls({ filters, setFilters, language }) {
           </label>
         ))}
       </div>
+      {filters.feature !== "all" ? (
+        <p data-testid="feature-highlight-hint" className="solution-feature-hint">
+          <span className="solution-feature-hint-swatch" aria-hidden="true" />
+          {labels.featureHighlightHint(labels.featureOptions[filters.feature])}
+        </p>
+      ) : null}
     </div>
   );
 }
