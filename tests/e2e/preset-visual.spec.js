@@ -14,7 +14,6 @@ async function openCubeEditor(page) {
   if (!(await page.getByTestId("preset-category-ZBLS").isVisible().catch(() => false))) {
     await page.getByTestId("input-mode-pattern").click();
   }
-  await page.getByTestId("pattern-editor-cube").click();
   await expect(page.getByTestId("cube-canvas")).toBeVisible();
 }
 

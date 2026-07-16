@@ -73,18 +73,8 @@ function stateToPattern(state) {
   ]));
 }
 
-async function expectNetState(page, state) {
-  const actual = await page.locator('[data-testid^="net-"]').evaluateAll((elements) => Object.fromEntries(
-    elements.map((element) => [element.dataset.testid, element.dataset.color]),
-  ));
-  const expected = {};
-  const pattern = stateToPattern(state);
-  for (const face of FACE_ORDER) {
-    pattern[face].forEach((color, index) => {
-      expected[`net-${face}-${index}`] = color;
-    });
-  }
-  expect(actual).toEqual(expected);
+async function expectCubeState(page, state) {
+  await expect(page.getByTestId("cube-editor")).toHaveAttribute("data-pattern-state", state);
 }
 
 function lastLayerPreviewColors(state) {
@@ -101,6 +91,14 @@ function lastLayerPreviewColors(state) {
 function collPreviewColors(state) {
   const colors = lastLayerPreviewColors(state);
   for (const index of [1, 5, 8, 9, 11, 12, 15, 19]) colors[index] = colors[index] === "U" ? "U" : "X";
+  return colors;
+}
+
+function collFamilyPreviewColors(state) {
+  const colors = collPreviewColors(state);
+  for (const index of [0, 2, 3, 4, 6, 7, 13, 14, 16, 17, 18, 20]) {
+    colors[index] = colors[index] === "U" ? "U" : "X";
+  }
   return colors;
 }
 
@@ -127,15 +125,15 @@ test("case preset hierarchy exposes all exact sets", async ({ page }) => {
   expect(await sumZblsCases(page)).toBe(302);
 });
 
-test("nested preset icons and applied nets use the generated color arrays", async ({ page }) => {
+test("nested preset icons and applied cube states use the generated color arrays", async ({ page }) => {
   const coll = COLL_PRESET_DATA[0];
   await openPresetPanel(page, "COLL");
-  await expectPreviewColors(page.getByTestId(`coll-group-${coll.family}`), collPreviewColors(coll.state));
+  await expectPreviewColors(page.getByTestId(`coll-group-${coll.family}`), collFamilyPreviewColors(coll.state));
   await page.getByTestId(`coll-group-${coll.family}`).click();
   const collTile = page.getByTestId(`preset-case-${coll.id}`);
   await expectPreviewColors(collTile, collPreviewColors(coll.state));
   await collTile.click();
-  await expectNetState(page, coll.state);
+  await expectCubeState(page, coll.state);
 
   const zbll = ZBLL_PRESET_DATA[0];
   const zbllColl = COLL_PRESET_DATA.find((record) => record.name === zbll.coll);
@@ -147,7 +145,7 @@ test("nested preset icons and applied nets use the generated color arrays", asyn
   const zbllTile = page.getByTestId(`preset-case-${zbll.id}`);
   await expectPreviewColors(zbllTile, lastLayerPreviewColors(zbll.state));
   await zbllTile.click();
-  await expectNetState(page, zbll.state);
+  await expectCubeState(page, zbll.state);
 
   const zbls = ZBLS_PRESET_DATA[0];
   await openPresetPanel(page, "ZBLS");
@@ -158,7 +156,7 @@ test("nested preset icons and applied nets use the generated color arrays", asyn
   const zblsPattern = stateToPattern(zbls.state);
   await expectPreviewColors(zblsTile, [...zblsPattern.U, ...zblsPattern.F, ...zblsPattern.R]);
   await zblsTile.click();
-  await expectNetState(page, zbls.state);
+  await expectCubeState(page, zbls.state);
 });
 
 test("dark-only pattern input supports camera orbit, bottom body rotation, and cube clicking", async ({ page }) => {
@@ -172,8 +170,14 @@ test("dark-only pattern input supports camera orbit, bottom body rotation, and c
   await expect(page.getByText("保存済み")).toHaveCount(0);
   await page.getByRole("button", { name: "close menu" }).click();
 
-  await expect(page.getByTestId("pattern-editor-net")).toHaveAttribute("aria-pressed", "true");
-  await page.getByTestId("pattern-editor-cube").click();
+  await expect(page.getByText("状態プリセット", { exact: true })).toHaveCount(0);
+  await expect(page.getByTestId("pattern-editor-net")).toHaveCount(0);
+  await expect(page.getByTestId("pattern-editor-cube")).toHaveCount(0);
+  await expect(page.locator(".quick-picks")).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "状態" })).toBeVisible();
+  await expect(page.getByLabel("必須パターン")).toBeVisible();
+  await expect(page.getByLabel("禁止パターン")).toBeVisible();
+  await expect(page.getByRole("button", { name: "探索", exact: true })).toBeVisible();
   await expect(page.getByTestId("cube-editor")).toBeVisible();
   const cubeCanvas = page.getByTestId("cube-canvas");
   await expect(cubeCanvas).toBeVisible();
@@ -207,10 +211,7 @@ test("dark-only pattern input supports camera orbit, bottom body rotation, and c
   await expect(cubeCanvas).toHaveAttribute("data-elevation", "0.0000");
   await expect(cubeCanvas).toHaveAttribute("data-body-local-bottom", "U");
   await expect(cubeCanvas).toHaveAttribute("data-body-local-front", "F");
-  await page.getByTestId("pattern-editor-net").click();
-  await expect(page.getByTestId("net-D-4")).toHaveAttribute("data-display-color", "D");
-  await expect(page.getByTestId("net-U-4")).toHaveAttribute("data-display-color", "U");
-  await page.getByTestId("pattern-editor-cube").click();
+  await expect(page.getByTestId("cube-editor")).toHaveAttribute("data-display-bottom-color", "D");
   await page.getByTestId("bottom-color-D").click();
   await expect(page.getByTestId("cube-canvas")).toHaveAttribute("data-animating", "false", { timeout: 1500 });
   await expect(page.getByTestId("cube-canvas")).toHaveAttribute("data-body-local-bottom", "D");
@@ -218,8 +219,7 @@ test("dark-only pattern input supports camera orbit, bottom body rotation, and c
   await page.getByTestId("color-X").click();
   const box = await cubeCanvas.boundingBox();
   await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.58);
-  await page.getByTestId("pattern-editor-net").click();
-  await expect(page.locator('[data-testid^="net-"][data-color="X"]')).toHaveCount(1);
+  await expect.poll(async () => (await page.getByTestId("cube-editor").getAttribute("data-pattern-state")).split("X").length - 1).toBe(1);
 });
 
 test("bottom color leaves the editor painted until a preset is selected", async ({ page }) => {
@@ -230,13 +230,10 @@ test("bottom color leaves the editor painted until a preset is selected", async 
   await expect(zblsTile.locator('[data-color="D"]').first()).toBeVisible();
 
   await page.getByTestId("bottom-color-U").click();
-  await expect(page.getByTestId("net-D-4")).toHaveAttribute("data-color", "D");
-  await expect(page.getByTestId("net-D-4")).toHaveAttribute("data-display-color", "D");
+  await expect(page.getByTestId("cube-editor")).toHaveAttribute("data-display-bottom-color", "D");
   await expect(zblsTile.locator('[data-color="D"][data-display-color="U"]').first()).toBeVisible();
 
   await zblsTile.click();
-  await expect(page.getByTestId("net-D-4")).toHaveAttribute("data-color", "D");
-  await expect(page.getByTestId("net-D-4")).toHaveAttribute("data-display-color", "U");
-  await page.getByTestId("pattern-editor-cube").click();
-  await expect(page.getByTestId("cube-canvas")).toHaveAttribute("data-body-local-bottom", "D");
+  await expectCubeState(page, zbls.state);
+  await expect(page.getByTestId("cube-editor")).toHaveAttribute("data-display-bottom-color", "U");
 });

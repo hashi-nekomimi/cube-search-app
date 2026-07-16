@@ -1,13 +1,6 @@
 import { expect, test } from "@playwright/test";
-import { FACE_ORDER, patternMatchesState, stateFromSolution } from "../../scripts/cube-state.mjs";
+import { patternMatchesState, stateFromSolution } from "../../scripts/cube-state.mjs";
 import { ZBLS_PRESET_DATA } from "../../src/presetData.generated.js";
-
-function stateToPattern(state) {
-  return Object.fromEntries(FACE_ORDER.map((face, faceIndex) => [
-    face,
-    state.slice(faceIndex * 9, faceIndex * 9 + 9).split(""),
-  ]));
-}
 
 async function openPatternInput(page) {
   await page.goto("/");
@@ -16,26 +9,7 @@ async function openPatternInput(page) {
 
 async function fillSearchConditions(page, generator, depth) {
   await page.getByLabel("生成系").fill(generator);
-  await page.getByLabel("手数上限").fill(String(depth));
-}
-
-async function setNetPattern(page, state) {
-  const pattern = stateToPattern(state);
-  for (const color of FACE_ORDER) {
-    const stickers = [];
-    for (const face of FACE_ORDER) {
-      for (let index = 0; index < 9; index += 1) {
-        if (index !== 4 && pattern[face][index] === color && color !== face) {
-          stickers.push({ face, index });
-        }
-      }
-    }
-    if (!stickers.length) continue;
-    await page.getByTestId(`color-${color}`).click();
-    for (const sticker of stickers) {
-      await page.getByTestId(`net-${sticker.face}-${sticker.index}`).click();
-    }
-  }
+  await page.getByLabel("HTM上限").fill(String(depth));
 }
 
 test("search results show regrip counts and can be sorted by metrics", async ({ page }) => {
@@ -45,11 +19,12 @@ test("search results show regrip counts and can be sorted by metrics", async ({ 
   await expect(page.getByTestId("solution-card")).toHaveCount(0);
   await expect(page.locator(".result-count")).toHaveCount(0);
   await expect(page.locator(".results-placeholder")).toHaveCount(0);
+  await expect(page.getByText("探索対象", { exact: true })).toHaveCount(0);
 
   await page.getByPlaceholder("既存の手順を入力…").fill("R U R' U'");
   await page.getByLabel("生成系").fill("R U");
-  await page.getByLabel("手数上限").fill("6");
-  await page.getByRole("button", { name: "手順から探索" }).click();
+  await page.getByLabel("HTM上限").fill("6");
+  await page.getByRole("button", { name: "探索", exact: true }).click();
 
   await expect(page.getByTestId("solution-card").first()).toBeVisible({ timeout: 20000 });
   await expect(page.getByTestId("metric-ease").first()).toContainText(/EASE\s*[0-9]/);
@@ -59,7 +34,7 @@ test("search results show regrip counts and can be sorted by metrics", async ({ 
   await expect(page.getByTestId("metric-quarter")).toHaveCount(0);
   await expect(page.getByTestId("solution-list")).not.toHaveClass(/md:grid-cols-2/);
   await expect(page.getByTestId("solution-sort-select")).toHaveValue("symbol");
-  await expect(page.getByTestId("solution-sort-select").locator("option")).toHaveText(["HTM", "EASE", "リグリップ", "STM", "QTM"]);
+  await expect(page.getByTestId("solution-sort-select").locator("option")).toHaveText(["HTM", "EASE", "リグリップ"]);
   await expect(page.getByRole("button", { name: "保存", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "コピー", exact: true })).toHaveCount(0);
 
@@ -88,8 +63,9 @@ test("search results show regrip counts and can be sorted by metrics", async ({ 
 
   await page.getByTestId("filter-feature").selectOption("sexy");
   await expect(page.getByTestId("filter-feature")).toHaveClass(/is-active/);
-  await expect(page.getByTestId("feature-highlight-hint")).toHaveText("色付き = セクシームーブに一致する箇所");
-  await expect(page.getByTestId("solution-card").first().getByTestId("feature-highlight")).toHaveText(["R", "U", "R'", "U'"]);
+  const highlightedFeature = page.getByTestId("solution-card").first().getByTestId("feature-highlight");
+  await expect(highlightedFeature).toHaveText("R U R' U'");
+  await expect(highlightedFeature).toHaveAttribute("data-feature-label", "Sexy");
 
   await page.setViewportSize({ width: 320, height: 844 });
   const filterBoxes = await page.locator(".solution-filter-field").evaluateAll((fields) => fields.map((field) => {
@@ -107,30 +83,42 @@ test("search results show regrip counts and can be sorted by metrics", async ({ 
   await expect(page.getByTestId("solution-card")).toHaveCount(0);
   await expect(page.getByTestId("filter-reset")).toBeVisible();
   await page.getByTestId("filter-reset").click();
-  await expect(page.getByTestId("feature-highlight-hint")).toHaveCount(0);
   await expect(page.getByTestId("solution-card").first()).toBeVisible();
 
   const firstAlgorithm = page.getByTestId("solution-alg").first();
-  const copiedAlgorithm = await firstAlgorithm.textContent();
+  const copiedAlgorithm = await firstAlgorithm.getAttribute("data-alg");
   await firstAlgorithm.click();
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(copiedAlgorithm);
   await expect(page.getByRole("status")).toHaveText("コピーしました");
 
-  for (const sortKey of ["ease", "symbol", "quarter", "regrip", "effective"]) {
+  for (const sortKey of ["ease", "symbol", "regrip"]) {
     await page.getByTestId("solution-sort-select").selectOption(sortKey);
     await expect(page.getByTestId("solution-sort-select")).toHaveValue(sortKey);
     await expect(page.getByTestId("solution-card").first()).toBeVisible();
   }
 });
 
-test("pattern search treats double turns as one searchable symbol move", async ({ page }) => {
-  await openPatternInput(page);
-  await setNetPattern(page, stateFromSolution("R2"));
+test("search treats double turns as one HTM move", async ({ page }) => {
+  await page.goto("/");
+  await page.getByPlaceholder("既存の手順を入力…").fill("R2");
   await fillSearchConditions(page, "R", 1);
-  await page.getByRole("button", { name: "展開図から探索" }).click();
+  await page.getByRole("button", { name: "探索", exact: true }).click();
 
   await expect(page.getByTestId("solution-card").first()).toBeVisible({ timeout: 20000 });
   await expect(page.getByTestId("solution-alg").first()).toHaveText("R2");
+});
+
+test("required and forbidden move patterns filter emitted solutions", async ({ page }) => {
+  await page.goto("/");
+  await page.getByPlaceholder("既存の手順を入力…").fill("R U R' U'");
+  await fillSearchConditions(page, "R U", 4);
+  await page.getByLabel("必須パターン").fill("R U R' U'");
+  await page.getByRole("button", { name: "探索", exact: true }).click();
+  await expect(page.getByTestId("solution-alg")).toHaveText(["R U R' U'"]);
+
+  await page.getByLabel("禁止パターン").fill("R U R' U'");
+  await page.getByRole("button", { name: "探索", exact: true }).click();
+  await expect(page.getByTestId("solution-card")).toHaveCount(0);
 });
 
 test("V perm preset search returns the same eight RUD solutions", async ({ page }) => {
@@ -139,7 +127,7 @@ test("V perm preset search returns the same eight RUD solutions", async ({ page 
   await fillSearchConditions(page, "R U D", 16);
   await page.getByTestId("preset-category-PLL").click();
   await page.getByTestId("preset-case-pll-19-v").click();
-  await page.getByRole("button", { name: "展開図から探索" }).click();
+  await page.getByRole("button", { name: "探索", exact: true }).click();
 
   await expect(page.getByTestId("solution-card")).toHaveCount(8, { timeout: 30000 });
   await expect(page.getByTestId("solution-alg").filter({ hasText: displayedVPerm })).toHaveCount(1);
@@ -155,11 +143,11 @@ test("four and five generator searches finish quickly with verified solutions", 
     await page.getByPlaceholder("既存の手順を入力…").fill(vPerm);
     await fillSearchConditions(page, searchMovesText, 16);
     await expect(page.getByRole("textbox", { name: /生成系/ })).toHaveValue(searchMovesText);
-    const searchButton = page.getByRole("button", { name: "手順から探索" });
+    const searchButton = page.getByRole("button", { name: "探索", exact: true });
     const startedAt = Date.now();
     await searchButton.click();
     await expect(page.getByTestId("solution-card").first()).toBeVisible({ timeout: 3000 });
-    await expect(searchButton).toHaveText("手順から探索", { timeout: 12000 });
+    await expect(searchButton).toHaveText("探索", { timeout: 12000 });
     expect(Date.now() - startedAt).toBeLessThan(12000);
 
     const solutions = await page.getByTestId("solution-alg").allTextContents();
@@ -181,11 +169,11 @@ test("targets that use every selected face also take the fast path", async ({ pa
     await page.goto("/");
     await page.getByPlaceholder("既存の手順を入力…").fill(searchCase.targetAlg);
     await fillSearchConditions(page, searchCase.searchMovesText, searchCase.maxSymbolDepth);
-    const searchButton = page.getByRole("button", { name: "手順から探索" });
+    const searchButton = page.getByRole("button", { name: "探索", exact: true });
     const startedAt = Date.now();
     await searchButton.click();
     await expect(page.getByTestId("solution-card").first()).toBeVisible({ timeout: 3000 });
-    await expect(searchButton).toHaveText("手順から探索", { timeout: 12000 });
+    await expect(searchButton).toHaveText("探索", { timeout: 12000 });
     expect(Date.now() - startedAt).toBeLessThan(12000);
 
     const solutions = await page.getByTestId("solution-alg").allTextContents();
@@ -202,9 +190,9 @@ test("five generator PLL preset search uses the verified preset seed", async ({ 
   await fillSearchConditions(page, "R U D F L", 16);
   await page.getByTestId("preset-category-PLL").click();
   await page.getByTestId("preset-case-pll-19-v").click();
-  const searchButton = page.getByRole("button", { name: "展開図から探索" });
+  const searchButton = page.getByRole("button", { name: "探索", exact: true });
   await searchButton.click();
-  await expect(searchButton).toHaveText("展開図から探索", { timeout: 12000 });
+  await expect(searchButton).toHaveText("探索", { timeout: 12000 });
 
   const solutions = await page.getByTestId("solution-alg").allTextContents();
   expect(solutions.length).toBeGreaterThanOrEqual(8);
@@ -220,10 +208,10 @@ for (const presetId of ["zbls-f2l-1-1", "zbls-f2l-25-1", "zbls-f2l-31-1", "zbls-
     await page.getByTestId("preset-category-ZBLS").click();
     await page.getByTestId(`zbls-f2l-${preset.f2l}`).click();
     await page.getByTestId(`preset-case-${preset.id}`).click();
-    const searchButton = page.getByRole("button", { name: "展開図から探索" });
+    const searchButton = page.getByRole("button", { name: "探索", exact: true });
     await searchButton.click();
     await expect(page.getByTestId("solution-card").first()).toBeVisible({ timeout: 12000 });
-    await expect(searchButton).toHaveText("展開図から探索", { timeout: 12000 });
+    await expect(searchButton).toHaveText("探索", { timeout: 12000 });
 
     const solutions = await page.getByTestId("solution-alg").allTextContents();
     expect(solutions.length).toBeGreaterThan(0);

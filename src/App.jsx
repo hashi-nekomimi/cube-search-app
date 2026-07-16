@@ -11,7 +11,6 @@ import "./App.css";
 
 const FACE_ORDER = ["U", "R", "F", "D", "L", "B"];
 const DONT_CARE = "X";
-const NL = String.fromCharCode(10);
 const SOLVED_STRING = FACE_ORDER.map((face) => face.repeat(9)).join("");
 const NORMAL = {
   U: [0, 1, 0],
@@ -347,7 +346,7 @@ function readabilityPenalty(moves) {
   return penalty;
 }
 
-const SOLUTION_SORT_KEYS = ["symbol", "ease", "regrip", "effective", "quarter"];
+const SOLUTION_SORT_KEYS = ["symbol", "ease", "regrip"];
 const DEFAULT_SOLUTION_FILTERS = { auf: "all", regrip: "all", ease: "all", feature: "all" };
 const SOLUTION_FILTER_OPTIONS = {
   auf: ["all", "none", "any", "start", "end", "both"],
@@ -392,8 +391,7 @@ function sortedSolutions(solutions, sortKey) {
   return [...solutions].sort((a, b) => compareSolutions(a, b, sortKey));
 }
 
-function formatWithSimulUDSegments(moves) {
-  const cleaned = cleanMoves(moves);
+function formatCleanMovesWithSimulUDSegments(cleaned) {
   const segments = [];
   for (let i = 0; i < cleaned.length;) {
     if (i + 1 < cleaned.length && isParallelPair(cleaned[i], cleaned[i + 1])) {
@@ -410,6 +408,29 @@ function formatWithSimulUDSegments(moves) {
     }
   }
   return segments;
+}
+
+function makeFeatureDisplayChunks(moves, features, selectedFeature) {
+  const featureAt = Array(moves.length).fill(null);
+  if (selectedFeature !== "all") {
+    for (const feature of features) {
+      if (selectedFeature !== "any" && feature.type !== selectedFeature) continue;
+      for (let index = feature.start; index < feature.end; index += 1) {
+        if (!featureAt[index]) featureAt[index] = feature;
+      }
+    }
+  }
+
+  const chunks = [];
+  for (let start = 0; start < moves.length;) {
+    const feature = featureAt[start];
+    let end = start + 1;
+    while (end < moves.length && featureAt[end] === feature) end += 1;
+    const text = formatCleanMovesWithSimulUDSegments(moves.slice(start, end)).map((segment) => segment.text).join(" ");
+    chunks.push({ text, feature });
+    start = end;
+  }
+  return chunks;
 }
 
 function applyPermToString(state, perm) {
@@ -475,8 +496,6 @@ function insertSolutionUnique(list, solution) {
 }
 
 const LANGUAGE_LABEL = { ja: "日本語", en: "English", ur: "اردو", ko: "한국어", hi: "हिन्दी", ar: "العربية" };
-const PRESET_GENS = ["R U", "R U F", "R U D", "R U L", "R U f"];
-const REQUIRED_PART_PRESETS = ["R U R' U'", "U R U' R'", "R' F R F'", "F R' F' R"];
 const TEXT = {
   ja: { title: "手順探索", darkMode: "ダークモード", showMoveCounts: "手数を表示", netInput: "入力方式", language: "言語", shareUrl: "URL共有", saved: "保存済み", history: "履歴", favorite: "保存", clear: "削除", copied: "コピーしました", unsafeContinue: "上限なしで続ける", inputPlaceholder: "既存の手順を入力…", searchFromAlg: "手順から探索", searchFromNet: "展開図から探索", algMode: "手順", netMode: "展開図", casePresets: "状態プリセット", generator: "生成系", requiredParts: "必須パーツ", requiredPartsPlaceholder: "例: R U R' U'", depthLimit: "手数上限", resultLimit: "表示件数", copy: "コピー", simultaneous: "同時回し", symbolMoves: "記号手数", quarterTurns: "90度手数", thinkingTitle: "探索中…", thinkingBody: (n) => `見つかった手順から順に表示しています。現在 ${n} 件。`, noResults: "条件に一致する手順が見つかりませんでした。", searchFinished: (n) => `${n}件の結果が見つかりました。`, initialHelp: "条件を入力して、探索を開始してください。" },
   en: { title: "Algorithm Search", darkMode: "Dark mode", showMoveCounts: "Show move counts", netInput: "Input mode", language: "Language", shareUrl: "Share URL", saved: "Saved", history: "History", favorite: "Save", clear: "Clear", copied: "Copied", unsafeContinue: "Continue without limit", inputPlaceholder: "Enter an existing solution…", searchFromAlg: "Search from algorithm", searchFromNet: "Search from net", algMode: "Algorithm", netMode: "Net", casePresets: "State presets", generator: "Generator", requiredParts: "Required parts", requiredPartsPlaceholder: "e.g. R U R' U'", depthLimit: "Move limit", resultLimit: "Results", copy: "Copy", simultaneous: "Simul moves", symbolMoves: "Move count", quarterTurns: "Quarter turns", thinkingTitle: "Searching…", thinkingBody: (n) => `Showing results as they are found. ${n} found so far.`, noResults: "No matching algorithms found.", searchFinished: (n) => `${n} result${n === 1 ? "" : "s"} found.`, initialHelp: "Enter conditions and start searching." },
@@ -486,13 +505,20 @@ const TEXT = {
   ar: { title: "البحث عن الخوارزميات", darkMode: "الوضع الداكن", showMoveCounts: "إظهار عدد الحركات", netInput: "طريقة الإدخال", language: "اللغة", shareUrl: "مشاركة الرابط", saved: "محفوظ", history: "السجل", favorite: "حفظ", clear: "حذف", copied: "تم النسخ", unsafeContinue: "المتابعة بلا حد", inputPlaceholder: "أدخل الحل الموجود…", searchFromAlg: "البحث من الخوارزمية", searchFromNet: "البحث من المخطط", algMode: "الخوارزمية", netMode: "المخطط", casePresets: "إعدادات الحالة", generator: "المولد", requiredParts: "جزء إلزامي", requiredPartsPlaceholder: "مثال: R U R' U'", depthLimit: "حد الحركات", resultLimit: "عدد النتائج", copy: "نسخ", simultaneous: "حركات متزامنة", symbolMoves: "عدد الحركات", quarterTurns: "دورات 90°", thinkingTitle: "جارٍ البحث…", thinkingBody: (n) => `يتم عرض النتائج فور العثور عليها. تم العثور على ${n} حتى الآن.`, noResults: "لم يتم العثور على خوارزميات مطابقة.", searchFinished: (n) => `تم العثور على ${n} نتيجة.`, initialHelp: "أدخل الشروط وابدأ البحث." },
 };
 
+const SEARCH_FORM_TEXT = {
+  ja: { stateMode: "状態", requiredPatterns: "必須パターン", forbiddenPatterns: "禁止パターン", patternPlaceholder: "例: R U R' U'", depthLimit: "HTM上限", search: "探索" },
+  en: { stateMode: "State", requiredPatterns: "Required patterns", forbiddenPatterns: "Forbidden patterns", patternPlaceholder: "e.g. R U R' U'", depthLimit: "HTM limit", search: "Search" },
+  ur: { stateMode: "حالت", requiredPatterns: "لازمی پیٹرن", forbiddenPatterns: "ممنوعہ پیٹرن", patternPlaceholder: "R U R' U'", depthLimit: "HTM حد", search: "تلاش" },
+  ko: { stateMode: "상태", requiredPatterns: "필수 패턴", forbiddenPatterns: "금지 패턴", patternPlaceholder: "예: R U R' U'", depthLimit: "HTM 제한", search: "탐색" },
+  hi: { stateMode: "स्थिति", requiredPatterns: "आवश्यक पैटर्न", forbiddenPatterns: "निषिद्ध पैटर्न", patternPlaceholder: "उदाहरण: R U R' U'", depthLimit: "HTM सीमा", search: "खोजें" },
+  ar: { stateMode: "الحالة", requiredPatterns: "نمط مطلوب", forbiddenPatterns: "نمط ممنوع", patternPlaceholder: "مثال: R U R' U'", depthLimit: "حد HTM", search: "بحث" },
+};
+
 const SORT_BY_LABEL = { ja: "並び順", en: "Sort", ur: "Sort", ko: "정렬", hi: "Sort", ar: "Sort" };
 const REGRIP_LABEL = { ja: "リグリップ", en: "Regrips", ur: "Regrips", ko: "리그립", hi: "Regrips", ar: "Regrips" };
 const SOLUTION_SORT_LABELS = {
   ease: { ja: "EASE", en: "EASE", ur: "EASE", ko: "EASE", hi: "EASE", ar: "EASE" },
-  effective: { ja: "STM", en: "STM", ur: "STM", ko: "STM", hi: "STM", ar: "STM" },
   symbol: { ja: "HTM", en: "HTM", ur: "HTM", ko: "HTM", hi: "HTM", ar: "HTM" },
-  quarter: { ja: "QTM", en: "QTM", ur: "QTM", ko: "QTM", hi: "QTM", ar: "QTM" },
   regrip: { ja: "リグリップ", en: "Regrips", ur: "Regrips", ko: "리그립", hi: "Regrips", ar: "Regrips" },
 };
 const RESULT_ANALYSIS_TEXT = {
@@ -507,7 +533,6 @@ const RESULT_ANALYSIS_TEXT = {
     easeOptions: { all: "すべて", 90: "90以上", 78: "78以上", 65: "65以上" },
     feature: "特徴",
     featureOptions: { all: "すべて", any: "トリガーあり", sexy: "セクシームーブ", sune: "スーン", commutator: "コミュテーター", sledge: "スレッジ" },
-    featureHighlightHint: (feature) => `色付き = ${feature}に一致する箇所`,
     filteredEmpty: "絞り込み条件に一致する手順がありません。",
     regripTitle: "最小リグリップ経路",
     regripTitles: { right: "右親指の最小経路", left: "左親指の最小経路" },
@@ -520,6 +545,7 @@ const RESULT_ANALYSIS_TEXT = {
     moveCountTitle: "手数の内訳",
     easeBands: { excellent: "非常に回しやすい", easy: "回しやすい", average: "標準", difficult: "やや難しい", hard: "難しい" },
     featureNames: { sexy: "セクシームーブ", sune: "スーン", commutator: "コミュテーター", sledge: "スレッジ" },
+    featureShortNames: { sexy: "Sexy", sune: "Sune", commutator: "Commutator", sledge: "Sledge" },
     formula: "EASE = clamp(0, 100, 100 - 3 × H + 2 × T - 8 × R - W)",
     formulaLegend: "H = HTM / T = 同値類トリガー手数 / R = リグリップ / W = 2層回し手数",
     formulaRule: "逆手順・鏡手順・側面を替えた同値類もトリガーとして数え、重複する手数は1回だけ数えます。2層回しは対応する1層回しの経路で解析し、1記号につき1点減点します。",
@@ -537,7 +563,6 @@ const RESULT_ANALYSIS_TEXT = {
     easeOptions: { all: "All", 90: "90+", 78: "78+", 65: "65+" },
     feature: "Feature",
     featureOptions: { all: "All", any: "Any trigger", sexy: "Sexy move", sune: "Sune", commutator: "Commutator", sledge: "Sledge" },
-    featureHighlightHint: (feature) => `Highlighted = matches ${feature}`,
     filteredEmpty: "No algorithms match the current filters.",
     regripTitle: "Minimum regrip path",
     regripTitles: { right: "Minimum right-thumb path", left: "Minimum left-thumb path" },
@@ -550,6 +575,7 @@ const RESULT_ANALYSIS_TEXT = {
     moveCountTitle: "Move counts",
     easeBands: { excellent: "Very easy", easy: "Easy", average: "Average", difficult: "Difficult", hard: "Hard" },
     featureNames: { sexy: "Sexy move", sune: "Sune", commutator: "Commutator", sledge: "Sledge" },
+    featureShortNames: { sexy: "Sexy", sune: "Sune", commutator: "Commutator", sledge: "Sledge" },
     formula: "EASE = clamp(0, 100, 100 - 3 × H + 2 × T - 8 × R - W)",
     formulaLegend: "H = HTM / T = equivalent-trigger moves / R = regrips / W = wide moves",
     formulaRule: "Inverse, mirror and side-rotated equivalents count as triggers; overlapping moves are counted once. Wide moves reuse the corresponding single-layer path and cost one point each.",
@@ -639,6 +665,18 @@ function collPreviewPattern(pattern) {
   return preview;
 }
 
+function collFamilyPreviewPattern(pattern) {
+  const preview = collPreviewPattern(pattern);
+  for (const [face, index] of [
+    ["U", 0], ["U", 2], ["U", 6], ["U", 8],
+    ["B", 0], ["B", 2], ["L", 0], ["L", 2],
+    ["F", 0], ["F", 2], ["R", 0], ["R", 2],
+  ]) {
+    preview[face][index] = preview[face][index] === "U" ? "U" : DONT_CARE;
+  }
+  return preview;
+}
+
 const COLL_CASES = COLL_PRESET_DATA.map((record) => ({
   id: record.id,
   family: record.family,
@@ -653,7 +691,7 @@ const COLL_GROUPS = COLL_FAMILY_META.map((family) => {
   return {
     ...family,
     label: `${family.label} (${cases.length})`,
-    preview: cases[0].previewPattern,
+    preview: collFamilyPreviewPattern(cases[0].pattern),
     cases,
   };
 });
@@ -747,9 +785,9 @@ function workerMain() {
   function inverseMove(move) { const base = move[0]; if (move.endsWith("'")) return base; if (move.endsWith("2")) return move; return base + "'"; }
   function inverseAlgList(moves) { return moves.slice().reverse().map(inverseMove); }
   function algToString(moves) { return moves.join(" "); }
-  function parseRequiredParts(text) { return String(text || "").replaceAll("、", NL).replaceAll(",", NL).split(NL).map((part) => part.trim()).filter(Boolean).map((part) => cleanMoves(parseAlg(part))); }
-  function listContainsSubsequence(list, part) { if (!part.length) return true; if (part.length > list.length) return false; for (let i = 0; i <= list.length - part.length; i += 1) { let ok = true; for (let j = 0; j < part.length; j += 1) if (list[i + j] !== part[j]) { ok = false; break; } if (ok) return true; } return false; }
-  function solutionMatchesRequiredParts(solution, requiredParts) { const cleaned = cleanMoves(solution); return requiredParts.every((part) => listContainsSubsequence(cleaned, part)); }
+  function parseMovePatterns(text) { return String(text || "").replaceAll("、", NL).replaceAll(",", NL).split(NL).map((part) => part.trim()).filter(Boolean).map((part) => cleanMoves(parseAlg(part))).filter((part) => part.length); }
+  function listContainsPattern(list, pattern) { if (pattern.length > list.length) return false; for (let i = 0; i <= list.length - pattern.length; i += 1) { let ok = true; for (let j = 0; j < pattern.length; j += 1) if (list[i + j] !== pattern[j]) { ok = false; break; } if (ok) return true; } return false; }
+  function solutionMatchesMovePatterns(solution, requiredPatterns, forbiddenPatterns) { const cleaned = cleanMoves(solution); return requiredPatterns.every((pattern) => listContainsPattern(cleaned, pattern)) && forbiddenPatterns.every((pattern) => !listContainsPattern(cleaned, pattern)); }
   function parallelGroup(move) { return PARALLEL_GROUP[move[0]] || null; }
   function isParallelPair(a, b) { const ga = parallelGroup(a), gb = parallelGroup(b); return ga !== null && ga === gb && a[0] !== b[0]; }
   function moveToFacePower(move) { let power = 1; if (move.endsWith("2")) power = 2; else if (move.endsWith("'")) power = 3; return [move[0], power]; }
@@ -768,7 +806,7 @@ function workerMain() {
   function stateFromSolution(solution) { let state = SOLVED; for (const move of inverseAlgList(solution)) state = applyPerm(state, moveToPerm(move)); return state; }
   function trimRedundantFinalAuf(job, solution) { let current = cleanMoves(solution); if (!job.matcher) return current; while (current.length && current[current.length - 1][0] === "U") { const shorter = cleanMoves(current.slice(0, -1)); if (!job.matcher.matches(stateFromSolution(shorter))) break; current = shorter; } return current; }
   function solutionMatchesJobTarget(job, solution) { if (!job.targetState && !job.matcher) return true; const state = stateFromSolution(solution); if (job.targetState && state !== job.targetState) return false; return !job.matcher || job.matcher.matches(state); }
-  function emitSolution(job, solution) { const normalized = trimRedundantFinalAuf(job, solution); if (symbolMoveCount(normalized) > job.maxSymbolDepth) return false; if (!solutionMatchesRequiredParts(normalized, job.requiredParts)) return false; if (!solutionMatchesJobTarget(job, normalized)) return false; const key = algToString(normalized); if (job.foundKeys.has(key)) return false; job.foundKeys.add(key); job.foundCount += 1; if (job.captureSolution) job.captureSolution(normalized); else self.postMessage({ type: "solution", solution: normalized }); return true; }
+  function emitSolution(job, solution) { const normalized = trimRedundantFinalAuf(job, solution); if (symbolMoveCount(normalized) > job.maxSymbolDepth) return false; if (!solutionMatchesMovePatterns(normalized, job.requiredPatterns, job.forbiddenPatterns)) return false; if (!solutionMatchesJobTarget(job, normalized)) return false; const key = algToString(normalized); if (job.foundKeys.has(key)) return false; job.foundKeys.add(key); job.foundCount += 1; if (job.captureSolution) job.captureSolution(normalized); else self.postMessage({ type: "solution", solution: normalized }); return true; }
   function pauseJob(job) { job.paused = true; self.postMessage({ type: "paused", message: "探索が大きすぎたため中断しました。" }); }
   function totalStored(job) { return (job.storeA ? job.storeA.states.length : 0) + (job.storeB ? job.storeB.states.length : 0) + (job.forwardStore ? job.forwardStore.states.length : 0) + (job.secondNodes ? job.secondNodes.length : 0); }
   function shouldPause(job) { return !job.allowUnsafe && totalStored(job) > MAX_STORED_STATES; }
@@ -859,7 +897,7 @@ function workerMain() {
     self.postMessage({ type: "done", completed: true });
     return true;
   }
-  function startExactStateJob(data, start, matcher = null) { const moves = makeSearchMoves(data.searchMovesText); const maxSymbolDepth = Number(data.maxSymbolDepth) || 1; const job = { kind: "alg", allowUnsafe: Boolean(data.allowUnsafe), requiredParts: parseRequiredParts(data.requiredPartsText || ""), foundCount: 0, foundKeys: new Set(), stopByLimit: false, moves, maxSymbolDepth, sideSymbolLimitA: Math.ceil(maxSymbolDepth / 2), sideSymbolLimitB: Math.floor(maxSymbolDepth / 2), movePerms: buildMovePerms(moves), matcher, targetState: start, storeA: makeStore(start), storeB: makeStore(SOLVED), frontA: [0], frontB: [0] }; CURRENT_JOB = job; if (runSeededFastJob(job, data.seedAlg || "")) return; if (start === SOLVED) emitSolution(job, []); processAlgJob(job); }
+  function startExactStateJob(data, start, matcher = null) { const moves = makeSearchMoves(data.searchMovesText); const maxSymbolDepth = Number(data.maxSymbolDepth) || 1; const job = { kind: "alg", allowUnsafe: Boolean(data.allowUnsafe), requiredPatterns: parseMovePatterns(data.requiredPatternsText || data.requiredPartsText || ""), forbiddenPatterns: parseMovePatterns(data.forbiddenPatternsText || ""), foundCount: 0, foundKeys: new Set(), stopByLimit: false, moves, maxSymbolDepth, sideSymbolLimitA: Math.ceil(maxSymbolDepth / 2), sideSymbolLimitB: Math.floor(maxSymbolDepth / 2), movePerms: buildMovePerms(moves), matcher, targetState: start, storeA: makeStore(start), storeB: makeStore(SOLVED), frontA: [0], frontB: [0] }; CURRENT_JOB = job; if (runSeededFastJob(job, data.seedAlg || "")) return; if (start === SOLVED) emitSolution(job, []); processAlgJob(job); }
   function startAlgJob(data) { const start = applyAlg(SOLVED, algToString(inverseAlgList(parseAlg(data.targetAlg)))); startExactStateJob(data, start); }
 
   function permKey(perm) { let key = ""; for (let i = 0; i < 54; i += 1) key += String.fromCharCode(perm[i] + 35); return key; }
@@ -900,15 +938,10 @@ function workerMain() {
     }
     return null;
   }
-  function startPatternJob(data) { const pattern = data.targetPattern; validatePattern(pattern); const patternArr = patternToArray(pattern); const matcher = makeMatcher(patternArr); if (matcher.count === 54) { startExactStateJob(data, patternArr.join(""), matcher); return; } const moves = makeSearchMoves(data.searchMovesText); const maxSymbolDepth = Number(data.maxSymbolDepth) || 1; const requiredParts = parseRequiredParts(data.requiredPartsText || ""); const baseJob = { kind: "pattern", allowUnsafe: Boolean(data.allowUnsafe), requiredParts, foundCount: 0, foundKeys: new Set(), stopByLimit: false, moves, maxSymbolDepth, maxPhysicalDepth: maxSymbolDepth, movePerms: buildMovePerms(moves), matcher, targetState: null }; CURRENT_JOB = baseJob; if (runSeededFastJob(baseJob, data.seedAlg || "")) return; if (generatorFaceCount(moves) >= 4) { const discoveredSeed = discoverPatternSeed(baseJob); if (discoveredSeed && runSeededFastJob(baseJob, algToString(discoveredSeed))) return; } if (matcher.matches(SOLVED)) emitSolution(baseJob, []); const job = makePatternSearchJob(baseJob); CURRENT_JOB = job; processBidirectionalPatternJob(job); }
+  function startPatternJob(data) { const pattern = data.targetPattern; validatePattern(pattern); const patternArr = patternToArray(pattern); const matcher = makeMatcher(patternArr); if (matcher.count === 54) { startExactStateJob(data, patternArr.join(""), matcher); return; } const moves = makeSearchMoves(data.searchMovesText); const maxSymbolDepth = Number(data.maxSymbolDepth) || 1; const requiredPatterns = parseMovePatterns(data.requiredPatternsText || data.requiredPartsText || ""); const forbiddenPatterns = parseMovePatterns(data.forbiddenPatternsText || ""); const baseJob = { kind: "pattern", allowUnsafe: Boolean(data.allowUnsafe), requiredPatterns, forbiddenPatterns, foundCount: 0, foundKeys: new Set(), stopByLimit: false, moves, maxSymbolDepth, maxPhysicalDepth: maxSymbolDepth, movePerms: buildMovePerms(moves), matcher, targetState: null }; CURRENT_JOB = baseJob; if (runSeededFastJob(baseJob, data.seedAlg || "")) return; if (generatorFaceCount(moves) >= 4) { const discoveredSeed = discoverPatternSeed(baseJob); if (discoveredSeed && runSeededFastJob(baseJob, algToString(discoveredSeed))) return; } if (matcher.matches(SOLVED)) emitSolution(baseJob, []); const job = makePatternSearchJob(baseJob); CURRENT_JOB = job; processBidirectionalPatternJob(job); }
   self.onmessage = function (event) { const data = event.data || {}; if (data.command === "continue") { if (CURRENT_JOB) { CURRENT_JOB.allowUnsafe = true; if (CURRENT_JOB.kind === "alg") processAlgJob(CURRENT_JOB); else processBidirectionalPatternJob(CURRENT_JOB); } return; } try { if (data.mode === "alg") startAlgJob(data); else startPatternJob(data); } catch (e) { self.postMessage({ type: "error", message: e instanceof Error ? e.message : String(e) }); } };
 }
 
-function Sticker({ color, bottomColor, onClick, locked = false, testId }) {
-  const displayColor = displayColorSymbol(color, bottomColor);
-  return <button type="button" data-testid={testId} data-color={color} data-display-color={displayColor} onClick={onClick} disabled={locked} className={`cube-sticker${locked ? " is-locked" : ""}`} style={{ background: displayColorStyle(color, bottomColor) }} title={FACE_LABEL[displayColor] || displayColor}>{color === DONT_CARE ? <span>?</span> : null}</button>;
-}
-function FaceGrid({ face, stickers, bottomColor, onStickerClick }) { return <div className="cube-face">{stickers.map((color, idx) => <Sticker key={idx} testId={face ? `net-${face}-${idx}` : undefined} color={color} bottomColor={bottomColor} locked={idx === 4} onClick={() => onStickerClick(idx)} />)}</div>; }
 function MiniSticker({ filled, bottomColor, corner = false }) {
   if (corner) return <div className="h-2.5 w-2.5 sm:h-3 sm:w-3" />;
   const displayColor = displayColorSymbol("U", bottomColor);
@@ -985,7 +1018,6 @@ function MiniPatternPreview({ pattern, previewMask, variant = "last-layer", bott
   const mask = previewMask || fallbackPreviewMask(pattern);
   return <div className="grid grid-cols-5 gap-[2px]">{mask.split("").map((cell, idx) => <MiniSticker key={idx} corner={cell === "x" || idx === 0 || idx === 4 || idx === 20 || idx === 24} filled={cell === "1"} bottomColor={bottomColor} />)}</div>;
 }
-function NetEditor({ pattern, setPattern, selectedColor, displayBottomColor }) { function setSticker(face, idx) { if (idx === 4) return; setPattern((prev) => { const next = {}; for (const f of FACE_ORDER) next[f] = [...prev[f]]; next[face][idx] = selectedColor; return next; }); } const spacer = <div aria-hidden="true" />; return <div className="cube-net">{spacer}<FaceGrid face="U" stickers={pattern.U} bottomColor={displayBottomColor} onStickerClick={(idx) => setSticker("U", idx)} />{spacer}{spacer}<FaceGrid face="L" stickers={pattern.L} bottomColor={displayBottomColor} onStickerClick={(idx) => setSticker("L", idx)} /><FaceGrid face="F" stickers={pattern.F} bottomColor={displayBottomColor} onStickerClick={(idx) => setSticker("F", idx)} /><FaceGrid face="R" stickers={pattern.R} bottomColor={displayBottomColor} onStickerClick={(idx) => setSticker("R", idx)} /><FaceGrid face="B" stickers={pattern.B} bottomColor={displayBottomColor} onStickerClick={(idx) => setSticker("B", idx)} />{spacer}<FaceGrid face="D" stickers={pattern.D} bottomColor={displayBottomColor} onStickerClick={(idx) => setSticker("D", idx)} />{spacer}{spacer}</div>; }
 function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor, displayBottomColor }) {
   const rootRef = useRef(null);
   const sceneRef = useRef(null);
@@ -1351,34 +1383,34 @@ function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor, disp
   }, [pattern]);
 
   return (
-    <div data-testid="cube-editor" className="cube-editor-surface" ref={rootRef} />
+    <div
+      data-testid="cube-editor"
+      data-pattern-state={FACE_ORDER.flatMap((face) => pattern[face]).join("")}
+      data-display-bottom-color={displayBottomColor}
+      className="cube-editor-surface"
+      ref={rootRef}
+    />
   );
 }
 function ColorPicker({ selectedColor, setSelectedColor, bottomColor, label }) {
   return <div className="editor-control-group"><span className="editor-control-label">{label}</span><div className="swatch-row">{[...FACE_ORDER, DONT_CARE].map((face) => { const displayColor = displayColorSymbol(face, bottomColor); return <button key={face} type="button" data-testid={`color-${face}`} data-display-color={displayColor} aria-pressed={selectedColor === face} onClick={() => setSelectedColor(face)} className={`swatch-button${selectedColor === face ? " is-active" : ""}`} title={FACE_LABEL[displayColor] || displayColor}><span className="swatch" style={{ background: displayColorStyle(face, bottomColor) }}>{face === DONT_CARE ? "?" : ""}</span></button>; })}</div></div>;
 }
-function PatternEditorControls({ editorMode, setEditorMode, bottomColor, setBottomColor, bottomColorLabel }) {
+function BottomColorPicker({ bottomColor, setBottomColor, label }) {
   return (
-    <div className="pattern-view-controls">
-      <div className="segmented-control compact" aria-label="表示方式">
-        <button type="button" data-testid="pattern-editor-net" aria-pressed={editorMode === "net"} onClick={() => setEditorMode("net")} className={editorMode === "net" ? "is-active" : ""}>展開図</button>
-        <button type="button" data-testid="pattern-editor-cube" aria-pressed={editorMode === "cube"} onClick={() => setEditorMode("cube")} className={editorMode === "cube" ? "is-active" : ""}>立体</button>
-      </div>
-      <div className="editor-control-group bottom-color-control" data-testid="bottom-color-picker">
-        <span className="editor-control-label">{bottomColorLabel}</span>
-        <div className="swatch-row">{FACE_ORDER.map((face) => <button key={face} type="button" data-testid={`bottom-color-${face}`} aria-pressed={bottomColor === face} onClick={() => setBottomColor(face)} className={`swatch-button${bottomColor === face ? " is-active" : ""}`} title={FACE_LABEL[face]}><span className="swatch" style={{ background: FACE_COLOR_STYLE[face] }} /></button>)}</div>
-      </div>
+    <div className="editor-control-group bottom-color-control" data-testid="bottom-color-picker">
+      <span className="editor-control-label">{label}</span>
+      <div className="swatch-row">{FACE_ORDER.map((face) => <button key={face} type="button" data-testid={`bottom-color-${face}`} aria-pressed={bottomColor === face} onClick={() => setBottomColor(face)} className={`swatch-button${bottomColor === face ? " is-active" : ""}`} title={FACE_LABEL[face]}><span className="swatch" style={{ background: FACE_COLOR_STYLE[face] }} /></button>)}</div>
     </div>
   );
 }
-function PatternInputEditor({ pattern, setPattern, selectedColor, setSelectedColor, editorMode, setEditorMode, bottomColor, displayBottomColor, setBottomColor, labels }) {
+function PatternInputEditor({ pattern, setPattern, selectedColor, setSelectedColor, bottomColor, displayBottomColor, setBottomColor, labels }) {
   return (
     <div className="pattern-editor">
       <div className="pattern-editor-toolbar">
         <ColorPicker selectedColor={selectedColor} setSelectedColor={setSelectedColor} bottomColor={displayBottomColor} label={labels.stickerColor} />
-        <PatternEditorControls editorMode={editorMode} setEditorMode={setEditorMode} bottomColor={bottomColor} setBottomColor={setBottomColor} bottomColorLabel={labels.bottomColor} />
+        <BottomColorPicker bottomColor={bottomColor} setBottomColor={setBottomColor} label={labels.bottomColor} />
       </div>
-      <div className="editor-stage">{editorMode === "cube" ? <ThreeCubeEditor pattern={pattern} setPattern={setPattern} selectedColor={selectedColor} bottomColor={bottomColor} displayBottomColor={displayBottomColor} /> : <NetEditor pattern={pattern} setPattern={setPattern} selectedColor={selectedColor} displayBottomColor={displayBottomColor} />}</div>
+      <div className="editor-stage"><ThreeCubeEditor pattern={pattern} setPattern={setPattern} selectedColor={selectedColor} bottomColor={bottomColor} displayBottomColor={displayBottomColor} /></div>
     </div>
   );
 }
@@ -1440,12 +1472,6 @@ function SolutionFilterControls({ filters, setFilters, language }) {
           </label>
         ))}
       </div>
-      {filters.feature !== "all" ? (
-        <p data-testid="feature-highlight-hint" className="solution-feature-hint">
-          <span className="solution-feature-hint-swatch" aria-hidden="true" />
-          {labels.featureHighlightHint(labels.featureOptions[filters.feature])}
-        </p>
-      ) : null}
     </div>
   );
 }
@@ -1579,19 +1605,12 @@ function MoveCountDetail({ analysis, language, id }) {
   );
 }
 function SolutionCard({ solution, t, language, onCopy, highlightFeature }) {
-  const displaySegments = formatWithSimulUDSegments(solution);
+  const displayMoves = cleanMoves(solution);
+  const displaySegments = formatCleanMovesWithSimulUDSegments(displayMoves);
   const displayAlg = displaySegments.map((segment) => segment.text).join(" ");
   const analysis = solutionAnalysis(solution);
   const labels = analysisText(language);
-  const highlightedMoves = new Map();
-  if (highlightFeature !== "all") {
-    for (const feature of analysis.features) {
-      if (highlightFeature !== "any" && feature.type !== highlightFeature) continue;
-      for (let index = feature.start; index < feature.end; index += 1) {
-        if (!highlightedMoves.has(index)) highlightedMoves.set(index, feature.type);
-      }
-    }
-  }
+  const displayChunks = makeFeatureDisplayChunks(displayMoves, analysis.features, highlightFeature);
   const [detail, setDetail] = useState(null);
   const detailId = useId();
   return (
@@ -1600,26 +1619,28 @@ function SolutionCard({ solution, t, language, onCopy, highlightFeature }) {
         <button
           type="button"
           data-testid="solution-alg"
+          data-alg={displayAlg}
           className="solution-alg"
           aria-label={`${displayAlg || "(空)"} ${t.copy}`}
           title={t.copy}
           onClick={() => onCopy(displayAlg)}
         >
-          {displaySegments.length ? displaySegments.map((segment, index) => {
-            const featureType = highlightedMoves.get(segment.moveIndex);
+          {displayChunks.length ? displayChunks.map((chunk, index) => {
+            const featureType = chunk.feature?.type;
             return (
-              <Fragment key={`${segment.moveIndex ?? "group"}-${index}`}>
+              <Fragment key={`${featureType || "plain"}-${index}`}>
                 {index ? " " : null}
                 {featureType ? (
                   <mark
                     data-testid="feature-highlight"
                     data-feature={featureType}
-                    className="solution-feature-highlight"
+                    data-feature-label={labels.featureShortNames[featureType]}
+                    className="solution-feature-group"
                     title={labels.featureNames[featureType]}
                   >
-                    {segment.text}
+                    {chunk.text}
                   </mark>
-                ) : segment.text}
+                ) : chunk.text}
               </Fragment>
             );
           }) : "(空)"}
@@ -1842,13 +1863,13 @@ function CasePresetPanel({ category, collGroupOpen, setCollGroupOpen, zbllFamily
 export default function App() {
   const workerUrlRef = useRef(new WeakMap());
   const [showNetInput, setShowNetInput] = useState(false);
-  const [patternEditorMode, setPatternEditorMode] = useState("net");
   const [bottomColor, setBottomColor] = useState("D");
   const [patternBottomColor, setPatternBottomColor] = useState("D");
   const [menuOpen, setMenuOpen] = useState(false);
   const [languageOpen, setLanguageOpen] = useState(false);
   const [language, setLanguage] = useState("ja");
   const t = TEXT[language] || TEXT.ja;
+  const form = SEARCH_FORM_TEXT[language] || SEARCH_FORM_TEXT.en;
   const ui = WORKSPACE_TEXT[language] || WORKSPACE_TEXT.en;
   const isRtl = language === "ar" || language === "ur";
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -1867,7 +1888,8 @@ export default function App() {
   const [zbllCollOpen, setZbllCollOpen] = useState(null);
   const [zblsF2lOpen, setZblsF2lOpen] = useState(null);
   const [searchMovesText, setSearchMovesText] = useState("");
-  const [requiredPartsText, setRequiredPartsText] = useState("");
+  const [requiredPatternsText, setRequiredPatternsText] = useState("");
+  const [forbiddenPatternsText, setForbiddenPatternsText] = useState("");
   const [maxSymbolDepth, setMaxSymbolDepth] = useState(15);
   const [solutionSortKey, setSolutionSortKey] = useState("symbol");
   const [solutionFilters, setSolutionFilters] = useState(DEFAULT_SOLUTION_FILTERS);
@@ -1924,7 +1946,8 @@ export default function App() {
       bottomColor,
       patternBottomColor,
       searchMovesText,
-      requiredPartsText,
+      requiredPatternsText,
+      forbiddenPatternsText,
       maxSymbolDepth,
     };
     const itemKey = JSON.stringify({
@@ -1935,7 +1958,8 @@ export default function App() {
       bottomColor,
       patternBottomColor,
       searchMovesText,
-      requiredPartsText,
+      requiredPatternsText,
+      forbiddenPatternsText,
       maxSymbolDepth,
     });
     const next = [
@@ -1950,7 +1974,8 @@ export default function App() {
             bottomColor: x.bottomColor || "D",
             patternBottomColor: x.patternBottomColor || x.bottomColor || "D",
             searchMovesText: x.searchMovesText,
-            requiredPartsText: x.requiredPartsText || "",
+            requiredPatternsText: x.requiredPatternsText || x.requiredPartsText || "",
+            forbiddenPatternsText: x.forbiddenPatternsText || "",
             maxSymbolDepth: x.maxSymbolDepth,
           }) !== itemKey,
       ),
@@ -1967,8 +1992,8 @@ export default function App() {
     setPatternSeedAlg(item.patternSeedAlg || "");
     if (item.searchMovesText !== undefined)
       setSearchMovesText(item.searchMovesText);
-    if (item.requiredPartsText !== undefined)
-      setRequiredPartsText(item.requiredPartsText || "");
+    setRequiredPatternsText(item.requiredPatternsText || item.requiredPartsText || "");
+    setForbiddenPatternsText(item.forbiddenPatternsText || "");
     if (item.maxSymbolDepth !== undefined)
       setMaxSymbolDepth(item.maxSymbolDepth);
     setShowNetInput(item.mode === "pattern");
@@ -2088,7 +2113,8 @@ export default function App() {
       targetPattern,
       seedAlg: mode === "alg" ? targetAlg : patternSeedAlg,
       searchMovesText,
-      requiredPartsText,
+      requiredPatternsText,
+      forbiddenPatternsText,
       maxSymbolDepth: Number(maxSymbolDepth),
       allowUnsafe: Boolean(options.allowUnsafe),
     });
@@ -2142,7 +2168,7 @@ export default function App() {
                       {history.length ? history.map((item) => (
                         <button key={item.id} type="button" className="menu-list-item" onClick={() => applyHistoryItem(item)}>
                           <span className="algorithm">{item.searchMovesText}</span>
-                          <span>{item.mode === "alg" ? item.targetAlg : t.searchFromNet}</span>
+                          <span>{item.mode === "alg" ? item.targetAlg : form.stateMode}</span>
                         </button>
                       )) : <div className="menu-list-empty">0</div>}
                       {history.length ? (
@@ -2191,8 +2217,7 @@ export default function App() {
 
       <main className={"workspace" + (showNetInput ? " pattern-mode" : "")}>
         <section className="input-panel">
-          <header className="panel-header">
-            <h2>{ui.target}</h2>
+          <div className="input-toolbar">
             <div className="segmented-control input-mode-control" role="tablist" aria-label={t.netInput}>
               <button
                 type="button"
@@ -2212,10 +2237,10 @@ export default function App() {
                 className={showNetInput ? "is-active" : ""}
                 onClick={() => selectInputMode("pattern")}
               >
-                {t.netMode}
+                {form.stateMode}
               </button>
             </div>
-          </header>
+          </div>
 
           {!showNetInput ? (
             <div className="algorithm-target">
@@ -2229,7 +2254,6 @@ export default function App() {
           ) : (
             <div className="pattern-input">
               <section className="preset-selector" aria-label={t.casePresets}>
-                <div className="subsection-label">{t.casePresets}</div>
                 <div className="preset-category-tabs" role="tablist" aria-label={t.casePresets}>
                   {CASE_PRESET_CATEGORIES.map((category) => (
                     <button
@@ -2271,8 +2295,6 @@ export default function App() {
                 setPattern={editTargetPattern}
                 selectedColor={selectedColor}
                 setSelectedColor={setSelectedColor}
-                editorMode={patternEditorMode}
-                setEditorMode={setPatternEditorMode}
                 bottomColor={bottomColor}
                 displayBottomColor={patternBottomColor}
                 setBottomColor={setBottomColor}
@@ -2290,35 +2312,28 @@ export default function App() {
                   value={searchMovesText}
                   onChange={(event) => setSearchMovesText(event.target.value)}
                   className="algorithm"
-                  placeholder="例: R U D / R U f / R U S / R U x"
+                  placeholder="例: R U D"
                 />
-                <span className="quick-picks">
-                  {PRESET_GENS.map((preset) => (
-                    <button key={preset} type="button" onClick={() => setSearchMovesText(preset)}>{preset}</button>
-                  ))}
-                </span>
               </label>
               <label className="field">
-                <span>{t.requiredParts}</span>
+                <span>{form.requiredPatterns}</span>
                 <input
-                  value={requiredPartsText}
-                  onChange={(event) => setRequiredPartsText(event.target.value)}
+                  value={requiredPatternsText}
+                  onChange={(event) => setRequiredPatternsText(event.target.value)}
                   className="algorithm"
-                  placeholder={t.requiredPartsPlaceholder}
+                  placeholder={form.patternPlaceholder}
                 />
-                <span className="quick-picks">
-                  {REQUIRED_PART_PRESETS.map((preset) => (
-                    <button
-                      key={preset}
-                      type="button"
-                      onClick={() => setRequiredPartsText((previous) => previous.trim() ? previous.trim() + NL + preset : preset)}
-                    >
-                      {preset}
-                    </button>
-                  ))}
-                </span>
               </label>
-              <NumberInput label={t.depthLimit} value={maxSymbolDepth} onChange={setMaxSymbolDepth} min={1} max={30} />
+              <label className="field">
+                <span>{form.forbiddenPatterns}</span>
+                <input
+                  value={forbiddenPatternsText}
+                  onChange={(event) => setForbiddenPatternsText(event.target.value)}
+                  className="algorithm"
+                  placeholder={form.patternPlaceholder}
+                />
+              </label>
+              <NumberInput label={form.depthLimit} value={maxSymbolDepth} onChange={setMaxSymbolDepth} min={1} max={30} />
             </div>
           </section>
 
@@ -2327,7 +2342,7 @@ export default function App() {
             className={"search-primary" + (isSearching ? " is-stop" : "")}
             onClick={() => isSearching ? stopSearch() : runSearch(showNetInput ? "pattern" : "alg")}
           >
-            {isSearching ? "停止" : showNetInput ? t.searchFromNet : t.searchFromAlg}
+            {isSearching ? "停止" : form.search}
           </button>
         </section>
 
