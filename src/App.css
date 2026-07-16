@@ -194,6 +194,52 @@ select:focus-visible {
   font-size: 12px;
 }
 
+.menu-color-value {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.menu-color-swatch {
+  width: 14px;
+  height: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 3px;
+}
+
+.menu-color-grid {
+  display: grid;
+  margin: 2px 4px 7px;
+  padding: 7px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 5px;
+  border-left: 1px solid var(--border);
+}
+
+.menu-color-option {
+  display: grid;
+  height: 34px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-raised);
+  cursor: pointer;
+}
+
+.menu-color-option:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+
+.menu-color-option.is-active {
+  border-color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--text);
+}
+
 .menu-divider {
   height: 1px;
   margin: 6px 4px;
@@ -571,58 +617,10 @@ select:focus-visible {
   margin-top: 18px;
 }
 
-.pattern-editor-toolbar {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 14px 20px;
-  flex-wrap: wrap;
-}
-
-.editor-control-group {
-  display: grid;
-  gap: 7px;
-}
-
-.editor-control-label {
-  color: var(--muted);
-  font-size: 10px;
-}
-
-.swatch-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.swatch-button {
-  display: inline-flex;
-  width: 31px;
-  height: 31px;
-  padding: 0;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: var(--surface-raised);
-  cursor: pointer;
-  transition: border-color 120ms ease, background 120ms ease;
-}
-
-.swatch-button:hover {
-  border-color: var(--border-strong);
-  background: var(--surface-hover);
-}
-
-.swatch-button.is-active {
-  border-color: var(--text);
-  box-shadow: 0 0 0 1px var(--text);
-}
-
 .swatch {
   display: inline-flex;
-  width: 17px;
-  height: 17px;
+  width: 19px;
+  height: 19px;
   align-items: center;
   justify-content: center;
   border: 1px solid rgba(255, 255, 255, 0.3);
@@ -633,11 +631,48 @@ select:focus-visible {
 
 .editor-stage {
   width: min(100%, 520px);
-  margin: 16px auto 0;
+  margin: 0 auto;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: #111315;
+}
+
+.sticker-hotbar {
+  display: grid;
+  width: max-content;
+  max-width: 100%;
+  margin: 10px auto 0;
+  padding: 5px;
+  grid-template-columns: repeat(7, 32px);
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: #111315;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+.sticker-slot {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid #343a3b;
+  border-radius: 3px;
+  background: #202425;
+  box-shadow: inset 0 0 0 1px #121415;
+  cursor: pointer;
+}
+
+.sticker-slot:hover {
+  border-color: var(--border-strong);
+  background: #282d2e;
+}
+
+.sticker-slot.is-active {
+  border-color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--text);
 }
 
 .cube-editor-surface {
@@ -657,119 +692,56 @@ select:focus-visible {
   cursor: grabbing;
 }
 
-.solution-sort {
+.solution-controls {
   display: flex;
-  padding: 13px 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  border-bottom: 1px solid var(--border);
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.solution-filters {
-  display: grid;
-  padding: 10px 0 13px;
+  padding: 12px 0;
+  align-items: flex-end;
+  justify-content: flex-end;
   gap: 8px;
   border-bottom: 1px solid var(--border);
+}
+
+.solution-sort,
+.solution-pattern-filter {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
   color: var(--muted);
-  font-size: 11px;
-}
-
-.solution-filter-bar {
-  display: flex;
-  min-height: 22px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.solution-filter-heading {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 6px;
-}
-
-.solution-filter-count {
-  display: inline-grid;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  place-items: center;
-  border-radius: 9px;
-  color: #07140d;
-  background: var(--accent);
   font-size: 9px;
-  font-variant-numeric: tabular-nums;
 }
 
-.solution-filter-fields {
-  display: grid;
+.solution-sort {
+  flex: 0 1 112px;
+}
+
+.solution-pattern-filter {
+  flex: 1 1 132px;
+  max-width: 150px;
+}
+
+.solution-sort select,
+.solution-pattern-filter select {
   width: 100%;
+  height: 30px;
   min-width: 0;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  align-items: flex-end;
-  gap: 5px;
-}
-
-.solution-filter-field {
-  display: grid;
-  min-width: 0;
-  gap: 3px;
-  font-size: 8px;
-}
-
-.solution-filter-field select {
-  width: 100%;
-  height: 28px;
-  min-width: 0;
-  padding: 0 24px 0 7px;
+  padding: 0 27px 0 8px;
   border: 1px solid var(--border);
   border-radius: 4px;
-  color: var(--muted-strong);
+  color: var(--text);
   background: var(--surface-raised);
   cursor: pointer;
   font-size: 10px;
 }
 
-.solution-filter-field select:hover {
+.solution-sort select:hover,
+.solution-pattern-filter select:hover {
   border-color: var(--border-strong);
-  color: var(--text);
 }
 
-.solution-filter-field select.is-active {
+.solution-pattern-filter select.is-active {
   border-color: rgba(83, 217, 140, 0.55);
   color: var(--accent-strong);
   background: rgba(83, 217, 140, 0.08);
-}
-
-.solution-filter-reset {
-  height: 28px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 4px;
-  color: var(--accent);
-  background: transparent;
-  cursor: pointer;
-  font-size: 10px;
-}
-
-.solution-filter-reset:hover {
-  background: rgba(83, 217, 140, 0.1);
-}
-
-.solution-sort select {
-  height: 30px;
-  min-width: 116px;
-  padding: 0 28px 0 9px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text);
-  background: var(--surface-raised);
-  cursor: pointer;
-  font-size: 10px;
 }
 
 .solution-list {
@@ -1209,15 +1181,6 @@ select:focus-visible {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .pattern-editor-toolbar {
-    align-items: flex-start;
-    justify-content: flex-start;
-  }
-
-  .bottom-color-control {
-    width: 100%;
-  }
-
   .cube-editor-surface {
     height: 310px;
   }
@@ -1289,11 +1252,6 @@ select:focus-visible {
 
   .solution-metric {
     grid-column: auto;
-  }
-
-  .solution-filter-fields {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 7px;
   }
 
   .solution-detail {

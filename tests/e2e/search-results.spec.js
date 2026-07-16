@@ -56,10 +56,16 @@ test("search results show regrip counts and can be sorted by metrics", async ({ 
   await expect(page.getByTestId("ease-calculation").first()).toContainText("= 96");
   await page.getByTestId("metric-ease").first().click();
 
-  await page.getByTestId("filter-auf").selectOption("any");
-  await expect(page.getByTestId("solution-card")).toHaveCount(0);
-  await page.getByTestId("filter-reset").click();
-  await expect(page.getByTestId("solution-card").first()).toBeVisible();
+  await expect(page.getByTestId("filter-auf")).toHaveCount(0);
+  await expect(page.getByTestId("filter-regrip")).toHaveCount(0);
+  await expect(page.getByTestId("filter-ease")).toHaveCount(0);
+  await expect(page.getByText("絞り込み", { exact: true })).toHaveCount(0);
+  await expect(page.getByTestId("filter-feature")).toHaveValue("all");
+  await expect(page.getByTestId("filter-feature").locator("option")).toHaveText(["All", "Sexy Move", "Sune", "Commutator", "Sledgehammer"]);
+
+  const defaultHighlight = page.getByTestId("solution-card").first().getByTestId("feature-highlight");
+  await expect(defaultHighlight).toHaveText("R U R' U'");
+  await expect(defaultHighlight).toHaveAttribute("data-feature-label", "Sexy");
 
   await page.getByTestId("filter-feature").selectOption("sexy");
   await expect(page.getByTestId("filter-feature")).toHaveClass(/is-active/);
@@ -68,21 +74,19 @@ test("search results show regrip counts and can be sorted by metrics", async ({ 
   await expect(highlightedFeature).toHaveAttribute("data-feature-label", "Sexy");
 
   await page.setViewportSize({ width: 320, height: 844 });
-  const filterBoxes = await page.locator(".solution-filter-field").evaluateAll((fields) => fields.map((field) => {
-    const rect = field.getBoundingClientRect();
+  const controlBoxes = await page.locator(".solution-sort, .solution-pattern-filter").evaluateAll((controls) => controls.map((control) => {
+    const rect = control.getBoundingClientRect();
     return { top: rect.top, left: rect.left, right: rect.right };
   }));
-  expect(Math.abs(filterBoxes[0].top - filterBoxes[1].top)).toBeLessThan(2);
-  expect(Math.abs(filterBoxes[2].top - filterBoxes[3].top)).toBeLessThan(2);
-  expect(filterBoxes[2].top).toBeGreaterThan(filterBoxes[0].top);
-  expect(Math.min(...filterBoxes.map((box) => box.left))).toBeGreaterThanOrEqual(0);
-  expect(Math.max(...filterBoxes.map((box) => box.right))).toBeLessThanOrEqual(320);
+  expect(controlBoxes).toHaveLength(2);
+  expect(Math.abs(controlBoxes[0].top - controlBoxes[1].top)).toBeLessThan(2);
+  expect(Math.min(...controlBoxes.map((box) => box.left))).toBeGreaterThanOrEqual(0);
+  expect(Math.max(...controlBoxes.map((box) => box.right))).toBeLessThanOrEqual(320);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
 
   await page.getByTestId("filter-feature").selectOption("sune");
   await expect(page.getByTestId("solution-card")).toHaveCount(0);
-  await expect(page.getByTestId("filter-reset")).toBeVisible();
-  await page.getByTestId("filter-reset").click();
+  await page.getByRole("button", { name: "リセット", exact: true }).click();
   await expect(page.getByTestId("solution-card").first()).toBeVisible();
 
   const firstAlgorithm = page.getByTestId("solution-alg").first();

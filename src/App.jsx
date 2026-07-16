@@ -349,10 +349,7 @@ function readabilityPenalty(moves) {
 const SOLUTION_SORT_KEYS = ["symbol", "ease", "regrip"];
 const DEFAULT_SOLUTION_FILTERS = { auf: "all", regrip: "all", ease: "all", feature: "all" };
 const SOLUTION_FILTER_OPTIONS = {
-  auf: ["all", "none", "any", "start", "end", "both"],
-  regrip: ["all", "0", "1", "2", "known"],
-  ease: ["all", "90", "78", "65"],
-  feature: ["all", "any", "sexy", "sune", "commutator", "sledge"],
+  feature: ["all", "sexy", "sune", "commutator", "sledge"],
 };
 
 function solutionAnalysis(solution) {
@@ -412,12 +409,10 @@ function formatCleanMovesWithSimulUDSegments(cleaned) {
 
 function makeFeatureDisplayChunks(moves, features, selectedFeature) {
   const featureAt = Array(moves.length).fill(null);
-  if (selectedFeature !== "all") {
-    for (const feature of features) {
-      if (selectedFeature !== "any" && feature.type !== selectedFeature) continue;
-      for (let index = feature.start; index < feature.end; index += 1) {
-        if (!featureAt[index]) featureAt[index] = feature;
-      }
+  for (const feature of features) {
+    if (selectedFeature !== "all" && feature.type !== selectedFeature) continue;
+    for (let index = feature.start; index < feature.end; index += 1) {
+      if (!featureAt[index]) featureAt[index] = feature;
     }
   }
 
@@ -506,7 +501,7 @@ const TEXT = {
 };
 
 const SEARCH_FORM_TEXT = {
-  ja: { stateMode: "状態", requiredPatterns: "必須パターン", forbiddenPatterns: "禁止パターン", patternPlaceholder: "例: R U R' U'", depthLimit: "HTM上限", search: "探索" },
+  ja: { stateMode: "Cube", requiredPatterns: "必須パターン", forbiddenPatterns: "禁止パターン", patternPlaceholder: "例: R U R' U'", depthLimit: "HTM上限", search: "探索" },
   en: { stateMode: "State", requiredPatterns: "Required patterns", forbiddenPatterns: "Forbidden patterns", patternPlaceholder: "e.g. R U R' U'", depthLimit: "HTM limit", search: "Search" },
   ur: { stateMode: "حالت", requiredPatterns: "لازمی پیٹرن", forbiddenPatterns: "ممنوعہ پیٹرن", patternPlaceholder: "R U R' U'", depthLimit: "HTM حد", search: "تلاش" },
   ko: { stateMode: "상태", requiredPatterns: "필수 패턴", forbiddenPatterns: "금지 패턴", patternPlaceholder: "예: R U R' U'", depthLimit: "HTM 제한", search: "탐색" },
@@ -514,7 +509,7 @@ const SEARCH_FORM_TEXT = {
   ar: { stateMode: "الحالة", requiredPatterns: "نمط مطلوب", forbiddenPatterns: "نمط ممنوع", patternPlaceholder: "مثال: R U R' U'", depthLimit: "حد HTM", search: "بحث" },
 };
 
-const SORT_BY_LABEL = { ja: "並び順", en: "Sort", ur: "Sort", ko: "정렬", hi: "Sort", ar: "Sort" };
+const SORT_BY_LABEL = { ja: "Sort", en: "Sort", ur: "Sort", ko: "정렬", hi: "Sort", ar: "Sort" };
 const REGRIP_LABEL = { ja: "リグリップ", en: "Regrips", ur: "Regrips", ko: "리그립", hi: "Regrips", ar: "Regrips" };
 const SOLUTION_SORT_LABELS = {
   ease: { ja: "EASE", en: "EASE", ur: "EASE", ko: "EASE", hi: "EASE", ar: "EASE" },
@@ -531,8 +526,8 @@ const RESULT_ANALYSIS_TEXT = {
     regripOptions: { all: "すべて", 0: "0回", 1: "1回以下", 2: "2回以下", known: "解析可能" },
     ease: "回しやすさ",
     easeOptions: { all: "すべて", 90: "90以上", 78: "78以上", 65: "65以上" },
-    feature: "特徴",
-    featureOptions: { all: "すべて", any: "トリガーあり", sexy: "セクシームーブ", sune: "スーン", commutator: "コミュテーター", sledge: "スレッジ" },
+    feature: "Pattern",
+    featureOptions: { all: "All", sexy: "Sexy Move", sune: "Sune", commutator: "Commutator", sledge: "Sledgehammer" },
     filteredEmpty: "絞り込み条件に一致する手順がありません。",
     regripTitle: "最小リグリップ経路",
     regripTitles: { right: "右親指の最小経路", left: "左親指の最小経路" },
@@ -544,7 +539,7 @@ const RESULT_ANALYSIS_TEXT = {
     easeTitle: "回しやすさの内訳",
     moveCountTitle: "手数の内訳",
     easeBands: { excellent: "非常に回しやすい", easy: "回しやすい", average: "標準", difficult: "やや難しい", hard: "難しい" },
-    featureNames: { sexy: "セクシームーブ", sune: "スーン", commutator: "コミュテーター", sledge: "スレッジ" },
+    featureNames: { sexy: "Sexy Move", sune: "Sune", commutator: "Commutator", sledge: "Sledgehammer" },
     featureShortNames: { sexy: "Sexy", sune: "Sune", commutator: "Commutator", sledge: "Sledge" },
     formula: "EASE = clamp(0, 100, 100 - 3 × H + 2 × T - 8 × R - W)",
     formulaLegend: "H = HTM / T = 同値類トリガー手数 / R = リグリップ / W = 2層回し手数",
@@ -561,8 +556,8 @@ const RESULT_ANALYSIS_TEXT = {
     regripOptions: { all: "All", 0: "0", 1: "1 or less", 2: "2 or less", known: "Analyzed" },
     ease: "Ease",
     easeOptions: { all: "All", 90: "90+", 78: "78+", 65: "65+" },
-    feature: "Feature",
-    featureOptions: { all: "All", any: "Any trigger", sexy: "Sexy move", sune: "Sune", commutator: "Commutator", sledge: "Sledge" },
+    feature: "Pattern",
+    featureOptions: { all: "All", sexy: "Sexy Move", sune: "Sune", commutator: "Commutator", sledge: "Sledgehammer" },
     filteredEmpty: "No algorithms match the current filters.",
     regripTitle: "Minimum regrip path",
     regripTitles: { right: "Minimum right-thumb path", left: "Minimum left-thumb path" },
@@ -574,7 +569,7 @@ const RESULT_ANALYSIS_TEXT = {
     easeTitle: "Ease breakdown",
     moveCountTitle: "Move counts",
     easeBands: { excellent: "Very easy", easy: "Easy", average: "Average", difficult: "Difficult", hard: "Hard" },
-    featureNames: { sexy: "Sexy move", sune: "Sune", commutator: "Commutator", sledge: "Sledge" },
+    featureNames: { sexy: "Sexy Move", sune: "Sune", commutator: "Commutator", sledge: "Sledgehammer" },
     featureShortNames: { sexy: "Sexy", sune: "Sune", commutator: "Commutator", sledge: "Sledge" },
     formula: "EASE = clamp(0, 100, 100 - 3 × H + 2 × T - 8 × R - W)",
     formulaLegend: "H = HTM / T = equivalent-trigger moves / R = regrips / W = wide moves",
@@ -1393,24 +1388,56 @@ function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor, disp
   );
 }
 function ColorPicker({ selectedColor, setSelectedColor, bottomColor, label }) {
-  return <div className="editor-control-group"><span className="editor-control-label">{label}</span><div className="swatch-row">{[...FACE_ORDER, DONT_CARE].map((face) => { const displayColor = displayColorSymbol(face, bottomColor); return <button key={face} type="button" data-testid={`color-${face}`} data-display-color={displayColor} aria-pressed={selectedColor === face} onClick={() => setSelectedColor(face)} className={`swatch-button${selectedColor === face ? " is-active" : ""}`} title={FACE_LABEL[displayColor] || displayColor}><span className="swatch" style={{ background: displayColorStyle(face, bottomColor) }}>{face === DONT_CARE ? "?" : ""}</span></button>; })}</div></div>;
-}
-function BottomColorPicker({ bottomColor, setBottomColor, label }) {
+  const paletteFaces = FACE_ORDER.map((displayColor) => logicalFaceForDisplayColor(bottomColor, displayColor));
   return (
-    <div className="editor-control-group bottom-color-control" data-testid="bottom-color-picker">
-      <span className="editor-control-label">{label}</span>
-      <div className="swatch-row">{FACE_ORDER.map((face) => <button key={face} type="button" data-testid={`bottom-color-${face}`} aria-pressed={bottomColor === face} onClick={() => setBottomColor(face)} className={`swatch-button${bottomColor === face ? " is-active" : ""}`} title={FACE_LABEL[face]}><span className="swatch" style={{ background: FACE_COLOR_STYLE[face] }} /></button>)}</div>
+    <div data-testid="sticker-hotbar" className="sticker-hotbar" role="toolbar" aria-label={label}>
+      {[...paletteFaces, DONT_CARE].map((face) => {
+        const displayColor = displayColorSymbol(face, bottomColor);
+        const colorLabel = FACE_LABEL[displayColor] || displayColor;
+        return (
+          <button
+            key={face}
+            type="button"
+            data-testid={`color-${face}`}
+            data-display-color={displayColor}
+            aria-label={colorLabel}
+            aria-pressed={selectedColor === face}
+            onClick={() => setSelectedColor(face)}
+            className={`sticker-slot${selectedColor === face ? " is-active" : ""}`}
+            title={colorLabel}
+          >
+            <span className="swatch" style={{ background: displayColorStyle(face, bottomColor) }}>{face === DONT_CARE ? "?" : ""}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
-function PatternInputEditor({ pattern, setPattern, selectedColor, setSelectedColor, bottomColor, displayBottomColor, setBottomColor, labels }) {
+function BottomColorPicker({ bottomColor, setBottomColor, label }) {
+  return (
+    <div className="menu-color-grid" data-testid="bottom-color-picker" role="group" aria-label={label}>
+      {FACE_ORDER.map((face) => (
+        <button
+          key={face}
+          type="button"
+          data-testid={`bottom-color-${face}`}
+          aria-label={FACE_LABEL[face]}
+          aria-pressed={bottomColor === face}
+          onClick={() => setBottomColor(face)}
+          className={`menu-color-option${bottomColor === face ? " is-active" : ""}`}
+          title={FACE_LABEL[face]}
+        >
+          <span className="swatch" style={{ background: FACE_COLOR_STYLE[face] }} />
+        </button>
+      ))}
+    </div>
+  );
+}
+function PatternInputEditor({ pattern, setPattern, selectedColor, setSelectedColor, bottomColor, displayBottomColor, labels }) {
   return (
     <div className="pattern-editor">
-      <div className="pattern-editor-toolbar">
-        <ColorPicker selectedColor={selectedColor} setSelectedColor={setSelectedColor} bottomColor={displayBottomColor} label={labels.stickerColor} />
-        <BottomColorPicker bottomColor={bottomColor} setBottomColor={setBottomColor} label={labels.bottomColor} />
-      </div>
       <div className="editor-stage"><ThreeCubeEditor pattern={pattern} setPattern={setPattern} selectedColor={selectedColor} bottomColor={bottomColor} displayBottomColor={displayBottomColor} /></div>
+      <ColorPicker selectedColor={selectedColor} setSelectedColor={setSelectedColor} bottomColor={displayBottomColor} label={labels.stickerColor} />
     </div>
   );
 }
@@ -1437,42 +1464,21 @@ function analysisText(language) {
 }
 function SolutionFilterControls({ filters, setFilters, language }) {
   const labels = analysisText(language);
-  const activeCount = Object.entries(filters).filter(([key, value]) => value !== DEFAULT_SOLUTION_FILTERS[key]).length;
-  function updateFilter(key, value) {
-    setFilters((previous) => ({ ...previous, [key]: value }));
-  }
   return (
-    <div data-testid="solution-filters" className="solution-filters">
-      <div className="solution-filter-bar">
-        <span className="solution-filter-heading">
-          {labels.filters}
-          {activeCount ? <strong className="solution-filter-count">{activeCount}</strong> : null}
-        </span>
-        {activeCount ? (
-          <button type="button" data-testid="filter-reset" className="solution-filter-reset" onClick={() => setFilters(DEFAULT_SOLUTION_FILTERS)}>
-            {labels.reset}
-          </button>
-        ) : null}
-      </div>
-      <div className="solution-filter-fields">
-        {Object.keys(SOLUTION_FILTER_OPTIONS).map((key) => (
-          <label key={key} className="solution-filter-field">
-            <span>{labels[key]}</span>
-            <select
-              data-testid={`filter-${key}`}
-              aria-label={`${labels.filters}: ${labels[key]}`}
-              className={filters[key] !== DEFAULT_SOLUTION_FILTERS[key] ? "is-active" : ""}
-              value={filters[key]}
-              onChange={(event) => updateFilter(key, event.target.value)}
-            >
-              {SOLUTION_FILTER_OPTIONS[key].map((value) => (
-                <option key={value} value={value}>{labels[`${key}Options`][value]}</option>
-              ))}
-            </select>
-          </label>
+    <label data-testid="solution-filters" className="solution-pattern-filter">
+      <span>{labels.feature}</span>
+      <select
+        data-testid="filter-feature"
+        aria-label={labels.feature}
+        className={filters.feature !== DEFAULT_SOLUTION_FILTERS.feature ? "is-active" : ""}
+        value={filters.feature}
+        onChange={(event) => setFilters((previous) => ({ ...previous, feature: event.target.value }))}
+      >
+        {SOLUTION_FILTER_OPTIONS.feature.map((value) => (
+          <option key={value} value={value}>{labels.featureOptions[value]}</option>
         ))}
-      </div>
-    </div>
+      </select>
+    </label>
   );
 }
 function SolutionMetric({ testId, label, value, onClick, expanded = false, controls, title, className = "" }) {
@@ -1863,10 +1869,11 @@ function CasePresetPanel({ category, collGroupOpen, setCollGroupOpen, zbllFamily
 export default function App() {
   const workerUrlRef = useRef(new WeakMap());
   const [showNetInput, setShowNetInput] = useState(false);
-  const [bottomColor, setBottomColor] = useState("D");
-  const [patternBottomColor, setPatternBottomColor] = useState("D");
+  const [bottomColor, setBottomColor] = useState("U");
+  const [patternBottomColor, setPatternBottomColor] = useState("U");
   const [menuOpen, setMenuOpen] = useState(false);
   const [languageOpen, setLanguageOpen] = useState(false);
+  const [bottomColorOpen, setBottomColorOpen] = useState(false);
   const [language, setLanguage] = useState("ja");
   const t = TEXT[language] || TEXT.ja;
   const form = SEARCH_FORM_TEXT[language] || SEARCH_FORM_TEXT.en;
@@ -1971,8 +1978,8 @@ export default function App() {
             targetAlg: x.targetAlg,
             targetPattern: x.targetPattern,
             patternSeedAlg: x.patternSeedAlg || "",
-            bottomColor: x.bottomColor || "D",
-            patternBottomColor: x.patternBottomColor || x.bottomColor || "D",
+            bottomColor: x.bottomColor || "U",
+            patternBottomColor: x.patternBottomColor || x.bottomColor || "U",
             searchMovesText: x.searchMovesText,
             requiredPatternsText: x.requiredPatternsText || x.requiredPartsText || "",
             forbiddenPatternsText: x.forbiddenPatternsText || "",
@@ -1986,7 +1993,7 @@ export default function App() {
   function applyHistoryItem(item) {
     if (item.targetAlg !== undefined) setTargetAlg(item.targetAlg);
     if (item.targetPattern) setTargetPattern(item.targetPattern);
-    const restoredPatternBottom = item.patternBottomColor || item.bottomColor || "D";
+    const restoredPatternBottom = item.patternBottomColor || item.bottomColor || "U";
     setBottomColor(item.bottomColor || restoredPatternBottom);
     setPatternBottomColor(restoredPatternBottom);
     setPatternSeedAlg(item.patternSeedAlg || "");
@@ -1998,6 +2005,7 @@ export default function App() {
       setMaxSymbolDepth(item.maxSymbolDepth);
     setShowNetInput(item.mode === "pattern");
     setMenuOpen(false);
+    setBottomColorOpen(false);
   }
   async function copyText(text) {
     let copied;
@@ -2139,6 +2147,7 @@ export default function App() {
           onClick={() => {
             setMenuOpen(false);
             setLanguageOpen(false);
+            setBottomColorOpen(false);
           }}
         />
       ) : null}
@@ -2153,13 +2162,23 @@ export default function App() {
                 className="menu-button"
                 aria-label="menu"
                 aria-expanded={menuOpen}
-                onClick={() => setMenuOpen((value) => !value)}
+                onClick={() => {
+                  setMenuOpen((value) => !value);
+                  if (menuOpen) {
+                    setLanguageOpen(false);
+                    setBottomColorOpen(false);
+                  }
+                }}
               >
                 <span aria-hidden="true">•••</span>
               </button>
               {menuOpen ? (
                 <div className="menu-panel">
-                  <button type="button" className="menu-row" onClick={() => setHistoryOpen((value) => !value)}>
+                  <button type="button" className="menu-row" onClick={() => {
+                    setHistoryOpen((value) => !value);
+                    setLanguageOpen(false);
+                    setBottomColorOpen(false);
+                  }}>
                     <span>{t.history}</span>
                     <span className="menu-value">{historyOpen ? "−" : history.length}</span>
                   </button>
@@ -2186,7 +2205,34 @@ export default function App() {
                     </div>
                   ) : null}
 
-                  <button type="button" className="menu-row" onClick={() => setLanguageOpen((value) => !value)}>
+                  <button type="button" className="menu-row" aria-expanded={bottomColorOpen} onClick={() => {
+                    setBottomColorOpen((value) => !value);
+                    setHistoryOpen(false);
+                    setLanguageOpen(false);
+                  }}>
+                    <span>{ui.bottomColor}</span>
+                    <span className="menu-color-value">
+                      <span className="menu-color-swatch" style={{ background: FACE_COLOR_STYLE[bottomColor] }} />
+                      {FACE_LABEL[bottomColor]}
+                    </span>
+                  </button>
+                  {bottomColorOpen ? (
+                    <BottomColorPicker
+                      bottomColor={bottomColor}
+                      label={ui.bottomColor}
+                      setBottomColor={(face) => {
+                        setBottomColor(face);
+                        setBottomColorOpen(false);
+                        setMenuOpen(false);
+                      }}
+                    />
+                  ) : null}
+
+                  <button type="button" className="menu-row" onClick={() => {
+                    setLanguageOpen((value) => !value);
+                    setHistoryOpen(false);
+                    setBottomColorOpen(false);
+                  }}>
                     <span>{t.language}</span>
                     <span className="menu-value">{languageOpen ? "−" : LANGUAGE_LABEL[language]}</span>
                   </button>
@@ -2227,7 +2273,7 @@ export default function App() {
                 className={!showNetInput ? "is-active" : ""}
                 onClick={() => selectInputMode("alg")}
               >
-                {t.algMode}
+                {language === "ja" ? "Algorithm" : t.algMode}
               </button>
               <button
                 type="button"
@@ -2297,7 +2343,6 @@ export default function App() {
                 setSelectedColor={setSelectedColor}
                 bottomColor={bottomColor}
                 displayBottomColor={patternBottomColor}
-                setBottomColor={setBottomColor}
                 labels={ui}
               />
             </div>

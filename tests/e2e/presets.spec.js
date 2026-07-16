@@ -20,6 +20,20 @@ async function openPresetPanel(page, category) {
   await expect(page.getByTestId("preset-panel")).toBeVisible();
 }
 
+async function openBottomColorPicker(page) {
+  const menuButton = page.getByRole("button", { name: "menu" });
+  if (await menuButton.getAttribute("aria-expanded") !== "true") await menuButton.click();
+  if (!await page.getByTestId("bottom-color-picker").isVisible().catch(() => false)) {
+    await page.getByRole("button", { name: /底面色/ }).click();
+  }
+  await expect(page.getByTestId("bottom-color-picker")).toBeVisible();
+}
+
+async function selectBottomColor(page, face) {
+  await openBottomColorPicker(page);
+  await page.getByTestId(`bottom-color-${face}`).click();
+}
+
 async function visibleCaseCount(page) {
   return page.getByTestId("preset-panel").locator('[data-testid^="preset-case-"]').count();
 }
@@ -174,11 +188,18 @@ test("dark-only pattern input supports camera orbit, bottom body rotation, and c
   await expect(page.getByTestId("pattern-editor-net")).toHaveCount(0);
   await expect(page.getByTestId("pattern-editor-cube")).toHaveCount(0);
   await expect(page.locator(".quick-picks")).toHaveCount(0);
-  await expect(page.getByRole("tab", { name: "状態" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Algorithm" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Cube" })).toBeVisible();
   await expect(page.getByLabel("必須パターン")).toBeVisible();
   await expect(page.getByLabel("禁止パターン")).toBeVisible();
   await expect(page.getByRole("button", { name: "探索", exact: true })).toBeVisible();
   await expect(page.getByTestId("cube-editor")).toBeVisible();
+  await expect(page.getByTestId("sticker-hotbar")).toBeVisible();
+  await expect(page.getByTestId("sticker-hotbar").locator("button")).toHaveCount(7);
+  const editorBox = await page.getByTestId("cube-editor").boundingBox();
+  const hotbarBox = await page.getByTestId("sticker-hotbar").boundingBox();
+  expect(hotbarBox.y).toBeGreaterThanOrEqual(editorBox.y + editorBox.height);
+  await expect(page.getByText("ステッカー", { exact: true })).toHaveCount(0);
   const cubeCanvas = page.getByTestId("cube-canvas");
   await expect(cubeCanvas).toBeVisible();
   await expect(cubeCanvas).toHaveAttribute("data-interaction", "azimuth-elevation");
@@ -202,17 +223,18 @@ test("dark-only pattern input supports camera orbit, bottom body rotation, and c
   await expect(cubeCanvas).not.toHaveAttribute("data-elevation", "0.0000");
   await expect(cubeCanvas).toHaveAttribute("data-roll", "0.0000");
 
-  await expect(page.getByTestId("bottom-color-D")).toHaveAttribute("aria-pressed", "true");
-  await page.getByTestId("bottom-color-U").click();
+  await openBottomColorPicker(page);
   await expect(page.getByTestId("bottom-color-U")).toHaveAttribute("aria-pressed", "true");
+  await page.getByTestId("bottom-color-D").click();
+  await expect(page.getByTestId("bottom-color-picker")).toHaveCount(0);
   await expect(cubeCanvas).toHaveAttribute("data-animating", "true");
   await expect(cubeCanvas).toHaveAttribute("data-animating", "false", { timeout: 1500 });
   await expect(cubeCanvas).toHaveAttribute("data-azimuth", "0.0000");
   await expect(cubeCanvas).toHaveAttribute("data-elevation", "0.0000");
   await expect(cubeCanvas).toHaveAttribute("data-body-local-bottom", "U");
   await expect(cubeCanvas).toHaveAttribute("data-body-local-front", "F");
-  await expect(page.getByTestId("cube-editor")).toHaveAttribute("data-display-bottom-color", "D");
-  await page.getByTestId("bottom-color-D").click();
+  await expect(page.getByTestId("cube-editor")).toHaveAttribute("data-display-bottom-color", "U");
+  await selectBottomColor(page, "U");
   await expect(page.getByTestId("cube-canvas")).toHaveAttribute("data-animating", "false", { timeout: 1500 });
   await expect(page.getByTestId("cube-canvas")).toHaveAttribute("data-body-local-bottom", "D");
 
@@ -228,12 +250,13 @@ test("bottom color leaves the editor painted until a preset is selected", async 
   await page.getByTestId(`zbls-f2l-${zbls.f2l}`).click();
   const zblsTile = page.getByTestId(`preset-case-${zbls.id}`);
   await expect(zblsTile.locator('[data-color="D"]').first()).toBeVisible();
-
-  await page.getByTestId("bottom-color-U").click();
-  await expect(page.getByTestId("cube-editor")).toHaveAttribute("data-display-bottom-color", "D");
   await expect(zblsTile.locator('[data-color="D"][data-display-color="U"]').first()).toBeVisible();
+
+  await selectBottomColor(page, "D");
+  await expect(page.getByTestId("cube-editor")).toHaveAttribute("data-display-bottom-color", "U");
+  await expect(zblsTile.locator('[data-color="D"][data-display-color="D"]').first()).toBeVisible();
 
   await zblsTile.click();
   await expectCubeState(page, zbls.state);
-  await expect(page.getByTestId("cube-editor")).toHaveAttribute("data-display-bottom-color", "U");
+  await expect(page.getByTestId("cube-editor")).toHaveAttribute("data-display-bottom-color", "D");
 });
