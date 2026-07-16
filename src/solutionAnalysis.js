@@ -9,6 +9,22 @@ const MIRROR_FACE = {
   U: "U", R: "L", F: "F", D: "D", L: "R", B: "B",
   u: "u", r: "l", f: "f", d: "d", l: "r", b: "b",
 };
+const MOVE_AXIS = {
+  R: "x", L: "x", M: "x", r: "x", l: "x",
+  U: "y", D: "y", E: "y", u: "y", d: "y",
+  F: "z", B: "z", S: "z", f: "z", b: "z",
+};
+const MAX_COMMUTATOR_BLOCK_LENGTH = 3;
+const EASE_WEIGHT = {
+  htm: 3,
+  namedTriggerMove: 2,
+  commutator: 4,
+  regrip: 8,
+  wide: 1,
+  left: 4,
+  slice: 4,
+  rotation: 6,
+};
 
 const REGRIP_SUFFIXES_BY_FACE = {
   R: ["'3", "'2", "'", "", "2", "3"],
@@ -295,6 +311,45 @@ function sameSequence(a, b) {
   return a.length === b.length && a.every((move, index) => move === b[index]);
 }
 
+function moveLayer(move) {
+  return move.match(/^([URFDLBMESxyzurfdlb](?:w)?)/)?.[1] || move;
+}
+
+function isCanonicalCommutatorBlock(block) {
+  if (!block.length || block.length > MAX_COMMUTATOR_BLOCK_LENGTH) return false;
+  if (block.some((move) => !MOVE_AXIS[move[0]])) return false;
+  return block.every((move, index) => index === 0 || moveLayer(move) !== moveLayer(block[index - 1]));
+}
+
+function isNonTrivialCommutatorPair(a, b) {
+  if (!isCanonicalCommutatorBlock(a) || !isCanonicalCommutatorBlock(b)) return false;
+  if (sameSequence(a, b) || sameSequence(a, inverseSequence(b))) return false;
+  const axes = new Set([...a, ...b].map((move) => MOVE_AXIS[move[0]]));
+  return axes.size > 1;
+}
+
+function rangesOverlap(a, b) {
+  return a.start < b.end && b.start < a.end;
+}
+
+function selectNonOverlappingRanges(candidates) {
+  const sorted = [...candidates].sort((a, b) => a.end - b.end || a.start - b.start);
+  const best = [{ covered: 0, items: [] }];
+  for (let index = 0; index < sorted.length; index += 1) {
+    const candidate = sorted[index];
+    let previous = index - 1;
+    while (previous >= 0 && sorted[previous].end > candidate.start) previous -= 1;
+    const base = best[previous + 1];
+    const included = {
+      covered: base.covered + candidate.end - candidate.start,
+      items: [...base.items, candidate],
+    };
+    const excluded = best[index];
+    best.push(included.covered > excluded.covered ? included : excluded);
+  }
+  return best[best.length - 1].items.sort((a, b) => a.start - b.start);
+}
+
 function findNamedFeatures(moves) {
   const features = [];
   for (let start = 0; start < moves.length; start += 1) {
@@ -313,33 +368,42 @@ function findNamedFeatures(moves) {
 }
 
 function findCommutators(moves, namedFeatures) {
-  const commutators = [];
-  const seenRanges = new Set(namedFeatures.map((feature) => `${feature.start}:${feature.end}`));
+  const candidatesByRange = new Map();
   for (let start = 0; start < moves.length; start += 1) {
-    let best = null;
-    for (let aLength = 1; start + (aLength + 1) * 2 <= moves.length; aLength += 1) {
-      for (let bLength = 1; start + (aLength + bLength) * 2 <= moves.length; bLength += 1) {
+    for (let aLength = 1; aLength <= MAX_COMMUTATOR_BLOCK_LENGTH && start + (aLength + 1) * 2 <= moves.length; aLength += 1) {
+      for (let bLength = 1; bLength <= MAX_COMMUTATOR_BLOCK_LENGTH && start + (aLength + bLength) * 2 <= moves.length; bLength += 1) {
         const end = start + (aLength + bLength) * 2;
-        if (end > moves.length || seenRanges.has(`${start}:${end}`)) continue;
+        const range = { start, end };
+        if (end > moves.length || namedFeatures.some((feature) => rangesOverlap(range, feature))) continue;
         const a = moves.slice(start, start + aLength);
         const b = moves.slice(start + aLength, start + aLength + bLength);
         const inverseA = moves.slice(start + aLength + bLength, start + aLength * 2 + bLength);
         const inverseB = moves.slice(start + aLength * 2 + bLength, end);
         if (!sameSequence(inverseA, inverseSequence(a)) || !sameSequence(inverseB, inverseSequence(b))) continue;
-        if (!best || end - start > best.end - best.start) {
-          best = {
-            type: "commutator",
-            variant: "Commutator",
-            start,
-            end,
-            moves: moves.slice(start, end),
-          };
+        if (!isNonTrivialCommutatorPair(a, b)) continue;
+        const candidate = { start, end, aLength, bLength };
+        const key = `${start}:${end}`;
+        const previous = candidatesByRange.get(key);
+        if (!previous || Math.max(aLength, bLength) < Math.max(previous.aLength, previous.bLength)) {
+          candidatesByRange.set(key, candidate);
         }
       }
     }
-    if (best) commutators.push(best);
   }
-  return commutators;
+  const candidates = [...candidatesByRange.values()];
+  const primitive = candidates.filter((candidate) => !candidates.some((inner) => (
+    inner !== candidate
+    && inner.start >= candidate.start
+    && inner.end <= candidate.end
+    && inner.end - inner.start < candidate.end - candidate.start
+  )));
+  return selectNonOverlappingRanges(primitive).map(({ start, end }) => ({
+    type: "commutator",
+    variant: "Commutator",
+    start,
+    end,
+    moves: moves.slice(start, end),
+  }));
 }
 
 export function detectAlgorithmFeatures(moves) {
@@ -381,17 +445,35 @@ function detectAuf(moves, features) {
 
 function analyzeEase(moves, metrics, regrip, features) {
   const coveredMoves = new Set();
+  const namedTriggerMoves = new Set();
   const featureTypes = new Set();
+  let commutators = 0;
   for (const feature of features) {
     featureTypes.add(feature.type);
-    for (let index = feature.start; index < feature.end; index += 1) coveredMoves.add(index);
+    if (feature.type === "commutator") commutators += 1;
+    for (let index = feature.start; index < feature.end; index += 1) {
+      coveredMoves.add(index);
+      if (feature.type !== "commutator") namedTriggerMoves.add(index);
+    }
   }
 
   const totalMoves = metrics.symbolMoves;
   const triggerMoves = coveredMoves.size;
   const regrips = regrip.count ?? 0;
   const wideMoves = moves.filter((move) => "urfdlb".includes(move[0]) || /^[URFDLB]w/.test(move)).length;
-  const rawScore = 100 - 3 * totalMoves + 2 * triggerMoves - 8 * regrips - wideMoves;
+  const leftMoves = moves.filter((move) => move[0] === "L" || move[0] === "l").length;
+  const sliceMoves = moves.filter((move) => "MES".includes(move[0])).length;
+  const rotationMoves = moves.filter((move) => "xyz".includes(move[0])).length;
+  const adjustments = {
+    htm: -EASE_WEIGHT.htm * totalMoves,
+    patterns: EASE_WEIGHT.namedTriggerMove * namedTriggerMoves.size + EASE_WEIGHT.commutator * commutators,
+    regrips: -EASE_WEIGHT.regrip * regrips,
+    wide: -EASE_WEIGHT.wide * wideMoves,
+    left: -EASE_WEIGHT.left * leftMoves,
+    slice: -EASE_WEIGHT.slice * sliceMoves,
+    rotation: -EASE_WEIGHT.rotation * rotationMoves,
+  };
+  const rawScore = 100 + Object.values(adjustments).reduce((sum, value) => sum + value, 0);
   const score = Math.max(0, Math.min(100, rawScore));
   const band = score >= 90 ? "excellent" : score >= 78 ? "easy" : score >= 65 ? "average" : score >= 50 ? "difficult" : "hard";
 
@@ -402,9 +484,15 @@ function analyzeEase(moves, metrics, regrip, features) {
     formula: {
       totalMoves,
       triggerMoves,
+      namedTriggerMoves: namedTriggerMoves.size,
+      commutators,
       regrips,
       wideMoves,
+      leftMoves,
+      sliceMoves,
+      rotationMoves,
       regripKnown: regrip.count !== null,
+      adjustments,
     },
   };
 }

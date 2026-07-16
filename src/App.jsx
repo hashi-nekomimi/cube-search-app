@@ -536,16 +536,11 @@ const RESULT_ANALYSIS_TEXT = {
     end: "終了",
     regripAction: "持ち替え",
     physicalAs: "として回す",
-    easeTitle: "回しやすさの内訳",
+    easeTitle: "EASE",
     moveCountTitle: "手数の内訳",
-    easeBands: { excellent: "非常に回しやすい", easy: "回しやすい", average: "標準", difficult: "やや難しい", hard: "難しい" },
     featureNames: { sexy: "Sexy Move", sune: "Sune", commutator: "Commutator", sledge: "Sledgehammer" },
     featureShortNames: { sexy: "Sexy", sune: "Sune", commutator: "Commutator", sledge: "Sledge" },
-    formula: "EASE = clamp(0, 100, 100 - 3 × H + 2 × T - 8 × R - W)",
-    formulaLegend: "H = HTM / T = 同値類トリガー手数 / R = リグリップ / W = 2層回し手数",
-    formulaRule: "逆手順・鏡手順・側面を替えた同値類もトリガーとして数え、重複する手数は1回だけ数えます。2層回しは対応する1層回しの経路で解析し、1記号につき1点減点します。",
-    formulaUnknownRegrip: "リグリップを解析できない手順では、リグリップ項を暫定で0とします。",
-    breakdown: { totalMoves: "HTM", triggerMoves: "同値類トリガー", regrips: "リグリップ", wideMoves: "2層回し" },
+    breakdown: { base: "BASE", htm: "HTM", patterns: "PATTERN", regrips: "REGRIP", wide: "WIDE", left: "L", slice: "SLICE", rotation: "ROTATION" },
   },
   en: {
     filters: "Filters",
@@ -566,16 +561,11 @@ const RESULT_ANALYSIS_TEXT = {
     end: "End",
     regripAction: "Regrip",
     physicalAs: "execute as",
-    easeTitle: "Ease breakdown",
+    easeTitle: "EASE",
     moveCountTitle: "Move counts",
-    easeBands: { excellent: "Very easy", easy: "Easy", average: "Average", difficult: "Difficult", hard: "Hard" },
     featureNames: { sexy: "Sexy Move", sune: "Sune", commutator: "Commutator", sledge: "Sledgehammer" },
     featureShortNames: { sexy: "Sexy", sune: "Sune", commutator: "Commutator", sledge: "Sledge" },
-    formula: "EASE = clamp(0, 100, 100 - 3 × H + 2 × T - 8 × R - W)",
-    formulaLegend: "H = HTM / T = equivalent-trigger moves / R = regrips / W = wide moves",
-    formulaRule: "Inverse, mirror and side-rotated equivalents count as triggers; overlapping moves are counted once. Wide moves reuse the corresponding single-layer path and cost one point each.",
-    formulaUnknownRegrip: "When regrips cannot be analyzed, the regrip term is provisionally set to 0.",
-    breakdown: { totalMoves: "HTM", triggerMoves: "Equivalent triggers", regrips: "Regrips", wideMoves: "Wide moves" },
+    breakdown: { base: "BASE", htm: "HTM", patterns: "PATTERN", regrips: "REGRIP", wide: "WIDE", left: "L", slice: "SLICE", rotation: "ROTATION" },
   },
 };
 const WORKSPACE_TEXT = {
@@ -1555,53 +1545,27 @@ function RegripDetail({ analysis, language, id }) {
 function EaseDetail({ analysis, language, id }) {
   const labels = analysisText(language);
   const { formula } = analysis.ease;
-  const featureCounts = analysis.features.reduce((counts, feature) => {
-    counts[feature.type] = (counts[feature.type] || 0) + 1;
-    return counts;
-  }, {});
+  const adjustments = [
+    ["base", 100],
+    ...Object.entries(formula.adjustments).filter(([, value]) => value !== 0),
+  ];
   return (
-    <section id={id} data-testid="ease-detail" className="solution-detail">
-      <header className="solution-detail-header">
-        <strong>{labels.easeTitle}</strong>
-        <span>{analysis.ease.score} / 100 · {labels.easeBands[analysis.ease.band]}</span>
-      </header>
-      {Object.keys(featureCounts).length ? (
-        <div className="ease-features">
-          {Object.entries(featureCounts).map(([type, count]) => (
-            <span key={type} data-testid={`ease-feature-${type}`}>{labels.featureNames[type]}{count > 1 ? ` ×${count}` : ""}</span>
-          ))}
-        </div>
-      ) : null}
-      <code data-testid="ease-formula" className="ease-formula">{labels.formula}</code>
-      <code data-testid="ease-calculation" className="ease-calculation">
-        {`= clamp(0, 100, 100 - 3 × ${formula.totalMoves} + 2 × ${formula.triggerMoves} - 8 × ${formula.regrips} - ${formula.wideMoves}) = ${analysis.ease.score}`}
-      </code>
-      <p className="ease-formula-legend">{labels.formulaLegend}</p>
+    <section id={id} data-testid="ease-detail" className="solution-detail compact-detail" aria-label={labels.easeTitle}>
       <dl className="ease-breakdown">
-        {Object.entries({
-          totalMoves: formula.totalMoves,
-          triggerMoves: formula.triggerMoves,
-          regrips: formula.regrips,
-          wideMoves: formula.wideMoves,
-        }).map(([key, value]) => (
-          <div key={key}>
+        {adjustments.map(([key, value]) => (
+          <div key={key} data-testid={`ease-adjustment-${key}`}>
             <dt>{labels.breakdown[key]}</dt>
-            <dd>{value}</dd>
+            <dd>{value > 0 && key !== "base" ? `+${value}` : value}</dd>
           </div>
         ))}
       </dl>
-      <p>{labels.formulaRule}</p>
-      {!formula.regripKnown ? <p>{labels.formulaUnknownRegrip}</p> : null}
     </section>
   );
 }
 function MoveCountDetail({ analysis, language, id }) {
   const labels = analysisText(language);
   return (
-    <section id={id} data-testid="move-count-detail" className="solution-detail">
-      <header className="solution-detail-header">
-        <strong>{labels.moveCountTitle}</strong>
-      </header>
+    <section id={id} data-testid="move-count-detail" className="solution-detail compact-detail" aria-label={labels.moveCountTitle}>
       <dl className="ease-breakdown move-count-breakdown">
         <div><dt>STM</dt><dd>{analysis.metrics.effectiveMoves}</dd></div>
         <div><dt>HTM</dt><dd>{analysis.metrics.symbolMoves}</dd></div>
@@ -2136,6 +2100,7 @@ export default function App() {
     [filteredSolutions, solutionSortKey],
   );
   const hasActiveSolutionFilters = Object.entries(solutionFilters).some(([key, value]) => value !== DEFAULT_SOLUTION_FILTERS[key]);
+  const showResults = hasSearched || isSearching || Boolean(error);
 
   return (
     <div className="app-page dark-mode" dir={isRtl ? "rtl" : "ltr"}>
@@ -2349,7 +2314,6 @@ export default function App() {
           )}
 
           <section className="conditions-block" aria-label={ui.conditions}>
-            <div className="subsection-label">{ui.conditions}</div>
             <div className="conditions-grid">
               <label className="field">
                 <span>{t.generator}</span>
@@ -2391,7 +2355,7 @@ export default function App() {
           </button>
         </section>
 
-        <section className="results-panel" aria-live="polite">
+        {showResults ? <section className="results-panel" aria-live="polite">
           <header className="results-header">
             <h2>{ui.results}</h2>
             {hasSearched || isSearching ? (
@@ -2432,7 +2396,7 @@ export default function App() {
 
           {!isSearching && !error && solutions.length > 0 && displayedSolutions.length === 0 ? <FilteredEmptyCard language={language} onReset={() => setSolutionFilters(DEFAULT_SOLUTION_FILTERS)} /> : null}
           {!isSearching && !error && hasSearched && solutions.length === 0 ? <EmptyCard text={t.noResults} /> : null}
-        </section>
+        </section> : null}
       </main>
 
       {toastMessage ? <div className="toast" role="status">{toastMessage}</div> : null}

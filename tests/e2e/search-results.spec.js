@@ -18,6 +18,7 @@ test("search results show regrip counts and can be sorted by metrics", async ({ 
 
   await expect(page.getByTestId("solution-card")).toHaveCount(0);
   await expect(page.locator(".result-count")).toHaveCount(0);
+  await expect(page.locator(".results-panel")).toHaveCount(0);
   await expect(page.locator(".results-placeholder")).toHaveCount(0);
   await expect(page.getByText("探索対象", { exact: true })).toHaveCount(0);
 
@@ -33,6 +34,18 @@ test("search results show regrip counts and can be sorted by metrics", async ({ 
   await expect(page.getByTestId("metric-effective")).toHaveCount(0);
   await expect(page.getByTestId("metric-quarter")).toHaveCount(0);
   await expect(page.getByTestId("solution-list")).not.toHaveClass(/md:grid-cols-2/);
+  const desktopLayout = await page.evaluate(() => {
+    const workspace = document.querySelector(".workspace");
+    const input = document.querySelector(".input-panel").getBoundingClientRect();
+    const results = document.querySelector(".results-panel").getBoundingClientRect();
+    const solutionList = document.querySelector("[data-testid=solution-list]");
+    return {
+      workspaceColumns: getComputedStyle(workspace).gridTemplateColumns.split(/\s+/).length,
+      solutionColumns: getComputedStyle(solutionList).gridTemplateColumns.split(/\s+/).length,
+      resultsBelowInput: results.top >= input.bottom,
+    };
+  });
+  expect(desktopLayout).toEqual({ workspaceColumns: 1, solutionColumns: 1, resultsBelowInput: true });
   await expect(page.getByTestId("solution-sort-select")).toHaveValue("symbol");
   await expect(page.getByTestId("solution-sort-select").locator("option")).toHaveText(["HTM", "EASE", "リグリップ"]);
   await expect(page.getByRole("button", { name: "保存", exact: true })).toHaveCount(0);
@@ -50,10 +63,12 @@ test("search results show regrip counts and can be sorted by metrics", async ({ 
   await page.getByTestId("metric-regrip").first().click();
 
   await page.getByTestId("metric-ease").first().click();
-  await expect(page.getByTestId("ease-detail").first()).toBeVisible();
-  await expect(page.getByTestId("ease-feature-sexy").first()).toBeVisible();
-  await expect(page.getByTestId("ease-formula").first()).toContainText("100 - 3 × H + 2 × T - 8 × R - W");
-  await expect(page.getByTestId("ease-calculation").first()).toContainText("= 96");
+  const easeDetail = page.getByTestId("ease-detail").first();
+  await expect(easeDetail).toBeVisible();
+  await expect(easeDetail.getByTestId("ease-adjustment-base")).toContainText("BASE100");
+  await expect(easeDetail.getByTestId("ease-adjustment-htm")).toContainText("HTM-12");
+  await expect(easeDetail.getByTestId("ease-adjustment-patterns")).toContainText("PATTERN+8");
+  await expect(easeDetail.locator("p, code")).toHaveCount(0);
   await page.getByTestId("metric-ease").first().click();
 
   await expect(page.getByTestId("filter-auf")).toHaveCount(0);

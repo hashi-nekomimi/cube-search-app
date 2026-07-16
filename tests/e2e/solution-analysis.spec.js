@@ -13,33 +13,82 @@ test("ease scoring rewards recognizable triggers", () => {
   const plain = analyzeSolutionMoves(moves("R U R U"));
 
   expect(sexy.features.some((feature) => feature.type === "sexy")).toBe(true);
-  expect(sexy.ease.formula).toEqual({
+  expect(sexy.ease.formula).toMatchObject({
     totalMoves: 4,
     triggerMoves: 4,
+    namedTriggerMoves: 4,
+    commutators: 0,
     regrips: 0,
     wideMoves: 0,
+    leftMoves: 0,
+    sliceMoves: 0,
     regripKnown: true,
+  });
+  expect(sexy.ease.formula.adjustments).toEqual({
+    htm: -12,
+    patterns: 8,
+    regrips: -0,
+    wide: -0,
+    left: -0,
+    slice: -0,
+    rotation: -0,
   });
   expect(sexy.ease.score).toBe(96);
   expect(plain.ease.score).toBe(88);
 });
 
-test("inverse, mirror and side-rotated trigger equivalents receive the same credit", () => {
+test("inverse, mirror and side-rotated named triggers are all recognized", () => {
   const equivalentClasses = [
     { type: "sexy", algorithms: ["R U R' U'", "U R U' R'", "L' U' L U", "B U B' U'"] },
     { type: "sune", algorithms: ["R U R' U R U2 R'", "R U2 R' U' R U' R'", "L' U' L U' L' U2 L", "B U B' U B U2 B'"] },
     { type: "sledge", algorithms: ["R' F R F'", "F R' F' R", "L F' L' F", "B' R B R'"] },
-    { type: "commutator", algorithms: ["R D R' D'", "D R D' R'", "L' D' L D", "B D B' D'", "R U R' U' R D R' U R U' R' D'"] },
   ];
 
   for (const equivalentClass of equivalentClasses) {
     for (const algorithm of equivalentClass.algorithms) {
       const analysis = analyzeSolutionMoves(moves(algorithm));
       expect(analysis.features.some((feature) => feature.type === equivalentClass.type), algorithm).toBe(true);
-      expect(analysis.ease.formula.triggerMoves, algorithm).toBe(analysis.metrics.symbolMoves);
-      expect(analysis.ease.score, algorithm).toBe(100 - analysis.metrics.symbolMoves - 8 * analysis.ease.formula.regrips);
+      expect(analysis.ease.formula.namedTriggerMoves, algorithm).toBe(analysis.metrics.symbolMoves);
     }
   }
+});
+
+test("commutator detection is exact, primitive, and non-overlapping", () => {
+  for (const algorithm of ["R D R' D'", "D R D' R'", "L' D' L D", "B D B' D'"]) {
+    const analysis = analyzeSolutionMoves(moves(algorithm));
+    expect(analysis.features.filter((feature) => feature.type === "commutator"), algorithm).toHaveLength(1);
+  }
+
+  const compound = analyzeSolutionMoves(moves("R U R' D R U' R' D'"));
+  expect(compound.features.filter((feature) => feature.type === "commutator")).toHaveLength(1);
+
+  const repeated = analyzeSolutionMoves(moves("R2 U' R2 U R2 U' R2 U"));
+  expect(repeated.features.filter((feature) => feature.type === "commutator").map(({ start, end }) => [start, end])).toEqual([[0, 4], [4, 8]]);
+  expect(repeated.ease.formula.commutators).toBe(2);
+  expect(repeated.ease.formula.adjustments.patterns).toBe(8);
+
+  for (const algorithm of ["R L R' L'", "R R R' R'", "R U R' U'"]) {
+    const analysis = analyzeSolutionMoves(moves(algorithm));
+    expect(analysis.features.some((feature) => feature.type === "commutator"), algorithm).toBe(false);
+  }
+});
+
+test("L, slice, and rotation moves lower EASE", () => {
+  const right = analyzeSolutionMoves(moves("R U R' U'"));
+  const left = analyzeSolutionMoves(moves("L' U' L U"));
+  const slice = analyzeSolutionMoves(moves("M2 U M2 U2 M2 U M2"));
+  const rotated = analyzeSolutionMoves(moves("x R U R' U' x'"));
+
+  expect(left.ease.formula.leftMoves).toBe(2);
+  expect(left.ease.formula.adjustments.left).toBe(-8);
+  expect(left.ease.score).toBe(88);
+  expect(left.ease.score).toBeLessThan(right.ease.score);
+  expect(slice.ease.formula.sliceMoves).toBe(4);
+  expect(slice.ease.formula.adjustments.slice).toBe(-16);
+  expect(slice.ease.score).toBe(63);
+  expect(rotated.ease.formula.rotationMoves).toBe(2);
+  expect(rotated.ease.formula.adjustments.rotation).toBe(-12);
+  expect(rotated.ease.score).toBeLessThan(right.ease.score);
 });
 
 test("regrip analysis reconstructs a concrete minimum path", () => {

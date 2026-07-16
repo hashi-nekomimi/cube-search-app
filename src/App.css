@@ -298,32 +298,33 @@ select:focus-visible {
 
 .workspace {
   display: grid;
-  width: min(100%, 1440px);
+  width: min(100%, 1040px);
   margin: 0 auto;
-  padding: 24px;
-  grid-template-columns: minmax(560px, 1.15fr) minmax(360px, 0.85fr);
+  padding: 28px 24px 64px;
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
-  gap: 16px;
+  gap: 30px;
 }
 
 .workspace.pattern-mode {
-  grid-template-columns: minmax(620px, 1.25fr) minmax(360px, 0.75fr);
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .input-panel,
 .results-panel {
   min-width: 0;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .input-panel {
-  padding: 22px;
+  padding: 0;
 }
 
 .results-panel {
-  padding: 22px;
+  padding: 28px 0 0;
+  border-top: 1px solid var(--border);
 }
 
 .results-header {
@@ -433,13 +434,6 @@ select:focus-visible {
   border-top: 1px solid var(--border);
 }
 
-.subsection-label {
-  margin-bottom: 11px;
-  color: var(--muted-strong);
-  font-size: 12px;
-  font-weight: 620;
-}
-
 .conditions-grid {
   display: grid;
   grid-template-columns: minmax(130px, 1.1fr) repeat(2, minmax(120px, 1fr)) 88px;
@@ -467,11 +461,15 @@ select:focus-visible {
 }
 
 .search-primary {
-  width: 100%;
-  height: 46px;
-  margin-top: 20px;
+  display: block;
+  width: auto;
+  min-width: 132px;
+  height: 42px;
+  margin: 18px 0 0;
+  margin-inline-start: auto;
+  padding: 0 22px;
   border: 1px solid var(--accent);
-  border-radius: 6px;
+  border-radius: 5px;
   color: var(--accent-ink);
   background: var(--accent);
   cursor: pointer;
@@ -746,6 +744,7 @@ select:focus-visible {
 
 .solution-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .solution-card {
@@ -765,10 +764,10 @@ select:focus-visible {
 .solution-alg {
   width: 100%;
   min-width: 0;
-  padding: 6px 8px;
+  padding: 5px 0;
   overflow-wrap: anywhere;
   border: 0;
-  border-radius: 4px;
+  border-radius: 0;
   color: var(--text);
   background: transparent;
   cursor: copy;
@@ -780,7 +779,7 @@ select:focus-visible {
 
 .solution-alg:hover {
   color: var(--accent);
-  background: var(--surface-hover);
+  background: transparent;
 }
 
 .solution-alg:focus-visible {
@@ -792,11 +791,10 @@ select:focus-visible {
   position: relative;
   display: inline-block;
   max-width: 100%;
-  padding: 2px 2px 11px;
-  border-radius: 2px;
-  color: #eafff2;
-  background: rgba(83, 217, 140, 0.22);
-  box-shadow: inset 0 -1px 0 rgba(83, 217, 140, 0.72);
+  padding: 0 1px 10px;
+  color: inherit;
+  background: transparent;
+  box-shadow: inset 0 -1px 0 rgba(83, 217, 140, 0.5);
   line-height: 1.35;
   vertical-align: top;
 }
@@ -830,26 +828,24 @@ select:focus-visible {
 }
 
 .solution-metrics {
-  display: grid;
-  overflow: hidden;
-  grid-template-columns: repeat(3, auto);
-  gap: 1px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: var(--border);
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
 }
 
 .solution-metric {
   display: flex;
   min-width: 0;
-  height: 34px;
-  padding: 0 8px;
+  height: 28px;
+  padding: 0;
   align-items: center;
-  justify-content: space-between;
-  gap: 6px;
+  justify-content: flex-start;
+  gap: 5px;
   color: var(--muted);
   border: 0;
-  background: var(--surface-raised);
+  background: transparent;
   font: inherit;
   font-size: 8px;
 }
@@ -861,7 +857,7 @@ select:focus-visible {
 .solution-metric.is-interactive:hover,
 .solution-metric.is-interactive[aria-expanded="true"] {
   color: var(--text);
-  background: var(--surface-hover);
+  background: transparent;
 }
 
 .solution-metric.is-interactive:focus-visible {
@@ -891,9 +887,9 @@ select:focus-visible {
 .solution-detail {
   display: grid;
   grid-column: 1 / -1;
-  gap: 10px;
-  margin: 6px 8px 0;
-  padding: 14px 0 0;
+  gap: 9px;
+  margin: 8px 0 0;
+  padding: 12px 0 0;
   border-top: 1px solid var(--border);
   color: var(--muted-strong);
   font-size: 11px;
@@ -972,62 +968,22 @@ select:focus-visible {
   color: var(--accent);
 }
 
-.ease-features {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.ease-features span {
-  padding: 4px 6px;
-  border: 1px solid rgba(83, 217, 140, 0.24);
-  border-radius: 4px;
-  color: var(--accent-strong);
-  background: rgba(83, 217, 140, 0.07);
-  font-size: 9px;
-}
-
-.ease-formula,
-.ease-calculation {
-  display: block;
-  padding: 8px 10px;
-  overflow-wrap: anywhere;
-  border: 1px solid var(--border);
-  color: var(--text);
-  background: #111315;
-  font-family: "SFMono-Regular", Consolas, monospace;
-  font-size: 10px;
-  line-height: 1.6;
-  white-space: normal;
-}
-
-.ease-formula-legend {
-  font-family: "SFMono-Regular", Consolas, monospace;
-  font-size: 9px;
-}
-
-.ease-calculation {
-  margin-top: -11px;
-  border-top: 0;
-  color: var(--accent-strong);
-}
-
 .ease-breakdown {
-  display: grid;
+  display: flex;
   margin: 0;
-  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-  gap: 1px;
-  background: var(--border);
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  background: transparent;
 }
 
 .ease-breakdown div {
   display: flex;
   min-width: 0;
-  padding: 7px 8px;
+  padding: 0;
   align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  background: var(--surface-raised);
+  justify-content: flex-start;
+  gap: 5px;
+  background: transparent;
 }
 
 .ease-breakdown dt {
@@ -1041,7 +997,7 @@ select:focus-visible {
 }
 
 .move-count-breakdown {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px 22px;
 }
 
 .filtered-empty {
@@ -1168,13 +1124,18 @@ select:focus-visible {
   }
 
   .workspace {
-    padding: 12px;
-    gap: 12px;
+    padding: 18px 14px 44px;
+    gap: 24px;
   }
 
   .input-panel,
   .results-panel {
-    padding: 16px;
+    padding-right: 0;
+    padding-left: 0;
+  }
+
+  .results-panel {
+    padding-top: 24px;
   }
 
   .conditions-grid {
@@ -1247,11 +1208,16 @@ select:focus-visible {
 
   .solution-metrics {
     grid-column: 1 / -1;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    justify-content: flex-start;
+    flex-wrap: wrap;
   }
 
   .solution-metric {
     grid-column: auto;
+  }
+
+  .search-primary {
+    width: 100%;
   }
 
   .solution-detail {
