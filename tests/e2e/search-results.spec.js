@@ -83,13 +83,13 @@ test("search results show regrip counts and can be sorted by metrics", async ({ 
   await expect(page.getByTestId("filter-feature").locator("option")).toHaveText(["All", "Sexy Move", "Sune", "Sledgehammer"]);
 
   const defaultHighlight = page.getByTestId("solution-card").first().getByTestId("feature-highlight");
-  await expect(defaultHighlight).toHaveText("R U R' U'");
+  await expect(defaultHighlight).toHaveText("[R,U]");
   await expect(defaultHighlight).toHaveAttribute("data-feature-label", "Sexy");
 
   await page.getByTestId("filter-feature").selectOption("sexy");
   await expect(page.getByTestId("filter-feature")).toHaveClass(/is-active/);
   const highlightedFeature = page.getByTestId("solution-card").first().getByTestId("feature-highlight");
-  await expect(highlightedFeature).toHaveText("R U R' U'");
+  await expect(highlightedFeature).toHaveText("[R,U]");
   await expect(highlightedFeature).toHaveAttribute("data-feature-label", "Sexy");
 
   await page.setViewportSize({ width: 320, height: 844 });
@@ -159,6 +159,19 @@ test("commutators and conjugates use bracket notation and can be searched again"
   await expect(page.getByRole("alert")).toHaveCount(0);
 
   await expect(searchButton).toHaveText(idleLabel, { timeout: 20000 });
+  const conjugatedSexy = "F R U R' U' F'";
+  await page.locator(".algorithm-target textarea").fill("[F:[R,U]]");
+  await page.locator(".field input").nth(0).fill("F R U");
+  await page.locator(".field input").nth(1).fill(conjugatedSexy);
+  await page.locator(".field input").nth(3).fill("6");
+  await searchButton.click();
+  const sexyResult = page.getByTestId("solution-card").first();
+  await expect(sexyResult.getByTestId("solution-alg")).toHaveText("[F:[R,U]]", { timeout: 20000 });
+  await expect(sexyResult.getByTestId("solution-alg")).toHaveAttribute("data-expanded-alg", conjugatedSexy);
+  await expect(sexyResult.getByTestId("feature-highlight")).toHaveText("[R,U]");
+  await expect(sexyResult.getByTestId("feature-highlight")).toHaveAttribute("data-feature-label", "Sexy");
+
+  await expect(searchButton).toHaveText(idleLabel, { timeout: 20000 });
   const commutator = "R D R' D'";
   await page.locator(".algorithm-target textarea").fill("[R,D]");
   await page.locator(".field input").nth(0).fill("R D");
@@ -192,7 +205,7 @@ test("required and forbidden move patterns filter emitted solutions", async ({ p
   await fillSearchConditions(page, "R U", 4);
   await page.getByLabel("必須パターン").fill("R U R' U'");
   await page.getByRole("button", { name: "探索", exact: true }).click();
-  await expect(page.getByTestId("solution-alg")).toHaveText(["R U R' U'"]);
+  await expect(page.getByTestId("solution-alg")).toHaveText(["[R,U]"]);
 
   await page.getByLabel("禁止パターン").fill("R U R' U'");
   await page.getByRole("button", { name: "探索", exact: true }).click();

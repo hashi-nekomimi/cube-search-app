@@ -13,11 +13,12 @@ test("ease scoring rewards recognizable triggers", () => {
   const plain = analyzeSolutionMoves(moves("R U R U"));
 
   expect(sexy.features.some((feature) => feature.type === "sexy")).toBe(true);
+  expect(sexy.features.some((feature) => feature.type === "commutator")).toBe(true);
   expect(sexy.ease.formula).toMatchObject({
     totalMoves: 4,
     triggerMoves: 4,
     namedTriggerMoves: 4,
-    commutators: 0,
+    commutators: 1,
     regrips: 0,
     wideMoves: 0,
     leftMoves: 0,
@@ -67,10 +68,13 @@ test("commutator detection is exact, primitive, and non-overlapping", () => {
   expect(repeated.ease.formula.commutators).toBe(2);
   expect(repeated.ease.formula.adjustments.patterns).toBe(8);
 
-  for (const algorithm of ["R L R' L'", "R R R' R'", "R U R' U'"]) {
+  for (const algorithm of ["R L R' L'", "R R R' R'"]) {
     const analysis = analyzeSolutionMoves(moves(algorithm));
     expect(analysis.features.some((feature) => feature.type === "commutator"), algorithm).toBe(false);
   }
+
+  expect(analyzeSolutionMoves(moves("R U R' U'")).features)
+    .toEqual(expect.arrayContaining([expect.objectContaining({ type: "commutator", aLength: 1, bLength: 1 })]));
 });
 
 test("commutator boundaries and conjugate setup are retained for notation", () => {

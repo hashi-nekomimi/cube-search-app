@@ -540,6 +540,13 @@ function makeNotationFeatureChunks(moves, features, feature, selectedFeature) {
     appendDisplayChunk(chunks, ",");
     appendDisplayChunks(chunks, makeNotationRangeChunks(moves, features, aEnd, bEnd, selectedFeature));
     appendDisplayChunk(chunks, "]");
+    const namedAlias = features.find((candidate) => (
+      ANNOTATED_FEATURE_TYPES.has(candidate.type)
+      && candidate.start === feature.start
+      && candidate.end === feature.end
+      && (selectedFeature === "all" || candidate.type === selectedFeature)
+    ));
+    if (namedAlias) return [{ text: chunks.map((chunk) => chunk.text).join(""), feature: namedAlias }];
     return chunks;
   }
   if (feature.type === "conjugate") {

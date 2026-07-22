@@ -367,14 +367,13 @@ function findNamedFeatures(moves) {
   return features;
 }
 
-function findCommutators(moves, namedFeatures) {
+function findCommutators(moves) {
   const candidatesByRange = new Map();
   for (let start = 0; start < moves.length; start += 1) {
     for (let aLength = 1; start + (aLength + 1) * 2 <= moves.length; aLength += 1) {
       for (let bLength = 1; start + (aLength + bLength) * 2 <= moves.length; bLength += 1) {
         const end = start + (aLength + bLength) * 2;
-        const range = { start, end };
-        if (end > moves.length || namedFeatures.some((feature) => rangesOverlap(range, feature))) continue;
+        if (end > moves.length) continue;
         const a = moves.slice(start, start + aLength);
         const b = moves.slice(start + aLength, start + aLength + bLength);
         const inverseA = moves.slice(start + aLength + bLength, start + aLength * 2 + bLength);
@@ -446,9 +445,14 @@ function findConjugates(moves, existingFeatures) {
 
 export function detectAlgorithmFeatures(moves) {
   const named = findNamedFeatures(moves);
-  const commutators = findCommutators(moves, named);
+  const commutators = findCommutators(moves);
   const conjugates = findConjugates(moves, [...named, ...commutators]);
-  return [...named, ...commutators, ...conjugates].sort((a, b) => a.start - b.start || b.end - a.end);
+  const notationPriority = { commutator: 0, conjugate: 1 };
+  return [...named, ...commutators, ...conjugates].sort((a, b) => (
+    a.start - b.start
+    || b.end - a.end
+    || (notationPriority[a.type] ?? 2) - (notationPriority[b.type] ?? 2)
+  ));
 }
 
 function calculateMetrics(moves) {
@@ -487,10 +491,18 @@ function analyzeEase(moves, metrics, regrip, features) {
   const coveredMoves = new Set();
   const namedTriggerMoves = new Set();
   const featureTypes = new Set();
+  const namedFeatures = features.filter((feature) => NAMED_TRIGGER_TYPES.has(feature.type));
   let commutators = 0;
+  let scoredCommutators = 0;
   for (const feature of features) {
     featureTypes.add(feature.type);
-    if (feature.type === "commutator") commutators += 1;
+    if (feature.type === "commutator") {
+      commutators += 1;
+      const isNamedAlias = namedFeatures.some((named) => (
+        named.start === feature.start && named.end === feature.end
+      ));
+      if (!isNamedAlias) scoredCommutators += 1;
+    }
     if (feature.type !== "commutator" && !NAMED_TRIGGER_TYPES.has(feature.type)) continue;
     for (let index = feature.start; index < feature.end; index += 1) {
       coveredMoves.add(index);
@@ -507,7 +519,7 @@ function analyzeEase(moves, metrics, regrip, features) {
   const rotationMoves = moves.filter((move) => "xyz".includes(move[0])).length;
   const adjustments = {
     htm: -EASE_WEIGHT.htm * totalMoves,
-    patterns: EASE_WEIGHT.namedTriggerMove * namedTriggerMoves.size + EASE_WEIGHT.commutator * commutators,
+    patterns: EASE_WEIGHT.namedTriggerMove * namedTriggerMoves.size + EASE_WEIGHT.commutator * scoredCommutators,
     regrips: -EASE_WEIGHT.regrip * regrips,
     wide: -EASE_WEIGHT.wide * wideMoves,
     left: -EASE_WEIGHT.left * leftMoves,
