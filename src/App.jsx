@@ -420,7 +420,7 @@ function readabilityPenalty(moves) {
 const SOLUTION_SORT_KEYS = ["symbol", "ease", "regrip"];
 const DEFAULT_SOLUTION_FILTERS = { auf: "all", regrip: "all", ease: "all", feature: "all" };
 const SOLUTION_FILTER_OPTIONS = {
-  feature: ["all", "sexy", "sune", "commutator", "sledge"],
+  feature: ["all", "sexy", "sune", "sledge"],
 };
 
 function solutionAnalysis(solution) {
@@ -543,7 +543,9 @@ function makeFeatureDisplayChunks(moves, features, selectedFeature) {
     const nestedHighlight = feature && selectedFeature !== "all" && feature.type !== selectedFeature
       ? features.find((candidate) => candidate.type === selectedFeature && candidate.start >= feature.start && candidate.end <= feature.end)
       : null;
-    const highlightedFeature = selectedFeature === "all" || feature?.type === selectedFeature ? feature : nestedHighlight;
+    const highlightedFeature = feature?.type !== "commutator" && (selectedFeature === "all" || feature?.type === selectedFeature)
+      ? feature
+      : nestedHighlight;
     chunks.push({ text, feature: highlightedFeature });
     start = end;
   }
@@ -655,7 +657,7 @@ const RESULT_ANALYSIS_TEXT = {
     ease: "回しやすさ",
     easeOptions: { all: "すべて", 90: "90以上", 78: "78以上", 65: "65以上" },
     feature: "Pattern",
-    featureOptions: { all: "All", sexy: "Sexy Move", sune: "Sune", commutator: "Commutator", sledge: "Sledgehammer" },
+    featureOptions: { all: "All", sexy: "Sexy Move", sune: "Sune", sledge: "Sledgehammer" },
     filteredEmpty: "絞り込み条件に一致する手順がありません。",
     regripTitle: "最小リグリップ経路",
     regripTitles: { right: "右親指の最小経路", left: "左親指の最小経路" },
@@ -680,7 +682,7 @@ const RESULT_ANALYSIS_TEXT = {
     ease: "Ease",
     easeOptions: { all: "All", 90: "90+", 78: "78+", 65: "65+" },
     feature: "Pattern",
-    featureOptions: { all: "All", sexy: "Sexy Move", sune: "Sune", commutator: "Commutator", sledge: "Sledgehammer" },
+    featureOptions: { all: "All", sexy: "Sexy Move", sune: "Sune", sledge: "Sledgehammer" },
     filteredEmpty: "No algorithms match the current filters.",
     regripTitle: "Minimum regrip path",
     regripTitles: { right: "Minimum right-thumb path", left: "Minimum left-thumb path" },

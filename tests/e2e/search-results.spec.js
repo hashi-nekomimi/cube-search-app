@@ -80,7 +80,7 @@ test("search results show regrip counts and can be sorted by metrics", async ({ 
   await expect(page.getByTestId("filter-ease")).toHaveCount(0);
   await expect(page.getByText("絞り込み", { exact: true })).toHaveCount(0);
   await expect(page.getByTestId("filter-feature")).toHaveValue("all");
-  await expect(page.getByTestId("filter-feature").locator("option")).toHaveText(["All", "Sexy Move", "Sune", "Commutator", "Sledgehammer"]);
+  await expect(page.getByTestId("filter-feature").locator("option")).toHaveText(["All", "Sexy Move", "Sune", "Sledgehammer"]);
 
   const defaultHighlight = page.getByTestId("solution-card").first().getByTestId("feature-highlight");
   await expect(defaultHighlight).toHaveText("R U R' U'");
@@ -156,6 +156,18 @@ test("commutators and conjugates use bracket notation and can be searched again"
   await searchButton.click();
   await expect(page.getByTestId("solution-alg").first()).toHaveAttribute("data-expanded-alg", expanded, { timeout: 20000 });
   await expect(page.getByRole("alert")).toHaveCount(0);
+
+  await expect(searchButton).toHaveText(idleLabel, { timeout: 20000 });
+  const commutator = "R D R' D'";
+  await page.locator(".algorithm-target textarea").fill("[R,D]");
+  await page.locator(".field input").nth(0).fill("R D");
+  await page.locator(".field input").nth(1).fill(commutator);
+  await page.locator(".field input").nth(3).fill("4");
+  await searchButton.click();
+  const commutatorResult = page.getByTestId("solution-card").first();
+  await expect(commutatorResult.getByTestId("solution-alg")).toHaveText("[R,D]", { timeout: 20000 });
+  await expect(commutatorResult.getByTestId("feature-highlight")).toHaveCount(0);
+  await expect(page.getByTestId("filter-feature").locator("option[value=commutator]")).toHaveCount(0);
 });
 
 test("required and forbidden move patterns filter emitted solutions", async ({ page }) => {
