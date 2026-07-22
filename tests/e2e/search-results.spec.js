@@ -148,6 +148,7 @@ test("commutators and conjugates use bracket notation and can be searched again"
   await expect(algorithm).toHaveText("[F:[R,D]]", { timeout: 20000 });
   await expect(algorithm).toHaveAttribute("data-alg", "[F:[R,D]]");
   await expect(algorithm).toHaveAttribute("data-expanded-alg", expanded);
+  await expect(page.getByTestId("solution-card").first().getByTestId("feature-highlight")).toHaveCount(0);
   await algorithm.click();
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("[F:[R,D]]");
 
@@ -168,6 +169,21 @@ test("commutators and conjugates use bracket notation and can be searched again"
   await expect(commutatorResult.getByTestId("solution-alg")).toHaveText("[R,D]", { timeout: 20000 });
   await expect(commutatorResult.getByTestId("feature-highlight")).toHaveCount(0);
   await expect(page.getByTestId("filter-feature").locator("option[value=commutator]")).toHaveCount(0);
+
+  await expect(searchButton).toHaveText(idleLabel, { timeout: 20000 });
+  const sune = "R U R' U R U2 R'";
+  const conjugatedSune = `F ${sune} F'`;
+  await page.locator(".algorithm-target textarea").fill(`[F:${sune}]`);
+  await page.locator(".field input").nth(0).fill("F R U");
+  await page.locator(".field input").nth(1).fill(conjugatedSune);
+  await page.locator(".field input").nth(3).fill("9");
+  await searchButton.click();
+  const suneResult = page.getByTestId("solution-card").first();
+  await expect(suneResult.getByTestId("solution-alg")).toHaveText(`[F:${sune}]`, { timeout: 20000 });
+  const suneHighlight = suneResult.getByTestId("feature-highlight");
+  await expect(suneHighlight).toHaveText(sune);
+  await expect(suneHighlight).toHaveAttribute("data-feature-label", "Sune");
+  await expect(suneResult.locator("[data-feature=conjugate]")).toHaveCount(0);
 });
 
 test("required and forbidden move patterns filter emitted solutions", async ({ page }) => {

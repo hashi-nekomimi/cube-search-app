@@ -482,7 +482,29 @@ function formatMoveRange(moves, start, end) {
   return formatCleanMovesWithSimulUDSegments(moves.slice(start, end)).map((segment) => segment.text).join(" ");
 }
 
-function formatNotationRange(moves, features, rangeStart, rangeEnd) {
+const ANNOTATED_FEATURE_TYPES = new Set(["sexy", "sune", "sledge"]);
+
+function appendDisplayChunk(chunks, text, feature = null) {
+  if (!text) return;
+  const previous = chunks[chunks.length - 1];
+  if (previous?.feature === feature) previous.text += text;
+  else chunks.push({ text, feature });
+}
+
+function appendDisplayChunks(target, source) {
+  for (const chunk of source) appendDisplayChunk(target, chunk.text, chunk.feature);
+}
+
+function joinDisplayChunkGroups(groups, separator = " ") {
+  const chunks = [];
+  for (const group of groups.filter((candidate) => candidate.length)) {
+    if (chunks.length) appendDisplayChunk(chunks, separator);
+    appendDisplayChunks(chunks, group);
+  }
+  return chunks;
+}
+
+function makeNotationRangeChunks(moves, features, rangeStart, rangeEnd, selectedFeature) {
   const featureAt = Array(rangeEnd - rangeStart).fill(null);
   for (const feature of features) {
     if (feature.start < rangeStart || feature.end > rangeEnd) continue;
@@ -492,64 +514,53 @@ function formatNotationRange(moves, features, rangeStart, rangeEnd) {
     }
   }
 
-  const parts = [];
+  const groups = [];
   for (let start = rangeStart; start < rangeEnd;) {
     const feature = featureAt[start - rangeStart];
     let end = start + 1;
     while (end < rangeEnd && featureAt[end - rangeStart] === feature) end += 1;
     if (feature && start === feature.start && end === feature.end) {
-      parts.push(formatFeatureNotation(moves, features, feature));
+      groups.push(makeNotationFeatureChunks(moves, features, feature, selectedFeature));
     } else {
-      parts.push(formatMoveRange(moves, start, end));
+      groups.push([{ text: formatMoveRange(moves, start, end), feature: null }]);
     }
     start = end;
   }
-  return parts.filter(Boolean).join(" ");
+  return joinDisplayChunkGroups(groups);
 }
 
-function formatFeatureNotation(moves, features, feature) {
+function makeNotationFeatureChunks(moves, features, feature, selectedFeature) {
   if (feature.type === "commutator") {
     const aStart = feature.start;
     const aEnd = aStart + feature.aLength;
     const bEnd = aEnd + feature.bLength;
-    return `[${formatNotationRange(moves, features, aStart, aEnd)},${formatNotationRange(moves, features, aEnd, bEnd)}]`;
+    const chunks = [];
+    appendDisplayChunk(chunks, "[");
+    appendDisplayChunks(chunks, makeNotationRangeChunks(moves, features, aStart, aEnd, selectedFeature));
+    appendDisplayChunk(chunks, ",");
+    appendDisplayChunks(chunks, makeNotationRangeChunks(moves, features, aEnd, bEnd, selectedFeature));
+    appendDisplayChunk(chunks, "]");
+    return chunks;
   }
   if (feature.type === "conjugate") {
     const setupStart = feature.start;
     const setupEnd = setupStart + feature.setupLength;
     const coreEnd = setupEnd + feature.coreLength;
-    return `[${formatNotationRange(moves, features, setupStart, setupEnd)}:${formatNotationRange(moves, features, setupEnd, coreEnd)}]`;
+    const chunks = [];
+    appendDisplayChunk(chunks, "[");
+    appendDisplayChunks(chunks, makeNotationRangeChunks(moves, features, setupStart, setupEnd, selectedFeature));
+    appendDisplayChunk(chunks, ":");
+    appendDisplayChunks(chunks, makeNotationRangeChunks(moves, features, setupEnd, coreEnd, selectedFeature));
+    appendDisplayChunk(chunks, "]");
+    return chunks;
   }
-  return formatMoveRange(moves, feature.start, feature.end);
+  const highlighted = ANNOTATED_FEATURE_TYPES.has(feature.type)
+    && (selectedFeature === "all" || feature.type === selectedFeature);
+  return [{ text: formatMoveRange(moves, feature.start, feature.end), feature: highlighted ? feature : null }];
 }
 
 function makeFeatureDisplayChunks(moves, features, selectedFeature) {
-  const featureAt = Array(moves.length).fill(null);
-  for (const feature of features) {
-    for (let index = feature.start; index < feature.end; index += 1) {
-      if (!featureAt[index]) featureAt[index] = feature;
-    }
-  }
-
-  const chunks = [];
-  for (let start = 0; start < moves.length;) {
-    const feature = featureAt[start];
-    let end = start + 1;
-    while (end < moves.length && featureAt[end] === feature) end += 1;
-    const completeFeature = feature && start === feature.start && end === feature.end;
-    const text = completeFeature
-      ? formatFeatureNotation(moves, features, feature)
-      : formatMoveRange(moves, start, end);
-    const nestedHighlight = feature && selectedFeature !== "all" && feature.type !== selectedFeature
-      ? features.find((candidate) => candidate.type === selectedFeature && candidate.start >= feature.start && candidate.end <= feature.end)
-      : null;
-    const highlightedFeature = feature?.type !== "commutator" && (selectedFeature === "all" || feature?.type === selectedFeature)
-      ? feature
-      : nestedHighlight;
-    chunks.push({ text, feature: highlightedFeature });
-    start = end;
-  }
-  return chunks;
+  return makeNotationRangeChunks(moves, features, 0, moves.length, selectedFeature);
 }
 
 function applyPermToString(state, perm) {
@@ -668,8 +679,8 @@ const RESULT_ANALYSIS_TEXT = {
     physicalAs: "として回す",
     easeTitle: "EASE",
     moveCountTitle: "手数の内訳",
-    featureNames: { sexy: "Sexy Move", sune: "Sune", commutator: "Commutator", conjugate: "Conjugate", sledge: "Sledgehammer" },
-    featureShortNames: { sexy: "Sexy", sune: "Sune", commutator: "Commutator", conjugate: "Conjugate", sledge: "Sledge" },
+    featureNames: { sexy: "Sexy Move", sune: "Sune", sledge: "Sledgehammer" },
+    featureShortNames: { sexy: "Sexy", sune: "Sune", sledge: "Sledge" },
     breakdown: { base: "BASE", htm: "HTM", patterns: "PATTERN", regrips: "REGRIP", wide: "WIDE", left: "L", slice: "SLICE", rotation: "ROTATION" },
   },
   en: {
@@ -693,8 +704,8 @@ const RESULT_ANALYSIS_TEXT = {
     physicalAs: "execute as",
     easeTitle: "EASE",
     moveCountTitle: "Move counts",
-    featureNames: { sexy: "Sexy Move", sune: "Sune", commutator: "Commutator", conjugate: "Conjugate", sledge: "Sledgehammer" },
-    featureShortNames: { sexy: "Sexy", sune: "Sune", commutator: "Commutator", conjugate: "Conjugate", sledge: "Sledge" },
+    featureNames: { sexy: "Sexy Move", sune: "Sune", sledge: "Sledgehammer" },
+    featureShortNames: { sexy: "Sexy", sune: "Sune", sledge: "Sledge" },
     breakdown: { base: "BASE", htm: "HTM", patterns: "PATTERN", regrips: "REGRIP", wide: "WIDE", left: "L", slice: "SLICE", rotation: "ROTATION" },
   },
 };
@@ -1730,7 +1741,7 @@ function SolutionCard({ solution, t, language, onCopy, highlightFeature }) {
   const analysis = solutionAnalysis(solution);
   const labels = analysisText(language);
   const displayChunks = makeFeatureDisplayChunks(displayMoves, analysis.features, highlightFeature);
-  const displayAlg = displayChunks.map((chunk) => chunk.text).join(" ");
+  const displayAlg = displayChunks.map((chunk) => chunk.text).join("");
   const [detail, setDetail] = useState(null);
   const detailId = useId();
   return (
@@ -1750,7 +1761,6 @@ function SolutionCard({ solution, t, language, onCopy, highlightFeature }) {
             const featureType = chunk.feature?.type;
             return (
               <Fragment key={`${featureType || "plain"}-${index}`}>
-                {index ? " " : null}
                 {featureType ? (
                   <mark
                     data-testid="feature-highlight"
