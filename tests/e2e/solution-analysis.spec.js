@@ -8,16 +8,16 @@ function moves(algorithm) {
   return algorithm.trim() ? algorithm.trim().split(/\s+/) : [];
 }
 
-test("ease scoring rewards recognizable triggers", () => {
-  const sexy = analyzeSolutionMoves(moves("R U R' U'"));
+test("ease scoring rewards exact commutators", () => {
+  const commutator = analyzeSolutionMoves(moves("R U R' U'"));
   const plain = analyzeSolutionMoves(moves("R U R U"));
 
-  expect(sexy.features.some((feature) => feature.type === "sexy")).toBe(true);
-  expect(sexy.features.some((feature) => feature.type === "commutator")).toBe(true);
-  expect(sexy.ease.formula).toMatchObject({
+  expect(commutator.features.some((feature) => feature.type === "sexy")).toBe(false);
+  expect(commutator.features.some((feature) => feature.type === "commutator")).toBe(true);
+  expect(commutator.ease.formula).toMatchObject({
     totalMoves: 4,
     triggerMoves: 4,
-    namedTriggerMoves: 4,
+    namedTriggerMoves: 0,
     commutators: 1,
     regrips: 0,
     wideMoves: 0,
@@ -25,22 +25,21 @@ test("ease scoring rewards recognizable triggers", () => {
     sliceMoves: 0,
     regripKnown: true,
   });
-  expect(sexy.ease.formula.adjustments).toEqual({
+  expect(commutator.ease.formula.adjustments).toEqual({
     htm: -12,
-    patterns: 8,
+    patterns: 4,
     regrips: -0,
     wide: -0,
     left: -0,
     slice: -0,
     rotation: -0,
   });
-  expect(sexy.ease.score).toBe(96);
+  expect(commutator.ease.score).toBe(92);
   expect(plain.ease.score).toBe(88);
 });
 
 test("inverse, mirror and side-rotated named triggers are all recognized", () => {
   const equivalentClasses = [
-    { type: "sexy", algorithms: ["R U R' U'", "U R U' R'", "L' U' L U", "B U B' U'"] },
     { type: "sune", algorithms: ["R U R' U R U2 R'", "R U2 R' U' R U' R'", "L' U' L U' L' U2 L", "B U B' U B U2 B'"] },
     { type: "sledge", algorithms: ["R' F R F'", "F R' F' R", "L F' L' F", "B' R B R'"] },
   ];
@@ -55,9 +54,19 @@ test("inverse, mirror and side-rotated named triggers are all recognized", () =>
 });
 
 test("commutator detection is exact, primitive, and non-overlapping", () => {
-  for (const algorithm of ["R D R' D'", "D R D' R'", "L' D' L D", "B D B' D'"]) {
+  for (const algorithm of [
+    "R D R' D'",
+    "D R D' R'",
+    "L' D' L D",
+    "B D B' D'",
+    "R U R' U'",
+    "U R U' R'",
+    "L' U' L U",
+    "B U B' U'",
+  ]) {
     const analysis = analyzeSolutionMoves(moves(algorithm));
     expect(analysis.features.filter((feature) => feature.type === "commutator"), algorithm).toHaveLength(1);
+    expect(analysis.features.some((feature) => feature.type === "sexy"), algorithm).toBe(false);
   }
 
   const compound = analyzeSolutionMoves(moves("R U R' D R U' R' D'"));
@@ -75,6 +84,12 @@ test("commutator detection is exact, primitive, and non-overlapping", () => {
 
   expect(analyzeSolutionMoves(moves("R U R' U'")).features)
     .toEqual(expect.arrayContaining([expect.objectContaining({ type: "commutator", aLength: 1, bLength: 1 })]));
+
+  const overlappingFormerSexy = analyzeSolutionMoves(moves("R U R' U' R U R D R U' R D' R' U2 R'"));
+  expect(overlappingFormerSexy.features).toEqual(expect.arrayContaining([
+    expect.objectContaining({ type: "commutator", start: 0, end: 4, aLength: 1, bLength: 1 }),
+  ]));
+  expect(overlappingFormerSexy.features.some((feature) => feature.type === "sexy")).toBe(false);
 });
 
 test("commutator boundaries and conjugate setup are retained for notation", () => {
@@ -105,7 +120,7 @@ test("L, slice, and rotation moves lower EASE", () => {
 
   expect(left.ease.formula.leftMoves).toBe(2);
   expect(left.ease.formula.adjustments.left).toBe(-8);
-  expect(left.ease.score).toBe(88);
+  expect(left.ease.score).toBe(84);
   expect(left.ease.score).toBeLessThan(right.ease.score);
   expect(slice.ease.formula.sliceMoves).toBe(4);
   expect(slice.ease.formula.adjustments.slice).toBe(-16);

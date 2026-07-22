@@ -71,7 +71,7 @@ test("search results show regrip counts and can be sorted by metrics", async ({ 
   await expect(easeDetail).toBeVisible();
   await expect(easeDetail.getByTestId("ease-adjustment-base")).toContainText("BASE100");
   await expect(easeDetail.getByTestId("ease-adjustment-htm")).toContainText("HTM-12");
-  await expect(easeDetail.getByTestId("ease-adjustment-patterns")).toContainText("PATTERN+8");
+  await expect(easeDetail.getByTestId("ease-adjustment-patterns")).toContainText("PATTERN+4");
   await expect(easeDetail.locator("p, code")).toHaveCount(0);
   await page.getByTestId("metric-ease").first().click();
 
@@ -80,17 +80,10 @@ test("search results show regrip counts and can be sorted by metrics", async ({ 
   await expect(page.getByTestId("filter-ease")).toHaveCount(0);
   await expect(page.getByText("絞り込み", { exact: true })).toHaveCount(0);
   await expect(page.getByTestId("filter-feature")).toHaveValue("all");
-  await expect(page.getByTestId("filter-feature").locator("option")).toHaveText(["All", "Sexy Move", "Sune", "Sledgehammer"]);
+  await expect(page.getByTestId("filter-feature").locator("option")).toHaveText(["All", "Sune", "Sledgehammer"]);
 
-  const defaultHighlight = page.getByTestId("solution-card").first().getByTestId("feature-highlight");
-  await expect(defaultHighlight).toHaveText("[R,U]");
-  await expect(defaultHighlight).toHaveAttribute("data-feature-label", "Sexy");
-
-  await page.getByTestId("filter-feature").selectOption("sexy");
-  await expect(page.getByTestId("filter-feature")).toHaveClass(/is-active/);
-  const highlightedFeature = page.getByTestId("solution-card").first().getByTestId("feature-highlight");
-  await expect(highlightedFeature).toHaveText("[R,U]");
-  await expect(highlightedFeature).toHaveAttribute("data-feature-label", "Sexy");
+  await expect(page.getByTestId("solution-card").first().getByTestId("solution-alg")).toHaveText("[R,U]");
+  await expect(page.getByTestId("solution-card").first().getByTestId("feature-highlight")).toHaveCount(0);
 
   await page.setViewportSize({ width: 320, height: 844 });
   const controlBoxes = await page.locator(".solution-sort, .solution-pattern-filter").evaluateAll((controls) => controls.map((control) => {
@@ -159,17 +152,16 @@ test("commutators and conjugates use bracket notation and can be searched again"
   await expect(page.getByRole("alert")).toHaveCount(0);
 
   await expect(searchButton).toHaveText(idleLabel, { timeout: 20000 });
-  const conjugatedSexy = "F R U R' U' F'";
+  const conjugatedCommutator = "F R U R' U' F'";
   await page.locator(".algorithm-target textarea").fill("[F:[R,U]]");
   await page.locator(".field input").nth(0).fill("F R U");
-  await page.locator(".field input").nth(1).fill(conjugatedSexy);
+  await page.locator(".field input").nth(1).fill(conjugatedCommutator);
   await page.locator(".field input").nth(3).fill("6");
   await searchButton.click();
-  const sexyResult = page.getByTestId("solution-card").first();
-  await expect(sexyResult.getByTestId("solution-alg")).toHaveText("[F:[R,U]]", { timeout: 20000 });
-  await expect(sexyResult.getByTestId("solution-alg")).toHaveAttribute("data-expanded-alg", conjugatedSexy);
-  await expect(sexyResult.getByTestId("feature-highlight")).toHaveText("[R,U]");
-  await expect(sexyResult.getByTestId("feature-highlight")).toHaveAttribute("data-feature-label", "Sexy");
+  const commutatorResult = page.getByTestId("solution-card").first();
+  await expect(commutatorResult.getByTestId("solution-alg")).toHaveText("[F:[R,U]]", { timeout: 20000 });
+  await expect(commutatorResult.getByTestId("solution-alg")).toHaveAttribute("data-expanded-alg", conjugatedCommutator);
+  await expect(commutatorResult.getByTestId("feature-highlight")).toHaveCount(0);
 
   await expect(searchButton).toHaveText(idleLabel, { timeout: 20000 });
   const commutator = "R D R' D'";
@@ -178,9 +170,9 @@ test("commutators and conjugates use bracket notation and can be searched again"
   await page.locator(".field input").nth(1).fill(commutator);
   await page.locator(".field input").nth(3).fill("4");
   await searchButton.click();
-  const commutatorResult = page.getByTestId("solution-card").first();
-  await expect(commutatorResult.getByTestId("solution-alg")).toHaveText("[R,D]", { timeout: 20000 });
-  await expect(commutatorResult.getByTestId("feature-highlight")).toHaveCount(0);
+  const directCommutatorResult = page.getByTestId("solution-card").first();
+  await expect(directCommutatorResult.getByTestId("solution-alg")).toHaveText("[R,D]", { timeout: 20000 });
+  await expect(directCommutatorResult.getByTestId("feature-highlight")).toHaveCount(0);
   await expect(page.getByTestId("filter-feature").locator("option[value=commutator]")).toHaveCount(0);
 
   await expect(searchButton).toHaveText(idleLabel, { timeout: 20000 });

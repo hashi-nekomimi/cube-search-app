@@ -14,7 +14,7 @@ const MOVE_AXIS = {
   U: "y", D: "y", E: "y", u: "y", d: "y",
   F: "z", B: "z", S: "z", f: "z", b: "z",
 };
-const NAMED_TRIGGER_TYPES = new Set(["sexy", "sune", "sledge"]);
+const NAMED_TRIGGER_TYPES = new Set(["sune", "sledge"]);
 const EASE_WEIGHT = {
   htm: 3,
   namedTriggerMove: 2,
@@ -273,7 +273,6 @@ export function analyzeRegrips(moves) {
 const BASE_FEATURE_SIGNATURES = [
   { type: "sune", variant: "Sune", moves: ["R", "U", "R'", "U", "R", "U2", "R'"] },
   { type: "sune", variant: "Anti-Sune", moves: ["R", "U2", "R'", "U'", "R", "U'", "R'"] },
-  { type: "sexy", variant: "Sexy Move", moves: ["R", "U", "R'", "U'"] },
   { type: "sledge", variant: "Sledgehammer", moves: ["R'", "F", "R", "F'"] },
 ];
 
