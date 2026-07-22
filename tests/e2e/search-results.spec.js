@@ -12,6 +12,10 @@ async function fillSearchConditions(page, generator, depth) {
   await page.getByLabel("HTM上限").fill(String(depth));
 }
 
+async function expandedAlgorithms(page) {
+  return page.getByTestId("solution-alg").evaluateAll((elements) => elements.map((element) => element.dataset.expandedAlg));
+}
+
 test("search results show regrip counts and can be sorted by metrics", async ({ page }) => {
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto("/");
@@ -127,6 +131,33 @@ test("search treats double turns as one HTM move", async ({ page }) => {
   await expect(page.getByTestId("solution-alg").first()).toHaveText("R2");
 });
 
+test("commutators and conjugates use bracket notation and can be searched again", async ({ page }) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto("/");
+
+  const expanded = "F R D R' D' F'";
+  await page.locator(".algorithm-target textarea").fill(expanded);
+  await page.locator(".field input").nth(0).fill("F R D");
+  await page.locator(".field input").nth(1).fill(expanded);
+  await page.locator(".field input").nth(3).fill("6");
+  const searchButton = page.locator("button.search-primary");
+  const idleLabel = await searchButton.textContent();
+  await searchButton.click();
+
+  const algorithm = page.getByTestId("solution-alg").first();
+  await expect(algorithm).toHaveText("[F:[R,D]]", { timeout: 20000 });
+  await expect(algorithm).toHaveAttribute("data-alg", "[F:[R,D]]");
+  await expect(algorithm).toHaveAttribute("data-expanded-alg", expanded);
+  await algorithm.click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("[F:[R,D]]");
+
+  await expect(searchButton).toHaveText(idleLabel, { timeout: 20000 });
+  await page.locator(".algorithm-target textarea").fill("[F:[R,D]]");
+  await searchButton.click();
+  await expect(page.getByTestId("solution-alg").first()).toHaveAttribute("data-expanded-alg", expanded, { timeout: 20000 });
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
 test("required and forbidden move patterns filter emitted solutions", async ({ page }) => {
   await page.goto("/");
   await page.getByPlaceholder("既存の手順を入力…").fill("R U R' U'");
@@ -149,7 +180,7 @@ test("V perm preset search returns the same eight RUD solutions", async ({ page 
   await page.getByRole("button", { name: "探索", exact: true }).click();
 
   await expect(page.getByTestId("solution-card")).toHaveCount(8, { timeout: 30000 });
-  await expect(page.getByTestId("solution-alg").filter({ hasText: displayedVPerm })).toHaveCount(1);
+  expect(await expandedAlgorithms(page)).toContain(displayedVPerm);
 });
 
 test("mobile V perm HTM 18 search completes without reloading the tab", async ({ page }) => {
@@ -172,7 +203,7 @@ test("mobile V perm HTM 18 search completes without reloading the tab", async ({
   await expect(page.getByLabel("HTM上限")).toHaveValue("18");
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(page.getByTestId("solution-card")).toHaveCount(108);
-  for (const solution of await page.getByTestId("solution-alg").allTextContents()) {
+  for (const solution of await expandedAlgorithms(page)) {
     expect(stateFromSolution(solution)).toBe(expectedState);
   }
   expect(pageErrors).toEqual([]);
@@ -195,7 +226,7 @@ test("four and five generator searches finish quickly with verified solutions", 
     await expect(searchButton).toHaveText("探索", { timeout: 12000 });
     expect(Date.now() - startedAt).toBeLessThan(12000);
 
-    const solutions = await page.getByTestId("solution-alg").allTextContents();
+    const solutions = await expandedAlgorithms(page);
     expect(solutions.length).toBeGreaterThanOrEqual(8);
     for (const solution of solutions) expect(stateFromSolution(solution)).toBe(expectedState);
   }
@@ -221,7 +252,7 @@ test("targets that use every selected face also take the fast path", async ({ pa
     await expect(searchButton).toHaveText("探索", { timeout: 12000 });
     expect(Date.now() - startedAt).toBeLessThan(12000);
 
-    const solutions = await page.getByTestId("solution-alg").allTextContents();
+    const solutions = await expandedAlgorithms(page);
     expect(solutions.length).toBeGreaterThan(0);
     for (const solution of solutions) expect(stateFromSolution(solution)).toBe(expectedState);
   }
@@ -239,7 +270,7 @@ test("five generator PLL preset search uses the verified preset seed", async ({ 
   await searchButton.click();
   await expect(searchButton).toHaveText("探索", { timeout: 12000 });
 
-  const solutions = await page.getByTestId("solution-alg").allTextContents();
+  const solutions = await expandedAlgorithms(page);
   expect(solutions.length).toBeGreaterThanOrEqual(8);
   for (const solution of solutions) expect(stateFromSolution(solution)).toBe(expectedState);
 });
@@ -258,7 +289,7 @@ for (const presetId of ["zbls-f2l-1-1", "zbls-f2l-25-1", "zbls-f2l-31-1", "zbls-
     await expect(page.getByTestId("solution-card").first()).toBeVisible({ timeout: 12000 });
     await expect(searchButton).toHaveText("探索", { timeout: 12000 });
 
-    const solutions = await page.getByTestId("solution-alg").allTextContents();
+    const solutions = await expandedAlgorithms(page);
     expect(solutions.length).toBeGreaterThan(0);
     for (const solution of solutions) {
       expect(patternMatchesState(preset.state, stateFromSolution(solution))).toBe(true);

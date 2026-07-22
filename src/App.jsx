@@ -42,6 +42,7 @@ const FACE_AXIS = {
 };
 const PARALLEL_GROUP = { U: "UD", D: "UD", R: "RL", L: "RL", F: "FB", B: "FB" };
 const PARALLEL_GROUP_FACES = { UD: ["U", "D"], RL: ["R", "L"], FB: ["F", "B"] };
+const MOVE_TOKEN_RE = /^([URFDLBMESxyzurfdlb](?:w)?)(2|')?/;
 const TOKEN_RE = /([URFDLBMESxyzurfdlb](?:w)?)(2|')?/g;
 
 function keyOf(pos, normal) {
@@ -224,12 +225,11 @@ function normalizeAlgText(alg) {
     .replaceAll("’", "'")
     .replaceAll("＇", "'")
     .replace(/2'/g, "2")
-    .replace(/([URFDLB])w/g, (_, face) => face.toLowerCase())
-    .replaceAll(",", " ");
+    .replace(/([URFDLB])w/g, (_, face) => face.toLowerCase());
 }
 
-function parseAlg(alg) {
-  const text = normalizeAlgText(alg);
+function parseFlatAlg(alg) {
+  const text = normalizeAlgText(alg).replaceAll(",", " ");
   const moves = [];
   let pos = 0;
   TOKEN_RE.lastIndex = 0;
@@ -241,6 +241,77 @@ function parseAlg(alg) {
     pos = TOKEN_RE.lastIndex;
   }
   if (text.slice(pos).trim()) throw new Error(`入力に読み取れない部分があります: ${text.slice(pos)}`);
+  return moves;
+}
+
+function parseAlg(alg) {
+  const text = normalizeAlgText(alg);
+  if (!text.includes("[") && !text.includes("(")) return parseFlatAlg(text);
+  let position = 0;
+
+  function skipWhitespace() {
+    while (/\s/.test(text[position] || "")) position += 1;
+  }
+
+  function applyGroupSuffix(moves) {
+    if (text[position] === "'") {
+      position += 1;
+      return inverseAlgList(moves);
+    }
+    if (text[position] === "2") {
+      position += 1;
+      return moves.concat(moves);
+    }
+    return moves;
+  }
+
+  function parseSequence(stoppers = new Set()) {
+    const moves = [];
+    while (position < text.length) {
+      skipWhitespace();
+      const current = text[position];
+      if (!current || stoppers.has(current)) break;
+      if (current === ",") {
+        position += 1;
+        continue;
+      }
+      if (current === "[") {
+        position += 1;
+        const left = parseSequence(new Set([",", ":", "]"]));
+        skipWhitespace();
+        const separator = text[position];
+        if (!left.length || (separator !== "," && separator !== ":")) throw new Error(`Invalid bracket notation near ${text.slice(position)}`);
+        position += 1;
+        const right = parseSequence(new Set(["]"]));
+        skipWhitespace();
+        if (!right.length || text[position] !== "]") throw new Error(`Invalid bracket notation near ${text.slice(position)}`);
+        position += 1;
+        const expanded = separator === ","
+          ? left.concat(right, inverseAlgList(left), inverseAlgList(right))
+          : left.concat(right, inverseAlgList(left));
+        moves.push(...applyGroupSuffix(expanded));
+        continue;
+      }
+      if (current === "(") {
+        position += 1;
+        const grouped = parseSequence(new Set([")"]));
+        skipWhitespace();
+        if (text[position] !== ")") throw new Error(`Invalid group near ${text.slice(position)}`);
+        position += 1;
+        moves.push(...applyGroupSuffix(grouped));
+        continue;
+      }
+      const match = text.slice(position).match(MOVE_TOKEN_RE);
+      if (!match) throw new Error(`Invalid algorithm near ${text.slice(position)}`);
+      moves.push(match[1] + (match[2] || ""));
+      position += match[0].length;
+    }
+    return moves;
+  }
+
+  const moves = parseSequence();
+  skipWhitespace();
+  if (position !== text.length) throw new Error(`Invalid algorithm near ${text.slice(position)}`);
   return moves;
 }
 
@@ -407,10 +478,54 @@ function formatCleanMovesWithSimulUDSegments(cleaned) {
   return segments;
 }
 
+function formatMoveRange(moves, start, end) {
+  return formatCleanMovesWithSimulUDSegments(moves.slice(start, end)).map((segment) => segment.text).join(" ");
+}
+
+function formatNotationRange(moves, features, rangeStart, rangeEnd) {
+  const featureAt = Array(rangeEnd - rangeStart).fill(null);
+  for (const feature of features) {
+    if (feature.start < rangeStart || feature.end > rangeEnd) continue;
+    for (let index = feature.start; index < feature.end; index += 1) {
+      const localIndex = index - rangeStart;
+      if (!featureAt[localIndex]) featureAt[localIndex] = feature;
+    }
+  }
+
+  const parts = [];
+  for (let start = rangeStart; start < rangeEnd;) {
+    const feature = featureAt[start - rangeStart];
+    let end = start + 1;
+    while (end < rangeEnd && featureAt[end - rangeStart] === feature) end += 1;
+    if (feature && start === feature.start && end === feature.end) {
+      parts.push(formatFeatureNotation(moves, features, feature));
+    } else {
+      parts.push(formatMoveRange(moves, start, end));
+    }
+    start = end;
+  }
+  return parts.filter(Boolean).join(" ");
+}
+
+function formatFeatureNotation(moves, features, feature) {
+  if (feature.type === "commutator") {
+    const aStart = feature.start;
+    const aEnd = aStart + feature.aLength;
+    const bEnd = aEnd + feature.bLength;
+    return `[${formatNotationRange(moves, features, aStart, aEnd)},${formatNotationRange(moves, features, aEnd, bEnd)}]`;
+  }
+  if (feature.type === "conjugate") {
+    const setupStart = feature.start;
+    const setupEnd = setupStart + feature.setupLength;
+    const coreEnd = setupEnd + feature.coreLength;
+    return `[${formatNotationRange(moves, features, setupStart, setupEnd)}:${formatNotationRange(moves, features, setupEnd, coreEnd)}]`;
+  }
+  return formatMoveRange(moves, feature.start, feature.end);
+}
+
 function makeFeatureDisplayChunks(moves, features, selectedFeature) {
   const featureAt = Array(moves.length).fill(null);
   for (const feature of features) {
-    if (selectedFeature !== "all" && feature.type !== selectedFeature) continue;
     for (let index = feature.start; index < feature.end; index += 1) {
       if (!featureAt[index]) featureAt[index] = feature;
     }
@@ -421,8 +536,15 @@ function makeFeatureDisplayChunks(moves, features, selectedFeature) {
     const feature = featureAt[start];
     let end = start + 1;
     while (end < moves.length && featureAt[end] === feature) end += 1;
-    const text = formatCleanMovesWithSimulUDSegments(moves.slice(start, end)).map((segment) => segment.text).join(" ");
-    chunks.push({ text, feature });
+    const completeFeature = feature && start === feature.start && end === feature.end;
+    const text = completeFeature
+      ? formatFeatureNotation(moves, features, feature)
+      : formatMoveRange(moves, start, end);
+    const nestedHighlight = feature && selectedFeature !== "all" && feature.type !== selectedFeature
+      ? features.find((candidate) => candidate.type === selectedFeature && candidate.start >= feature.start && candidate.end <= feature.end)
+      : null;
+    const highlightedFeature = selectedFeature === "all" || feature?.type === selectedFeature ? feature : nestedHighlight;
+    chunks.push({ text, feature: highlightedFeature });
     start = end;
   }
   return chunks;
@@ -544,8 +666,8 @@ const RESULT_ANALYSIS_TEXT = {
     physicalAs: "として回す",
     easeTitle: "EASE",
     moveCountTitle: "手数の内訳",
-    featureNames: { sexy: "Sexy Move", sune: "Sune", commutator: "Commutator", sledge: "Sledgehammer" },
-    featureShortNames: { sexy: "Sexy", sune: "Sune", commutator: "Commutator", sledge: "Sledge" },
+    featureNames: { sexy: "Sexy Move", sune: "Sune", commutator: "Commutator", conjugate: "Conjugate", sledge: "Sledgehammer" },
+    featureShortNames: { sexy: "Sexy", sune: "Sune", commutator: "Commutator", conjugate: "Conjugate", sledge: "Sledge" },
     breakdown: { base: "BASE", htm: "HTM", patterns: "PATTERN", regrips: "REGRIP", wide: "WIDE", left: "L", slice: "SLICE", rotation: "ROTATION" },
   },
   en: {
@@ -569,8 +691,8 @@ const RESULT_ANALYSIS_TEXT = {
     physicalAs: "execute as",
     easeTitle: "EASE",
     moveCountTitle: "Move counts",
-    featureNames: { sexy: "Sexy Move", sune: "Sune", commutator: "Commutator", sledge: "Sledgehammer" },
-    featureShortNames: { sexy: "Sexy", sune: "Sune", commutator: "Commutator", sledge: "Sledge" },
+    featureNames: { sexy: "Sexy Move", sune: "Sune", commutator: "Commutator", conjugate: "Conjugate", sledge: "Sledgehammer" },
+    featureShortNames: { sexy: "Sexy", sune: "Sune", commutator: "Commutator", conjugate: "Conjugate", sledge: "Sledge" },
     breakdown: { base: "BASE", htm: "HTM", patterns: "PATTERN", regrips: "REGRIP", wide: "WIDE", left: "L", slice: "SLICE", rotation: "ROTATION" },
   },
 };
@@ -1602,10 +1724,11 @@ function MoveCountDetail({ analysis, language, id }) {
 function SolutionCard({ solution, t, language, onCopy, highlightFeature }) {
   const displayMoves = cleanMoves(solution);
   const displaySegments = formatCleanMovesWithSimulUDSegments(displayMoves);
-  const displayAlg = displaySegments.map((segment) => segment.text).join(" ");
+  const expandedDisplayAlg = displaySegments.map((segment) => segment.text).join(" ");
   const analysis = solutionAnalysis(solution);
   const labels = analysisText(language);
   const displayChunks = makeFeatureDisplayChunks(displayMoves, analysis.features, highlightFeature);
+  const displayAlg = displayChunks.map((chunk) => chunk.text).join(" ");
   const [detail, setDetail] = useState(null);
   const detailId = useId();
   return (
@@ -1615,6 +1738,7 @@ function SolutionCard({ solution, t, language, onCopy, highlightFeature }) {
           type="button"
           data-testid="solution-alg"
           data-alg={displayAlg}
+          data-expanded-alg={expandedDisplayAlg}
           className="solution-alg"
           aria-label={`${displayAlg || "(空)"} ${t.copy}`}
           title={t.copy}
@@ -2034,6 +2158,17 @@ export default function App() {
     setIsSearching(false);
   }
   async function runSearch(mode) {
+    let expandedTargetAlg = targetAlg;
+    if (mode === "alg") {
+      try {
+        expandedTargetAlg = algToString(parseAlg(targetAlg));
+      } catch (searchError) {
+        setError(searchError instanceof Error ? searchError.message : String(searchError));
+        setHasSearched(true);
+        setIsSearching(false);
+        return;
+      }
+    }
     const currentSession = searchSessionRef.current + 1;
     searchSessionRef.current = currentSession;
     if (workerRef.current) {
@@ -2088,9 +2223,9 @@ export default function App() {
     };
     worker.postMessage({
       mode,
-      targetAlg,
+      targetAlg: expandedTargetAlg,
       targetPattern,
-      seedAlg: mode === "alg" ? targetAlg : patternSeedAlg,
+      seedAlg: mode === "alg" ? expandedTargetAlg : patternSeedAlg,
       searchMovesText,
       requiredPatternsText,
       forbiddenPatternsText,

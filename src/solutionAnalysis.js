@@ -14,7 +14,7 @@ const MOVE_AXIS = {
   U: "y", D: "y", E: "y", u: "y", d: "y",
   F: "z", B: "z", S: "z", f: "z", b: "z",
 };
-const MAX_COMMUTATOR_BLOCK_LENGTH = 3;
+const NAMED_TRIGGER_TYPES = new Set(["sexy", "sune", "sledge"]);
 const EASE_WEIGHT = {
   htm: 3,
   namedTriggerMove: 2,
@@ -316,7 +316,7 @@ function moveLayer(move) {
 }
 
 function isCanonicalCommutatorBlock(block) {
-  if (!block.length || block.length > MAX_COMMUTATOR_BLOCK_LENGTH) return false;
+  if (!block.length) return false;
   if (block.some((move) => !MOVE_AXIS[move[0]])) return false;
   return block.every((move, index) => index === 0 || moveLayer(move) !== moveLayer(block[index - 1]));
 }
@@ -370,8 +370,8 @@ function findNamedFeatures(moves) {
 function findCommutators(moves, namedFeatures) {
   const candidatesByRange = new Map();
   for (let start = 0; start < moves.length; start += 1) {
-    for (let aLength = 1; aLength <= MAX_COMMUTATOR_BLOCK_LENGTH && start + (aLength + 1) * 2 <= moves.length; aLength += 1) {
-      for (let bLength = 1; bLength <= MAX_COMMUTATOR_BLOCK_LENGTH && start + (aLength + bLength) * 2 <= moves.length; bLength += 1) {
+    for (let aLength = 1; start + (aLength + 1) * 2 <= moves.length; aLength += 1) {
+      for (let bLength = 1; start + (aLength + bLength) * 2 <= moves.length; bLength += 1) {
         const end = start + (aLength + bLength) * 2;
         const range = { start, end };
         if (end > moves.length || namedFeatures.some((feature) => rangesOverlap(range, feature))) continue;
@@ -397,18 +397,58 @@ function findCommutators(moves, namedFeatures) {
     && inner.end <= candidate.end
     && inner.end - inner.start < candidate.end - candidate.start
   )));
-  return selectNonOverlappingRanges(primitive).map(({ start, end }) => ({
+  return selectNonOverlappingRanges(primitive).map(({ start, end, aLength, bLength }) => ({
     type: "commutator",
     variant: "Commutator",
     start,
     end,
+    aLength,
+    bLength,
+    moves: moves.slice(start, end),
+  }));
+}
+
+function findConjugates(moves, existingFeatures) {
+  const candidatesByRange = new Map();
+  for (let start = 0; start < moves.length; start += 1) {
+    for (let setupLength = 1; start + setupLength * 2 + 1 <= moves.length; setupLength += 1) {
+      const setup = moves.slice(start, start + setupLength);
+      if (!isCanonicalCommutatorBlock(setup)) continue;
+      for (let coreLength = 1; start + setupLength * 2 + coreLength <= moves.length; coreLength += 1) {
+        const coreStart = start + setupLength;
+        const coreEnd = coreStart + coreLength;
+        const end = coreEnd + setupLength;
+        const inverseSetup = moves.slice(coreEnd, end);
+        if (!sameSequence(inverseSetup, inverseSequence(setup))) continue;
+
+        const range = { start, end };
+        const overlapping = existingFeatures.filter((feature) => rangesOverlap(range, feature));
+        if (overlapping.some((feature) => feature.start < coreStart || feature.end > coreEnd)) continue;
+
+        const candidate = { start, end, setupLength, coreLength };
+        const key = `${start}:${end}`;
+        const previous = candidatesByRange.get(key);
+        if (!previous || setupLength > previous.setupLength) candidatesByRange.set(key, candidate);
+      }
+    }
+  }
+
+  return selectNonOverlappingRanges([...candidatesByRange.values()]).map(({ start, end, setupLength, coreLength }) => ({
+    type: "conjugate",
+    variant: "Conjugate",
+    start,
+    end,
+    setupLength,
+    coreLength,
     moves: moves.slice(start, end),
   }));
 }
 
 export function detectAlgorithmFeatures(moves) {
   const named = findNamedFeatures(moves);
-  return [...named, ...findCommutators(moves, named)].sort((a, b) => a.start - b.start || b.end - a.end);
+  const commutators = findCommutators(moves, named);
+  const conjugates = findConjugates(moves, [...named, ...commutators]);
+  return [...named, ...commutators, ...conjugates].sort((a, b) => a.start - b.start || b.end - a.end);
 }
 
 function calculateMetrics(moves) {
@@ -451,9 +491,10 @@ function analyzeEase(moves, metrics, regrip, features) {
   for (const feature of features) {
     featureTypes.add(feature.type);
     if (feature.type === "commutator") commutators += 1;
+    if (feature.type !== "commutator" && !NAMED_TRIGGER_TYPES.has(feature.type)) continue;
     for (let index = feature.start; index < feature.end; index += 1) {
       coveredMoves.add(index);
-      if (feature.type !== "commutator") namedTriggerMoves.add(index);
+      if (NAMED_TRIGGER_TYPES.has(feature.type)) namedTriggerMoves.add(index);
     }
   }
 

@@ -73,6 +73,26 @@ test("commutator detection is exact, primitive, and non-overlapping", () => {
   }
 });
 
+test("commutator boundaries and conjugate setup are retained for notation", () => {
+  const commutator = analyzeSolutionMoves(moves("R U R' D R U' R' D'"))
+    .features.find((feature) => feature.type === "commutator");
+  expect(commutator).toMatchObject({ start: 0, end: 8, aLength: 3, bLength: 1 });
+
+  const conjugated = analyzeSolutionMoves(moves("F R D R' D' F'"));
+  expect(conjugated.features.find((feature) => feature.type === "conjugate"))
+    .toMatchObject({ start: 0, end: 6, setupLength: 1, coreLength: 4 });
+  expect(conjugated.features.some((feature) => feature.type === "commutator")).toBe(true);
+  expect(conjugated.ease.formula.commutators).toBe(1);
+  expect(conjugated.ease.formula.adjustments.patterns).toBe(4);
+
+  const longCommutator = analyzeSolutionMoves(moves("R U F L D L' F' U' R' D'"))
+    .features.find((feature) => feature.type === "commutator");
+  expect(longCommutator).toMatchObject({ aLength: 4, bLength: 1 });
+  const longConjugate = analyzeSolutionMoves(moves("R U F L D L' F' U' R'"))
+    .features.find((feature) => feature.type === "conjugate");
+  expect(longConjugate).toMatchObject({ setupLength: 4, coreLength: 1 });
+});
+
 test("L, slice, and rotation moves lower EASE", () => {
   const right = analyzeSolutionMoves(moves("R U R' U'"));
   const left = analyzeSolutionMoves(moves("L' U' L U"));
