@@ -62,13 +62,18 @@ async function expectMobilePresetLayout(page, width) {
     const panel = page.getByTestId("preset-panel");
     await expect(panel).toBeVisible();
     const tile = panel.locator(".preset-tile").first();
+    const label = tile.locator(":scope > span");
     await expect(tile).toBeVisible();
-    const [panelBox, tileBox] = await Promise.all([panel.boundingBox(), tile.boundingBox()]);
+    await expect(label).not.toHaveText("");
+    const [panelBox, tileBox, labelBox] = await Promise.all([panel.boundingBox(), tile.boundingBox(), label.boundingBox()]);
     expect(panelBox.x).toBeGreaterThanOrEqual(0);
     expect(panelBox.x + panelBox.width).toBeLessThanOrEqual(width);
     expect(tileBox.x).toBeGreaterThanOrEqual(panelBox.x);
     expect(tileBox.x + tileBox.width).toBeLessThanOrEqual(panelBox.x + panelBox.width);
     expect(tileBox.width).toBeGreaterThanOrEqual(60);
+    expect(labelBox.y).toBeGreaterThanOrEqual(tileBox.y);
+    expect(labelBox.y + labelBox.height).toBeLessThanOrEqual(tileBox.y + tileBox.height);
+    expect(await label.evaluate((element) => element.scrollHeight <= element.clientHeight)).toBe(true);
   }
 
   await page.getByTestId("zbls-f2l-f2l-1").click();
@@ -106,6 +111,19 @@ test("all preset categories fit 320px and 390px mobile widths", async ({ page },
   }
 
   expect(consoleErrors).toEqual([]);
+});
+
+test("mobile form controls stay above the iOS focus-zoom threshold", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+
+  const textareaSize = await page.getByPlaceholder("既存の手順を入力…").evaluate((element) => parseFloat(getComputedStyle(element).fontSize));
+  expect(textareaSize).toBeGreaterThanOrEqual(16);
+
+  await page.getByTestId("input-mode-pattern").click();
+  const inputSizes = await page.locator(".field input").evaluateAll((elements) => elements.map((element) => parseFloat(getComputedStyle(element).fontSize)));
+  expect(inputSizes.length).toBeGreaterThan(0);
+  expect(Math.min(...inputSizes)).toBeGreaterThanOrEqual(16);
 });
 
 test("azimuth-elevation Three.js cube renders nonblank on desktop and mobile", async ({ page }, testInfo) => {

@@ -483,11 +483,17 @@ function patternFromAlg(alg) {
   return stateStringToPattern(applyAlgToString(SOLVED_STRING, inverse));
 }
 
-function insertSolutionUnique(list, solution) {
-  const normalized = cleanMoves(solution);
-  const key = algToString(normalized);
-  if (list.some((x) => algToString(x) === key)) return list;
-  return [...list, normalized];
+function insertSolutionsUnique(list, solutions) {
+  const keys = new Set(list.map((solution) => algToString(solution)));
+  const next = [...list];
+  for (const solution of solutions) {
+    const normalized = cleanMoves(solution);
+    const key = algToString(normalized);
+    if (keys.has(key)) continue;
+    keys.add(key);
+    next.push(normalized);
+  }
+  return next.length === list.length ? list : next;
 }
 
 const LANGUAGE_LABEL = { ja: "日本語", en: "English", ur: "اردو", ko: "한국어", hi: "हिन्दी", ar: "العربية" };
@@ -730,12 +736,19 @@ const CASE_PRESET_CATEGORIES = Object.keys(CASE_PRESETS);
 const STORAGE_KEYS = { history: "cube-search-history-v1" };
 function readStorageList(key) { try { const value = JSON.parse(localStorage.getItem(key) || "[]"); return Array.isArray(value) ? value : []; } catch { return []; } }
 function writeStorageList(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch { return false; } }
+function searchStateBudget() {
+  const mobileViewport = window.matchMedia("(max-width: 720px)").matches;
+  const mobileDevice = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const lowMemoryDevice = Number(navigator.deviceMemory) > 0 && Number(navigator.deviceMemory) <= 4;
+  return mobileViewport || mobileDevice || lowMemoryDevice ? 1800000 : 6000000;
+}
 
 function workerMain() {
   const FACE_ORDER = ["U", "R", "F", "D", "L", "B"];
   const SOLVED = FACE_ORDER.map((face) => face.repeat(9)).join("");
   const DONT_CARE = "X";
-  const MAX_STORED_STATES = 10000000;
+  const DEFAULT_MAX_STORED_STATES = 6000000;
+  const SOLUTION_BATCH_SIZE = 16;
   const FAST_REWRITE_MAX_DEPTH = 8;
   const FAST_RESTRICTED_STATE_BUDGET = 10000000;
   const FAST_PARTIAL_RESTRICTED_STATE_BUDGET = 2000000;
@@ -746,7 +759,12 @@ function workerMain() {
   const NORMAL = { U: [0, 1, 0], D: [0, -1, 0], R: [1, 0, 0], L: [-1, 0, 0], F: [0, 0, 1], B: [0, 0, -1] };
   const PARALLEL_GROUP = { U: "UD", D: "UD", R: "RL", L: "RL", F: "FB", B: "FB" };
   const PARALLEL_GROUP_FACES = { UD: ["U", "D"], RL: ["R", "L"], FB: ["F", "B"] };
-  let CURRENT_JOB = null;
+  const COLOR_CODE = { U: 0, R: 1, F: 2, D: 3, L: 4, B: 5 };
+
+  function packState(state) { let packed = ""; for (let start = 0; start < 54; start += 5) { let value = 0; for (let offset = 0; offset < 5 && start + offset < 54; offset += 1) value |= COLOR_CODE[state[start + offset]] << (offset * 3); packed += String.fromCharCode(value); } return packed; }
+  function packedColorAt(state, index) { return (state.charCodeAt(Math.floor(index / 5)) >> ((index % 5) * 3)) & 7; }
+  function applyPackedPerm(state, perm) { let next = ""; for (let start = 0; start < 54; start += 5) { let value = 0; for (let offset = 0; offset < 5 && start + offset < 54; offset += 1) value |= packedColorAt(state, perm[start + offset]) << (offset * 3); next += String.fromCharCode(value); } return next; }
+  const PACKED_SOLVED = packState(SOLVED);
 
   function keyOf(pos, normal) { return pos.join(",") + "|" + normal.join(","); }
   function facePos(face, r, c) { return { U: [c - 1, 1, r - 1], D: [c - 1, -1, 1 - r], F: [c - 1, 1 - r, 1], B: [1 - c, 1 - r, -1], R: [1, 1 - r, 1 - c], L: [-1, 1 - r, c - 1] }[face]; }
@@ -791,21 +809,27 @@ function workerMain() {
   function stateFromSolution(solution) { let state = SOLVED; for (const move of inverseAlgList(solution)) state = applyPerm(state, moveToPerm(move)); return state; }
   function trimRedundantFinalAuf(job, solution) { let current = cleanMoves(solution); if (!job.matcher) return current; while (current.length && current[current.length - 1][0] === "U") { const shorter = cleanMoves(current.slice(0, -1)); if (!job.matcher.matches(stateFromSolution(shorter))) break; current = shorter; } return current; }
   function solutionMatchesJobTarget(job, solution) { if (!job.targetState && !job.matcher) return true; const state = stateFromSolution(solution); if (job.targetState && state !== job.targetState) return false; return !job.matcher || job.matcher.matches(state); }
-  function emitSolution(job, solution) { const normalized = trimRedundantFinalAuf(job, solution); if (symbolMoveCount(normalized) > job.maxSymbolDepth) return false; if (!solutionMatchesMovePatterns(normalized, job.requiredPatterns, job.forbiddenPatterns)) return false; if (!solutionMatchesJobTarget(job, normalized)) return false; const key = algToString(normalized); if (job.foundKeys.has(key)) return false; job.foundKeys.add(key); job.foundCount += 1; if (job.captureSolution) job.captureSolution(normalized); else self.postMessage({ type: "solution", solution: normalized }); return true; }
-  function pauseJob(job) { job.paused = true; self.postMessage({ type: "paused", message: "探索が大きすぎたため中断しました。" }); }
+  function flushSolutions(job) { if (!job.pendingSolutions || !job.pendingSolutions.length) return; self.postMessage({ type: "solutions", solutions: job.pendingSolutions }); job.pendingSolutions = []; }
+  function emitSolution(job, solution) { const normalized = trimRedundantFinalAuf(job, solution); if (symbolMoveCount(normalized) > job.maxSymbolDepth) return false; if (!solutionMatchesMovePatterns(normalized, job.requiredPatterns, job.forbiddenPatterns)) return false; if (!solutionMatchesJobTarget(job, normalized)) return false; const key = algToString(normalized); if (job.foundKeys.has(key)) return false; job.foundKeys.add(key); job.foundCount += 1; if (job.captureSolution) job.captureSolution(normalized); else { if (!job.pendingSolutions) job.pendingSolutions = []; job.pendingSolutions.push(normalized); if (job.foundCount === 1 || job.pendingSolutions.length >= SOLUTION_BATCH_SIZE) flushSolutions(job); } return true; }
+  function pauseJob(job) { flushSolutions(job); self.postMessage({ type: "paused", message: "メモリ上限で停止しました。" }); }
   function totalStored(job) { return (job.storeA ? job.storeA.states.length : 0) + (job.storeB ? job.storeB.states.length : 0) + (job.forwardStore ? job.forwardStore.states.length : 0) + (job.secondNodes ? job.secondNodes.length : 0); }
-  function shouldPause(job) { return !job.allowUnsafe && totalStored(job) > MAX_STORED_STATES; }
+  function shouldPause(job) { return totalStored(job) >= job.maxStoredStates; }
+  function shouldPauseBeforeLayer(job, front) { const estimatedBranches = Math.max(1, job.moves.length - 3); return totalStored(job) + front.length * estimatedBranches > job.maxStoredStates; }
   function makeStore(initialState) { return { states: [initialState], parent: [-1], move: [""], cost: [0], seen: new Map([[initialState, 0]]) }; }
   function addNode(store, state, parentId, move, cost) { const id = store.states.length; store.states.push(state); store.parent.push(parentId); store.move.push(move); store.cost.push(cost); store.seen.set(state, id); return id; }
   function pathFromNode(store, id) { const out = []; while (id >= 0) { const move = store.move[id]; if (move) out.push(move); id = store.parent[id]; } out.reverse(); return out; }
   function lastTwoMoves(store, id) { if (id < 0) return []; const last = store.move[id]; if (!last) return []; const parentId = store.parent[id]; if (parentId < 0) return [last]; const prev = store.move[parentId]; return prev ? [prev, last] : [last]; }
 
-  function expandAlgLayer(job, side) { const expandingFromStart = side === "A"; const front = expandingFromStart ? job.frontA : job.frontB; const storeSelf = expandingFromStart ? job.storeA : job.storeB; const storeOther = expandingFromStart ? job.storeB : job.storeA; const sideLimit = expandingFromStart ? job.sideSymbolLimitA : job.sideSymbolLimitB; const newFront = []; for (const id of front) { if (job.stopByLimit) break; const state = storeSelf.states[id]; const tail = lastTwoMoves(storeSelf, id); const cost = storeSelf.cost[id]; for (const move of job.moves) { if (job.stopByLimit) break; if (!canAddMove(tail, move)) continue; const nextCost = cost + symbolDelta(tail, move); if (nextCost > sideLimit) continue; const nextState = applyPerm(state, job.movePerms.get(move)); if (storeSelf.seen.has(nextState)) continue; const nextId = addNode(storeSelf, nextState, id, move, nextCost); newFront.push(nextId); if (storeOther.seen.has(nextState)) { const otherId = storeOther.seen.get(nextState); const selfPath = pathFromNode(storeSelf, nextId); const otherPath = pathFromNode(storeOther, otherId); const solution = cleanMoves(expandingFromStart ? selfPath.concat(inverseAlgList(otherPath)) : otherPath.concat(inverseAlgList(selfPath))); if (symbolMoveCount(solution) <= job.maxSymbolDepth) emitSolution(job, solution); } } } if (expandingFromStart) job.frontA = newFront; else job.frontB = newFront; }
-  function processAlgJob(job) { try { while ((job.frontA.length || job.frontB.length) && !job.stopByLimit) { if (job.frontA.length && (job.frontA.length <= job.frontB.length || !job.frontB.length)) expandAlgLayer(job, "A"); else expandAlgLayer(job, "B"); if (shouldPause(job)) return pauseJob(job); } CURRENT_JOB = null; self.postMessage({ type: "done", completed: !job.stopByLimit }); } catch (e) { CURRENT_JOB = null; self.postMessage({ type: "error", message: e instanceof Error ? e.message : String(e) }); } }
+  function expandAlgLayer(job, side) { const expandingFromStart = side === "A"; const front = expandingFromStart ? job.frontA : job.frontB; const storeSelf = expandingFromStart ? job.storeA : job.storeB; const storeOther = expandingFromStart ? job.storeB : job.storeA; const sideLimit = expandingFromStart ? job.sideSymbolLimitA : job.sideSymbolLimitB; const newFront = []; for (const id of front) { if (job.stopByLimit) break; const state = storeSelf.states[id]; const tail = lastTwoMoves(storeSelf, id); const cost = storeSelf.cost[id]; for (const move of job.moves) { if (job.stopByLimit) break; if (!canAddMove(tail, move)) continue; const nextCost = cost + symbolDelta(tail, move); if (nextCost > sideLimit) continue; const nextState = applyPackedPerm(state, job.movePerms.get(move)); if (storeSelf.seen.has(nextState)) continue; const nextId = addNode(storeSelf, nextState, id, move, nextCost); newFront.push(nextId); if (storeOther.seen.has(nextState)) { const otherId = storeOther.seen.get(nextState); const selfPath = pathFromNode(storeSelf, nextId); const otherPath = pathFromNode(storeOther, otherId); const solution = cleanMoves(expandingFromStart ? selfPath.concat(inverseAlgList(otherPath)) : otherPath.concat(inverseAlgList(selfPath))); if (symbolMoveCount(solution) <= job.maxSymbolDepth) emitSolution(job, solution); } } } if (expandingFromStart) job.frontA = newFront; else job.frontB = newFront; }
+  function frontDepth(store, front) { return front.length ? store.cost[front[0]] : 0; }
+  function emitPackedJoin(job, side, baseId, extraMoves, state) { const fromStart = side === "A"; const storeSelf = fromStart ? job.storeA : job.storeB; const storeOther = fromStart ? job.storeB : job.storeA; if (!storeOther.seen.has(state)) return; const selfPath = pathFromNode(storeSelf, baseId).concat(extraMoves); const otherPath = pathFromNode(storeOther, storeOther.seen.get(state)); const solution = cleanMoves(fromStart ? selfPath.concat(inverseAlgList(otherPath)) : otherPath.concat(inverseAlgList(selfPath))); if (symbolMoveCount(solution) <= job.maxSymbolDepth) emitSolution(job, solution); }
+  function streamExactTail(job, side, extraDepth) { if (extraDepth < 1) return; const fromStart = side === "A"; const front = fromStart ? job.frontA : job.frontB; const store = fromStart ? job.storeA : job.storeB; for (const id of front) { const state = store.states[id]; const tail = lastTwoMoves(store, id); for (const firstMove of job.moves) { if (!canAddMove(tail, firstMove)) continue; const firstState = applyPackedPerm(state, job.movePerms.get(firstMove)); emitPackedJoin(job, side, id, [firstMove], firstState); if (extraDepth < 2) continue; const nextTail = tail.concat(firstMove).slice(-2); for (const secondMove of job.moves) { if (!canAddMove(nextTail, secondMove)) continue; const secondState = applyPackedPerm(firstState, job.movePerms.get(secondMove)); emitPackedJoin(job, side, id, [firstMove, secondMove], secondState); } } } }
+  function completeExactSearchWithBoundedTail(job) { const depthA = frontDepth(job.storeA, job.frontA); const depthB = frontDepth(job.storeB, job.frontB); const extraDepth = job.maxSymbolDepth - depthA - depthB; if (extraDepth < 0 || extraDepth > 2) return false; const side = !job.frontA.length ? "B" : !job.frontB.length ? "A" : job.frontA.length <= job.frontB.length ? "A" : "B"; streamExactTail(job, side, extraDepth); return true; }
+  function processAlgJob(job) { try { while ((job.frontA.length || job.frontB.length) && !job.stopByLimit) { const side = job.frontA.length && (job.frontA.length <= job.frontB.length || !job.frontB.length) ? "A" : "B"; const front = side === "A" ? job.frontA : job.frontB; if (shouldPauseBeforeLayer(job, front)) { if (!completeExactSearchWithBoundedTail(job)) return pauseJob(job); break; } expandAlgLayer(job, side); if (shouldPause(job)) return pauseJob(job); } flushSolutions(job); self.postMessage({ type: "done", completed: !job.stopByLimit }); } catch (e) { flushSolutions(job); self.postMessage({ type: "error", message: e instanceof Error ? e.message : String(e) }); } }
   function generatorFaceCount(moves) { return new Set(moves.map((move) => move[0])).size; }
   function collectExactSolutions(start, job, maxDepth, stateBudget, onSolution) {
-    const storeA = makeStore(start);
-    const storeB = makeStore(SOLVED);
+    const storeA = makeStore(packState(start));
+    const storeB = makeStore(PACKED_SOLVED);
     let frontA = [0];
     let frontB = [0];
     let statesVisited = 2;
@@ -827,7 +851,7 @@ function workerMain() {
           if (!canAddMove(tail, move)) continue;
           const nextCost = cost + symbolDelta(tail, move);
           if (nextCost > sideLimit) continue;
-          const nextState = applyPerm(state, job.movePerms.get(move));
+          const nextState = applyPackedPerm(state, job.movePerms.get(move));
           if (storeSelf.seen.has(nextState)) continue;
           const nextId = addNode(storeSelf, nextState, id, move, nextCost);
           newFront.push(nextId);
@@ -858,10 +882,11 @@ function workerMain() {
     if (seedFaces.length <= 3) {
       const restrictedMoves = seedFaces.flatMap((face) => [face, face + "'", face + "2"]);
       const restrictedJob = Object.assign({}, job, { moves: restrictedMoves, movePerms: buildMovePerms(restrictedMoves) });
-      const restrictedBudget = job.targetState ? FAST_RESTRICTED_STATE_BUDGET : FAST_PARTIAL_RESTRICTED_STATE_BUDGET;
+      const requestedBudget = job.targetState ? FAST_RESTRICTED_STATE_BUDGET : FAST_PARTIAL_RESTRICTED_STATE_BUDGET;
+      const restrictedBudget = Math.min(requestedBudget, job.maxStoredStates);
       collectExactSolutions(stateFromSolution(seed), restrictedJob, job.maxSymbolDepth, restrictedBudget, (solution) => emitSolution(job, solution));
     }
-    let remainingBudget = FAST_REWRITE_STATE_BUDGET;
+    let remainingBudget = Math.min(FAST_REWRITE_STATE_BUDGET, job.maxStoredStates);
     const searchedSegments = new Set();
     outer: for (let windowLength = Math.min(FAST_REWRITE_MAX_DEPTH, seed.length); windowLength >= 2; windowLength -= 1) {
       const replacementMaxDepth = Math.min(FAST_REWRITE_MAX_DEPTH, job.maxSymbolDepth - (seed.length - windowLength));
@@ -878,11 +903,11 @@ function workerMain() {
         if (remainingBudget <= 2) break outer;
       }
     }
-    CURRENT_JOB = null;
+    flushSolutions(job);
     self.postMessage({ type: "done", completed: true });
     return true;
   }
-  function startExactStateJob(data, start, matcher = null) { const moves = makeSearchMoves(data.searchMovesText); const maxSymbolDepth = Number(data.maxSymbolDepth) || 1; const job = { kind: "alg", allowUnsafe: Boolean(data.allowUnsafe), requiredPatterns: parseMovePatterns(data.requiredPatternsText || data.requiredPartsText || ""), forbiddenPatterns: parseMovePatterns(data.forbiddenPatternsText || ""), foundCount: 0, foundKeys: new Set(), stopByLimit: false, moves, maxSymbolDepth, sideSymbolLimitA: Math.ceil(maxSymbolDepth / 2), sideSymbolLimitB: Math.floor(maxSymbolDepth / 2), movePerms: buildMovePerms(moves), matcher, targetState: start, storeA: makeStore(start), storeB: makeStore(SOLVED), frontA: [0], frontB: [0] }; CURRENT_JOB = job; if (runSeededFastJob(job, data.seedAlg || "")) return; if (start === SOLVED) emitSolution(job, []); processAlgJob(job); }
+  function startExactStateJob(data, start, matcher = null) { const moves = makeSearchMoves(data.searchMovesText); const maxSymbolDepth = Number(data.maxSymbolDepth) || 1; const maxStoredStates = Math.max(100000, Number(data.maxStoredStates) || DEFAULT_MAX_STORED_STATES); const job = { kind: "alg", maxStoredStates, requiredPatterns: parseMovePatterns(data.requiredPatternsText || data.requiredPartsText || ""), forbiddenPatterns: parseMovePatterns(data.forbiddenPatternsText || ""), foundCount: 0, foundKeys: new Set(), stopByLimit: false, moves, maxSymbolDepth, sideSymbolLimitA: Math.ceil(maxSymbolDepth / 2), sideSymbolLimitB: Math.floor(maxSymbolDepth / 2), movePerms: buildMovePerms(moves), matcher, targetState: start, storeA: makeStore(packState(start)), storeB: makeStore(PACKED_SOLVED), frontA: [0], frontB: [0] }; const seed = parseFastSeed(job, data.seedAlg || ""); if (seed) emitSolution(job, seed); if (runSeededFastJob(job, data.seedAlg || "")) return; if (start === SOLVED) emitSolution(job, []); processAlgJob(job); }
   function startAlgJob(data) { const start = applyAlg(SOLVED, algToString(inverseAlgList(parseAlg(data.targetAlg)))); startExactStateJob(data, start); }
 
   function permKey(perm) { let key = ""; for (let i = 0; i < 54; i += 1) key += String.fromCharCode(perm[i] + 35); return key; }
@@ -900,10 +925,10 @@ function workerMain() {
   function emitPatternMatchesNewForwardOnly(job, node, secondId) { if (!job.newForwardIds || !job.newForwardIds.length) return false; return emitPatternMatches(job, node, secondId, job.newForwardIds, job.layerIndexCache, "layer"); }
   function expandPatternForwardLayer(job) { const nextFront = []; for (const id of job.forwardFront) { if (job.stopByLimit) break; const state = job.forwardStore.states[id]; const tail = lastTwoMoves(job.forwardStore, id); const cost = job.forwardStore.cost[id]; for (const move of job.moves) { if (job.stopByLimit) break; if (!canAddMove(tail, move)) continue; const nextCost = cost + symbolDelta(tail, move); if (nextCost > job.maxSymbolDepth) continue; const nextState = applyPerm(state, job.movePerms.get(move)); if (job.forwardStore.seen.has(nextState)) continue; const nextId = addNode(job.forwardStore, nextState, id, move, nextCost); nextFront.push(nextId); } } job.forwardFront = nextFront; job.newForwardIds = nextFront; job.forwardDepth += 1; job.indexCache.clear(); job.layerIndexCache = new Map(); job.allForwardIdsVersion = -1; job.singleAllIndex = null; job.singleAllVersion = -1; job.singleLayerIndex = null; job.singleLayerVersion = -1; }
   function expandPatternSecondLayer(job) { const nextFront = []; for (const entry of job.secondFront) { if (job.stopByLimit) break; const nodeId = entry.id; const node = job.secondNodes[nodeId]; const tail = lastTwoSecondMoves(job, nodeId); for (const move of job.moves) { if (job.stopByLimit) break; if (!canAddMove(tail, move)) continue; const nextCost = node.cost + symbolDelta(tail, move); if (nextCost > job.maxSymbolDepth) continue; const nextPerm = composePerm(entry.perm, job.movePerms.get(move)); const nextNode = makeSecondNode(job, nodeId, move, nextPerm, nextCost); const key = secondNodeKey(job, nextNode, nextPerm); if (job.secondSeen.has(key)) continue; job.secondSeen.add(key); const nextId = job.secondNodes.length; job.secondNodes.push(nextNode); emitPatternMatchesAllForward(job, nextNode, nextId); nextFront.push({ id: nextId, perm: nextPerm }); } } job.secondFront = nextFront; job.secondDepth += 1; }
-  function ensureForwardDepth(job, targetDepth) { while (job.forwardDepth < targetDepth && job.forwardFront.length && !job.stopByLimit) { expandPatternForwardLayer(job); if (shouldPause(job)) return false; } return true; }
-  function ensureSecondDepth(job, targetDepth) { while (job.secondDepth < targetDepth && job.secondFront.length && !job.stopByLimit) { expandPatternSecondLayer(job); if (shouldPause(job)) return false; } return true; }
+  function ensureForwardDepth(job, targetDepth) { while (job.forwardDepth < targetDepth && job.forwardFront.length && !job.stopByLimit) { if (shouldPauseBeforeLayer(job, job.forwardFront)) return false; expandPatternForwardLayer(job); if (shouldPause(job)) return false; } return true; }
+  function ensureSecondDepth(job, targetDepth) { while (job.secondDepth < targetDepth && job.secondFront.length && !job.stopByLimit) { if (shouldPauseBeforeLayer(job, job.secondFront)) return false; expandPatternSecondLayer(job); if (shouldPause(job)) return false; } return true; }
   function matchSecondNodesForCurrentForward(job) { if (job.lastMatchedForwardDepth === job.forwardDepth) return; for (let id = 0; id < job.secondNodes.length; id += 1) { if (job.stopByLimit) break; const node = job.secondNodes[id]; if (node.cost > job.maxSymbolDepth) continue; emitPatternMatchesNewForwardOnly(job, node, id); } job.lastMatchedForwardDepth = job.forwardDepth; }
-  function processBidirectionalPatternJob(job) { try { while (job.searchDepth <= job.maxPhysicalDepth && !job.stopByLimit) { const firstDepth = Math.ceil(job.searchDepth / 2); const secondDepth = Math.floor(job.searchDepth / 2); if (!ensureForwardDepth(job, firstDepth)) return pauseJob(job); matchSecondNodesForCurrentForward(job); if (!ensureSecondDepth(job, secondDepth)) return pauseJob(job); job.searchDepth += 1; } CURRENT_JOB = null; self.postMessage({ type: "done", completed: !job.stopByLimit }); } catch (e) { CURRENT_JOB = null; self.postMessage({ type: "error", message: e instanceof Error ? e.message : String(e) }); } }
+  function processBidirectionalPatternJob(job) { try { while (job.searchDepth <= job.maxPhysicalDepth && !job.stopByLimit) { const firstDepth = Math.ceil(job.searchDepth / 2); const secondDepth = Math.floor(job.searchDepth / 2); if (!ensureForwardDepth(job, firstDepth)) return pauseJob(job); matchSecondNodesForCurrentForward(job); if (!ensureSecondDepth(job, secondDepth)) return pauseJob(job); job.searchDepth += 1; } flushSolutions(job); self.postMessage({ type: "done", completed: !job.stopByLimit }); } catch (e) { flushSolutions(job); self.postMessage({ type: "error", message: e instanceof Error ? e.message : String(e) }); } }
   function makePatternSearchJob(baseJob) { const identityPerm = Array.from({ length: 54 }, (_, i) => i); const job = Object.assign(baseJob, { forwardStore: makeStore(SOLVED), forwardFront: [0], newForwardIds: [0], forwardDepth: 0, secondFront: [], secondNodes: [], secondSeen: new Set(), secondDepth: 0, searchDepth: 0, lastMatchedForwardDepth: -1, solutionSet: new Set(), indexCache: new Map(), layerIndexCache: new Map(), allForwardIds: [0], allForwardIdsVersion: 1 }); const identitySecondNode = makeSecondNode(job, -1, "", identityPerm, 0); job.secondSeen.add(secondNodeKey(job, identitySecondNode, identityPerm)); job.secondNodes = [identitySecondNode]; job.secondFront = [{ id: 0, perm: identityPerm }]; return job; }
   function patternSeedFaceSets(moves) { const available = [...new Set(moves.map((move) => move[0]))]; const preferred = [["R", "U", "F"], ["R", "U", "L"], ["R", "U", "D"]].filter((faces) => faces.every((face) => available.includes(face))); if (available.length >= 3) preferred.push(available.slice(0, 3)); const seen = new Set(); return preferred.filter((faces) => { const key = faces.slice().sort().join(""); if (seen.has(key)) return false; seen.add(key); return true; }); }
   function discoverPatternSeed(baseJob) {
@@ -923,19 +948,19 @@ function workerMain() {
     }
     return null;
   }
-  function startPatternJob(data) { const pattern = data.targetPattern; validatePattern(pattern); const patternArr = patternToArray(pattern); const matcher = makeMatcher(patternArr); if (matcher.count === 54) { startExactStateJob(data, patternArr.join(""), matcher); return; } const moves = makeSearchMoves(data.searchMovesText); const maxSymbolDepth = Number(data.maxSymbolDepth) || 1; const requiredPatterns = parseMovePatterns(data.requiredPatternsText || data.requiredPartsText || ""); const forbiddenPatterns = parseMovePatterns(data.forbiddenPatternsText || ""); const baseJob = { kind: "pattern", allowUnsafe: Boolean(data.allowUnsafe), requiredPatterns, forbiddenPatterns, foundCount: 0, foundKeys: new Set(), stopByLimit: false, moves, maxSymbolDepth, maxPhysicalDepth: maxSymbolDepth, movePerms: buildMovePerms(moves), matcher, targetState: null }; CURRENT_JOB = baseJob; if (runSeededFastJob(baseJob, data.seedAlg || "")) return; if (generatorFaceCount(moves) >= 4) { const discoveredSeed = discoverPatternSeed(baseJob); if (discoveredSeed && runSeededFastJob(baseJob, algToString(discoveredSeed))) return; } if (matcher.matches(SOLVED)) emitSolution(baseJob, []); const job = makePatternSearchJob(baseJob); CURRENT_JOB = job; processBidirectionalPatternJob(job); }
-  self.onmessage = function (event) { const data = event.data || {}; if (data.command === "continue") { if (CURRENT_JOB) { CURRENT_JOB.allowUnsafe = true; if (CURRENT_JOB.kind === "alg") processAlgJob(CURRENT_JOB); else processBidirectionalPatternJob(CURRENT_JOB); } return; } try { if (data.mode === "alg") startAlgJob(data); else startPatternJob(data); } catch (e) { self.postMessage({ type: "error", message: e instanceof Error ? e.message : String(e) }); } };
+  function startPatternJob(data) { const pattern = data.targetPattern; validatePattern(pattern); const patternArr = patternToArray(pattern); const matcher = makeMatcher(patternArr); if (matcher.count === 54) { startExactStateJob(data, patternArr.join(""), matcher); return; } const moves = makeSearchMoves(data.searchMovesText); const maxSymbolDepth = Number(data.maxSymbolDepth) || 1; const maxStoredStates = Math.max(100000, Number(data.maxStoredStates) || DEFAULT_MAX_STORED_STATES); const requiredPatterns = parseMovePatterns(data.requiredPatternsText || data.requiredPartsText || ""); const forbiddenPatterns = parseMovePatterns(data.forbiddenPatternsText || ""); const baseJob = { kind: "pattern", maxStoredStates, requiredPatterns, forbiddenPatterns, foundCount: 0, foundKeys: new Set(), stopByLimit: false, moves, maxSymbolDepth, maxPhysicalDepth: maxSymbolDepth, movePerms: buildMovePerms(moves), matcher, targetState: null }; if (runSeededFastJob(baseJob, data.seedAlg || "")) return; if (generatorFaceCount(moves) >= 4) { const discoveredSeed = discoverPatternSeed(baseJob); if (discoveredSeed && runSeededFastJob(baseJob, algToString(discoveredSeed))) return; } if (matcher.matches(SOLVED)) emitSolution(baseJob, []); const job = makePatternSearchJob(baseJob); processBidirectionalPatternJob(job); }
+  self.onmessage = function (event) { const data = event.data || {}; try { if (data.mode === "alg") startAlgJob(data); else startPatternJob(data); } catch (e) { self.postMessage({ type: "error", message: e instanceof Error ? e.message : String(e) }); } };
 }
 
 function MiniSticker({ filled, bottomColor, corner = false }) {
-  if (corner) return <div className="h-2.5 w-2.5 sm:h-3 sm:w-3" />;
+  if (corner) return <div className="h-2.5 w-2.5" />;
   const displayColor = displayColorSymbol("U", bottomColor);
-  return <div data-display-color={filled ? displayColor : "X"} className="h-2.5 w-2.5 rounded-[2px] border border-slate-500/70 sm:h-3 sm:w-3" style={{ background: filled ? displayColorStyle("U", bottomColor) : "#374151" }} />;
+  return <div data-display-color={filled ? displayColor : "X"} className="h-2.5 w-2.5 rounded-[2px] border border-slate-500/70" style={{ background: filled ? displayColorStyle("U", bottomColor) : "#374151" }} />;
 }
 function MiniColorSticker({ color, bottomColor, corner = false }) {
-  if (corner) return <div className="h-2.5 w-2.5 sm:h-3 sm:w-3" />;
+  if (corner) return <div className="h-2.5 w-2.5" />;
   const displayColor = displayColorSymbol(color, bottomColor);
-  return <div data-color={color} data-display-color={displayColor} className="h-2.5 w-2.5 rounded-[2px] border border-slate-500/70 sm:h-3 sm:w-3" style={{ background: displayColorStyle(color, bottomColor) }} />;
+  return <div data-color={color} data-display-color={displayColor} className="h-2.5 w-2.5 rounded-[2px] border border-slate-500/70" style={{ background: displayColorStyle(color, bottomColor) }} />;
 }
 function fallbackPreviewMask(pattern) { const u = pattern.U; const bit = (idx) => (u[idx] === "U" ? "1" : "0"); return [`x${bit(0)}${bit(1)}${bit(2)}x`, `0${bit(0)}${bit(1)}${bit(2)}0`, `0${bit(3)}${bit(4)}${bit(5)}0`, `0${bit(6)}${bit(7)}${bit(8)}0`, `x${bit(6)}${bit(7)}${bit(8)}x`].join(""); }
 function pllPreviewCells(pattern) {
@@ -1868,10 +1893,8 @@ export default function App() {
   const [error, setError] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
-  const [canContinueUnsafe, setCanContinueUnsafe] = useState(false);
   const searchSessionRef = useRef(0);
   const workerRef = useRef(null);
-  const lastSearchModeRef = useRef("alg");
   function createSearchWorker() {
     const source = `(${workerMain.toString()})();`;
     const blob = new Blob([source], { type: "text/javascript" });
@@ -2009,28 +2032,15 @@ export default function App() {
       workerRef.current = null;
     }
     setIsSearching(false);
-    setCanContinueUnsafe(false);
   }
-  function continuePausedSearch() {
-    if (!workerRef.current) {
-      runSearch(lastSearchModeRef.current, { allowUnsafe: true });
-      return;
-    }
-    setError("");
-    setCanContinueUnsafe(false);
-    setIsSearching(true);
-    workerRef.current.postMessage({ command: "continue" });
-  }
-  async function runSearch(mode, options = {}) {
+  async function runSearch(mode) {
     const currentSession = searchSessionRef.current + 1;
-    lastSearchModeRef.current = mode;
     searchSessionRef.current = currentSession;
     if (workerRef.current) {
       terminateSearchWorker(workerRef.current);
       workerRef.current = null;
     }
     setError("");
-    setCanContinueUnsafe(false);
     setHasSearched(true);
     setIsSearching(true);
     setSolutions([]);
@@ -2041,22 +2051,22 @@ export default function App() {
     worker.onmessage = (event) => {
       if (searchSessionRef.current !== currentSession) return;
       const data = event.data;
-      if (data.type === "solution") {
+      if (data.type === "solutions" || data.type === "solution") {
+        const incoming = data.type === "solutions" ? data.solutions : [data.solution];
+        if (!incoming.length) return;
         receivedAnySolution = true;
-        setSolutions((prev) => insertSolutionUnique(prev, data.solution));
+        setSolutions((prev) => insertSolutionsUnique(prev, incoming));
         return;
       }
       if (data.type === "paused") {
         setError(data.message);
-        setCanContinueUnsafe(true);
         setIsSearching(false);
+        terminateSearchWorker(worker);
+        if (workerRef.current === worker) workerRef.current = null;
         return;
       }
       if (data.type === "error") {
         setError(data.message);
-        setCanContinueUnsafe(
-          String(data.message || "").includes("探索が大きすぎ"),
-        );
         setIsSearching(false);
         terminateSearchWorker(worker);
         if (workerRef.current === worker) workerRef.current = null;
@@ -2072,9 +2082,6 @@ export default function App() {
     worker.onerror = (event) => {
       if (searchSessionRef.current !== currentSession) return;
       setError(event.message || "Worker error");
-      setCanContinueUnsafe(
-        String(event.message || "").includes("探索が大きすぎ"),
-      );
       setIsSearching(false);
       terminateSearchWorker(worker);
       if (workerRef.current === worker) workerRef.current = null;
@@ -2088,7 +2095,7 @@ export default function App() {
       requiredPatternsText,
       forbiddenPatternsText,
       maxSymbolDepth: Number(maxSymbolDepth),
-      allowUnsafe: Boolean(options.allowUnsafe),
+      maxStoredStates: searchStateBudget(),
     });
   }
   const filteredSolutions = useMemo(
@@ -2375,7 +2382,6 @@ export default function App() {
           {error ? (
             <div className="error-banner" role="alert">
               <span>{error}</span>
-              {canContinueUnsafe ? <button type="button" onClick={continuePausedSearch}>{t.unsafeContinue}</button> : null}
             </div>
           ) : null}
 

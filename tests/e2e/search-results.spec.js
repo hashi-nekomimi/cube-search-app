@@ -152,6 +152,32 @@ test("V perm preset search returns the same eight RUD solutions", async ({ page 
   await expect(page.getByTestId("solution-alg").filter({ hasText: displayedVPerm })).toHaveCount(1);
 });
 
+test("mobile V perm HTM 18 search completes without reloading the tab", async ({ page }) => {
+  test.setTimeout(60000);
+  const pageErrors = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  const expectedState = stateFromSolution("R' U R' U' R D' R' D R' U D' R2 U' R2 D R2");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openPatternInput(page);
+  await fillSearchConditions(page, "R U D", 18);
+  await page.getByTestId("preset-category-PLL").click();
+  await page.getByTestId("preset-case-pll-19-v").click();
+  const searchButton = page.getByRole("button", { name: "探索", exact: true });
+  await searchButton.click();
+
+  await expect(page.getByTestId("solution-card").first()).toBeVisible({ timeout: 3000 });
+  await expect(searchButton).toHaveText("探索", { timeout: 45000 });
+  await expect(page.getByLabel("生成系")).toHaveValue("R U D");
+  await expect(page.getByLabel("HTM上限")).toHaveValue("18");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.getByTestId("solution-card")).toHaveCount(108);
+  for (const solution of await page.getByTestId("solution-alg").allTextContents()) {
+    expect(stateFromSolution(solution)).toBe(expectedState);
+  }
+  expect(pageErrors).toEqual([]);
+});
+
 test("four and five generator searches finish quickly with verified solutions", async ({ page }) => {
   test.setTimeout(30000);
   const vPerm = "R' U R' U' R D' R' D R' U D' R2 U' R2 D R2";
