@@ -530,25 +530,6 @@ function makeNotationRangeChunks(moves, features, rangeStart, rangeEnd, selected
 }
 
 function makeNotationFeatureChunks(moves, features, feature, selectedFeature) {
-  if (feature.type === "commutator") {
-    const aStart = feature.start;
-    const aEnd = aStart + feature.aLength;
-    const bEnd = aEnd + feature.bLength;
-    const chunks = [];
-    appendDisplayChunk(chunks, "[");
-    appendDisplayChunks(chunks, makeNotationRangeChunks(moves, features, aStart, aEnd, selectedFeature));
-    appendDisplayChunk(chunks, ",");
-    appendDisplayChunks(chunks, makeNotationRangeChunks(moves, features, aEnd, bEnd, selectedFeature));
-    appendDisplayChunk(chunks, "]");
-    const namedAlias = features.find((candidate) => (
-      ANNOTATED_FEATURE_TYPES.has(candidate.type)
-      && candidate.start === feature.start
-      && candidate.end === feature.end
-      && (selectedFeature === "all" || candidate.type === selectedFeature)
-    ));
-    if (namedAlias) return [{ text: chunks.map((chunk) => chunk.text).join(""), feature: namedAlias }];
-    return chunks;
-  }
   if (feature.type === "conjugate") {
     const setupStart = feature.start;
     const setupEnd = setupStart + feature.setupLength;
@@ -567,7 +548,8 @@ function makeNotationFeatureChunks(moves, features, feature, selectedFeature) {
 }
 
 function makeFeatureDisplayChunks(moves, features, selectedFeature) {
-  return makeNotationRangeChunks(moves, features, 0, moves.length, selectedFeature);
+  const displayFeatures = features.filter((feature) => feature.type !== "commutator");
+  return makeNotationRangeChunks(moves, displayFeatures, 0, moves.length, selectedFeature);
 }
 
 function applyPermToString(state, perm) {
@@ -967,7 +949,7 @@ function workerMain() {
   function emitPackedJoin(job, side, baseId, extraMoves, state) { const fromStart = side === "A"; const storeSelf = fromStart ? job.storeA : job.storeB; const storeOther = fromStart ? job.storeB : job.storeA; if (!storeOther.seen.has(state)) return; const selfPath = pathFromNode(storeSelf, baseId).concat(extraMoves); const otherPath = pathFromNode(storeOther, storeOther.seen.get(state)); const solution = cleanMoves(fromStart ? selfPath.concat(inverseAlgList(otherPath)) : otherPath.concat(inverseAlgList(selfPath))); if (symbolMoveCount(solution) <= job.maxSymbolDepth) emitSolution(job, solution); }
   function streamExactTail(job, side, extraDepth) { if (extraDepth < 1) return; const fromStart = side === "A"; const front = fromStart ? job.frontA : job.frontB; const store = fromStart ? job.storeA : job.storeB; for (const id of front) { const state = store.states[id]; const tail = lastTwoMoves(store, id); for (const firstMove of job.moves) { if (!canAddMove(tail, firstMove)) continue; const firstState = applyPackedPerm(state, job.movePerms.get(firstMove)); emitPackedJoin(job, side, id, [firstMove], firstState); if (extraDepth < 2) continue; const nextTail = tail.concat(firstMove).slice(-2); for (const secondMove of job.moves) { if (!canAddMove(nextTail, secondMove)) continue; const secondState = applyPackedPerm(firstState, job.movePerms.get(secondMove)); emitPackedJoin(job, side, id, [firstMove, secondMove], secondState); } } } }
   function completeExactSearchWithBoundedTail(job) { const depthA = frontDepth(job.storeA, job.frontA); const depthB = frontDepth(job.storeB, job.frontB); const extraDepth = job.maxSymbolDepth - depthA - depthB; if (extraDepth < 0 || extraDepth > 2) return false; const side = !job.frontA.length ? "B" : !job.frontB.length ? "A" : job.frontA.length <= job.frontB.length ? "A" : "B"; streamExactTail(job, side, extraDepth); return true; }
-  function processAlgJob(job) { try { while ((job.frontA.length || job.frontB.length) && !job.stopByLimit) { const side = job.frontA.length && (job.frontA.length <= job.frontB.length || !job.frontB.length) ? "A" : "B"; const front = side === "A" ? job.frontA : job.frontB; if (shouldPauseBeforeLayer(job, front)) { if (!completeExactSearchWithBoundedTail(job)) return pauseJob(job); break; } expandAlgLayer(job, side); if (shouldPause(job)) return pauseJob(job); } flushSolutions(job); self.postMessage({ type: "done", completed: !job.stopByLimit }); } catch (e) { flushSolutions(job); self.postMessage({ type: "error", message: e instanceof Error ? e.message : String(e) }); } }
+  function processAlgJob(job) { try { while ((job.frontA.length || job.frontB.length) && !job.stopByLimit) { const side = job.frontA.length && (job.frontA.length <= job.frontB.length || !job.frontB.length) ? "A" : "B"; const front = side === "A" ? job.frontA : job.frontB; const store = side === "A" ? job.storeA : job.storeB; const sideLimit = side === "A" ? job.sideSymbolLimitA : job.sideSymbolLimitB; if (frontDepth(store, front) >= sideLimit) { if (side === "A") job.frontA = []; else job.frontB = []; continue; } if (shouldPauseBeforeLayer(job, front)) { if (!completeExactSearchWithBoundedTail(job)) return pauseJob(job); break; } expandAlgLayer(job, side); if (shouldPause(job)) return pauseJob(job); } flushSolutions(job); self.postMessage({ type: "done", completed: !job.stopByLimit }); } catch (e) { flushSolutions(job); self.postMessage({ type: "error", message: e instanceof Error ? e.message : String(e) }); } }
   function generatorFaceCount(moves) { return new Set(moves.map((move) => move[0])).size; }
   function collectExactSolutions(start, job, maxDepth, stateBudget, onSolution) {
     const storeA = makeStore(packState(start));

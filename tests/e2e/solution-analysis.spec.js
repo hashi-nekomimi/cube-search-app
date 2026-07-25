@@ -92,7 +92,7 @@ test("commutator detection is exact, primitive, and non-overlapping", () => {
   expect(overlappingFormerSexy.features.some((feature) => feature.type === "sexy")).toBe(false);
 });
 
-test("commutator boundaries and conjugate setup are retained for notation", () => {
+test("commutator boundaries and conjugate setup remain available to analysis", () => {
   const commutator = analyzeSolutionMoves(moves("R U R' D R U' R' D'"))
     .features.find((feature) => feature.type === "commutator");
   expect(commutator).toMatchObject({ start: 0, end: 8, aLength: 3, bLength: 1 });

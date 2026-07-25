@@ -82,7 +82,7 @@ test("search results show regrip counts and can be sorted by metrics", async ({ 
   await expect(page.getByTestId("filter-feature")).toHaveValue("all");
   await expect(page.getByTestId("filter-feature").locator("option")).toHaveText(["All", "Sune", "Sledgehammer"]);
 
-  await expect(page.getByTestId("solution-card").first().getByTestId("solution-alg")).toHaveText("[R,U]");
+  await expect(page.getByTestId("solution-card").first().getByTestId("solution-alg")).toHaveText("R U R' U'");
   await expect(page.getByTestId("solution-card").first().getByTestId("feature-highlight")).toHaveCount(0);
 
   await page.setViewportSize({ width: 320, height: 844 });
@@ -124,7 +124,7 @@ test("search treats double turns as one HTM move", async ({ page }) => {
   await expect(page.getByTestId("solution-alg").first()).toHaveText("R2");
 });
 
-test("commutators and conjugates use bracket notation and can be searched again", async ({ page }) => {
+test("conjugates use bracket notation while commutators stay expanded", async ({ page }) => {
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto("/");
 
@@ -138,12 +138,12 @@ test("commutators and conjugates use bracket notation and can be searched again"
   await searchButton.click();
 
   const algorithm = page.getByTestId("solution-alg").first();
-  await expect(algorithm).toHaveText("[F:[R,D]]", { timeout: 20000 });
-  await expect(algorithm).toHaveAttribute("data-alg", "[F:[R,D]]");
+  await expect(algorithm).toHaveText("[F:R D R' D']", { timeout: 20000 });
+  await expect(algorithm).toHaveAttribute("data-alg", "[F:R D R' D']");
   await expect(algorithm).toHaveAttribute("data-expanded-alg", expanded);
   await expect(page.getByTestId("solution-card").first().getByTestId("feature-highlight")).toHaveCount(0);
   await algorithm.click();
-  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("[F:[R,D]]");
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("[F:R D R' D']");
 
   await expect(searchButton).toHaveText(idleLabel, { timeout: 20000 });
   await page.locator(".algorithm-target textarea").fill("[F:[R,D]]");
@@ -159,7 +159,7 @@ test("commutators and conjugates use bracket notation and can be searched again"
   await page.locator(".field input").nth(3).fill("6");
   await searchButton.click();
   const commutatorResult = page.getByTestId("solution-card").first();
-  await expect(commutatorResult.getByTestId("solution-alg")).toHaveText("[F:[R,U]]", { timeout: 20000 });
+  await expect(commutatorResult.getByTestId("solution-alg")).toHaveText("[F:R U R' U']", { timeout: 20000 });
   await expect(commutatorResult.getByTestId("solution-alg")).toHaveAttribute("data-expanded-alg", conjugatedCommutator);
   await expect(commutatorResult.getByTestId("feature-highlight")).toHaveCount(0);
 
@@ -171,7 +171,7 @@ test("commutators and conjugates use bracket notation and can be searched again"
   await page.locator(".field input").nth(3).fill("4");
   await searchButton.click();
   const directCommutatorResult = page.getByTestId("solution-card").first();
-  await expect(directCommutatorResult.getByTestId("solution-alg")).toHaveText("[R,D]", { timeout: 20000 });
+  await expect(directCommutatorResult.getByTestId("solution-alg")).toHaveText("R D R' D'", { timeout: 20000 });
   await expect(directCommutatorResult.getByTestId("feature-highlight")).toHaveCount(0);
   await expect(page.getByTestId("filter-feature").locator("option[value=commutator]")).toHaveCount(0);
 
@@ -197,11 +197,60 @@ test("required and forbidden move patterns filter emitted solutions", async ({ p
   await fillSearchConditions(page, "R U", 4);
   await page.getByLabel("必須パターン").fill("R U R' U'");
   await page.getByRole("button", { name: "探索", exact: true }).click();
-  await expect(page.getByTestId("solution-alg")).toHaveText(["[R,U]"]);
+  await expect(page.getByTestId("solution-alg")).toHaveText(["R U R' U'"]);
 
   await page.getByLabel("禁止パターン").fill("R U R' U'");
   await page.getByRole("button", { name: "探索", exact: true }).click();
   await expect(page.getByTestId("solution-card")).toHaveCount(0);
+});
+
+test("exact RUD search finishes at the constrained memory budget on desktop and mobile", async ({ page }) => {
+  test.setTimeout(45000);
+  const target = "R U R' U' R U R D R U' R D' R' U2 R'";
+  const pageErrors = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "deviceMemory", { configurable: true, value: 4 });
+  });
+
+  for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    await page.locator(".algorithm-target textarea").fill(target);
+    await page.locator(".field input").nth(0).fill("R U D");
+    await page.locator(".field input").nth(1).fill(target);
+    await page.locator(".field input").nth(3).fill("15");
+    const searchButton = page.locator("button.search-primary");
+    const idleLabel = await searchButton.textContent();
+    await searchButton.click();
+
+    await expect(page.getByTestId("solution-card").first()).toBeVisible({ timeout: 3000 });
+    await expect(searchButton).toHaveText(idleLabel, { timeout: 15000 });
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByTestId("solution-alg").first()).toHaveAttribute("data-expanded-alg", target);
+  }
+
+  expect(pageErrors).toEqual([]);
+});
+
+test("V perm algorithm search completes with the same eight RUD solutions", async ({ page }) => {
+  test.setTimeout(30000);
+  const vPerm = "R' U R' U' R D' R' D R' U D' R2 U' R2 D R2";
+  const expectedState = stateFromSolution(vPerm);
+  await page.goto("/");
+  await page.locator(".algorithm-target textarea").fill(vPerm);
+  await page.locator(".field input").nth(0).fill("R U D");
+  await page.locator(".field input").nth(3).fill("16");
+  const searchButton = page.locator("button.search-primary");
+  const idleLabel = await searchButton.textContent();
+  await searchButton.click();
+
+  await expect(page.getByTestId("solution-card")).toHaveCount(8, { timeout: 20000 });
+  await expect(searchButton).toHaveText(idleLabel, { timeout: 20000 });
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  for (const solution of await expandedAlgorithms(page)) {
+    expect(stateFromSolution(solution)).toBe(expectedState);
+  }
 });
 
 test("V perm preset search returns the same eight RUD solutions", async ({ page }) => {
