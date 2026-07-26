@@ -392,7 +392,7 @@ select:focus-visible {
   background: var(--accent);
 }
 
-.algorithm-target textarea,
+.algorithm-target input,
 .field input {
   width: 100%;
   border: 1px solid var(--border-strong);
@@ -402,30 +402,29 @@ select:focus-visible {
   transition: border-color 120ms ease, background 120ms ease;
 }
 
-.algorithm-target textarea:hover,
+.algorithm-target input:hover,
 .field input:hover {
   border-color: #596263;
 }
 
-.algorithm-target textarea:focus,
+.algorithm-target input:focus,
 .field input:focus {
   border-color: var(--accent);
   background: #0e1011;
 }
 
-.algorithm-target textarea::placeholder,
+.algorithm-target input::placeholder,
 .field input::placeholder {
   color: #6f7977;
 }
 
-.algorithm-target textarea {
+.algorithm-target input {
   display: block;
-  min-height: 124px;
-  padding: 16px;
-  resize: vertical;
+  height: 44px;
+  padding: 0 14px;
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 15px;
-  line-height: 1.7;
+  line-height: 1;
 }
 
 .conditions-block {
@@ -1146,7 +1145,7 @@ select:focus-visible {
     height: 310px;
   }
 
-  .algorithm-target textarea,
+  .algorithm-target input,
   .field input,
   .solution-sort select,
   .solution-pattern-filter select {

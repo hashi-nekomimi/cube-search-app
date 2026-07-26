@@ -129,7 +129,7 @@ test("conjugates use bracket notation while commutators stay expanded", async ({
   await page.goto("/");
 
   const expanded = "F R D R' D' F'";
-  await page.locator(".algorithm-target textarea").fill(expanded);
+  await page.locator(".algorithm-target input").fill(expanded);
   await page.locator(".field input").nth(0).fill("F R D");
   await page.locator(".field input").nth(1).fill(expanded);
   await page.locator(".field input").nth(3).fill("6");
@@ -146,14 +146,14 @@ test("conjugates use bracket notation while commutators stay expanded", async ({
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("[F:R D R' D']");
 
   await expect(searchButton).toHaveText(idleLabel, { timeout: 20000 });
-  await page.locator(".algorithm-target textarea").fill("[F:[R,D]]");
+  await page.locator(".algorithm-target input").fill("[F:[R,D]]");
   await searchButton.click();
   await expect(page.getByTestId("solution-alg").first()).toHaveAttribute("data-expanded-alg", expanded, { timeout: 20000 });
   await expect(page.getByRole("alert")).toHaveCount(0);
 
   await expect(searchButton).toHaveText(idleLabel, { timeout: 20000 });
   const conjugatedCommutator = "F R U R' U' F'";
-  await page.locator(".algorithm-target textarea").fill("[F:[R,U]]");
+  await page.locator(".algorithm-target input").fill("[F:[R,U]]");
   await page.locator(".field input").nth(0).fill("F R U");
   await page.locator(".field input").nth(1).fill(conjugatedCommutator);
   await page.locator(".field input").nth(3).fill("6");
@@ -165,7 +165,7 @@ test("conjugates use bracket notation while commutators stay expanded", async ({
 
   await expect(searchButton).toHaveText(idleLabel, { timeout: 20000 });
   const commutator = "R D R' D'";
-  await page.locator(".algorithm-target textarea").fill("[R,D]");
+  await page.locator(".algorithm-target input").fill("[R,D]");
   await page.locator(".field input").nth(0).fill("R D");
   await page.locator(".field input").nth(1).fill(commutator);
   await page.locator(".field input").nth(3).fill("4");
@@ -178,7 +178,7 @@ test("conjugates use bracket notation while commutators stay expanded", async ({
   await expect(searchButton).toHaveText(idleLabel, { timeout: 20000 });
   const sune = "R U R' U R U2 R'";
   const conjugatedSune = `F ${sune} F'`;
-  await page.locator(".algorithm-target textarea").fill(`[F:${sune}]`);
+  await page.locator(".algorithm-target input").fill(`[F:${sune}]`);
   await page.locator(".field input").nth(0).fill("F R U");
   await page.locator(".field input").nth(1).fill(conjugatedSune);
   await page.locator(".field input").nth(3).fill("9");
@@ -216,7 +216,7 @@ test("exact RUD search finishes at the constrained memory budget on desktop and 
   for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport);
     await page.goto("/");
-    await page.locator(".algorithm-target textarea").fill(target);
+    await page.locator(".algorithm-target input").fill(target);
     await page.locator(".field input").nth(0).fill("R U D");
     await page.locator(".field input").nth(1).fill(target);
     await page.locator(".field input").nth(3).fill("15");
@@ -238,7 +238,7 @@ test("V perm algorithm search completes with the same eight RUD solutions", asyn
   const vPerm = "R' U R' U' R D' R' D R' U D' R2 U' R2 D R2";
   const expectedState = stateFromSolution(vPerm);
   await page.goto("/");
-  await page.locator(".algorithm-target textarea").fill(vPerm);
+  await page.locator(".algorithm-target input").fill(vPerm);
   await page.locator(".field input").nth(0).fill("R U D");
   await page.locator(".field input").nth(3).fill("16");
   const searchButton = page.locator("button.search-primary");

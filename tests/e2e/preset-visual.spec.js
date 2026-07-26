@@ -117,13 +117,25 @@ test("mobile form controls stay above the iOS focus-zoom threshold", async ({ pa
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
 
-  const textareaSize = await page.getByPlaceholder("既存の手順を入力…").evaluate((element) => parseFloat(getComputedStyle(element).fontSize));
-  expect(textareaSize).toBeGreaterThanOrEqual(16);
+  const algorithmInputSize = await page.getByPlaceholder("既存の手順を入力…").evaluate((element) => parseFloat(getComputedStyle(element).fontSize));
+  expect(algorithmInputSize).toBeGreaterThanOrEqual(16);
 
   await page.getByTestId("input-mode-pattern").click();
   const inputSizes = await page.locator(".field input").evaluateAll((elements) => elements.map((element) => parseFloat(getComputedStyle(element).fontSize)));
   expect(inputSizes.length).toBeGreaterThan(0);
   expect(Math.min(...inputSizes)).toBeGreaterThanOrEqual(16);
+});
+
+test("algorithm target stays a compact single-line input", async ({ page }) => {
+  for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    const input = page.getByPlaceholder("既存の手順を入力…");
+    await expect(input).toHaveJSProperty("tagName", "INPUT");
+    const box = await input.boundingBox();
+    expect(box.height).toBeGreaterThanOrEqual(40);
+    expect(box.height).toBeLessThanOrEqual(48);
+  }
 });
 
 test("azimuth-elevation Three.js cube renders nonblank on desktop and mobile", async ({ page }, testInfo) => {

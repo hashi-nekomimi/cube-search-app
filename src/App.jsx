@@ -2398,11 +2398,15 @@ export default function App() {
 
           {!showNetInput ? (
             <div className="algorithm-target">
-              <textarea
+              <input
+                type="text"
                 value={targetAlg}
                 onChange={(event) => setTargetAlg(event.target.value)}
                 placeholder={t.inputPlaceholder}
-                rows={4}
+                autoCapitalize="off"
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
               />
             </div>
           ) : (
