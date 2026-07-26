@@ -44,6 +44,7 @@ const PARALLEL_GROUP = { U: "UD", D: "UD", R: "RL", L: "RL", F: "FB", B: "FB" };
 const PARALLEL_GROUP_FACES = { UD: ["U", "D"], RL: ["R", "L"], FB: ["F", "B"] };
 const MOVE_TOKEN_RE = /^([URFDLBMESxyzurfdlb](?:w)?)(2|')?/;
 const TOKEN_RE = /([URFDLBMESxyzurfdlb](?:w)?)(2|')?/g;
+const ALGORITHM_PLACEHOLDER = "R U R' U'";
 
 function keyOf(pos, normal) {
   return `${pos.join(",")}|${normal.join(",")}`;
@@ -622,7 +623,7 @@ function insertSolutionsUnique(list, solutions) {
 
 const LANGUAGE_LABEL = { ja: "日本語", en: "English", ur: "اردو", ko: "한국어", hi: "हिन्दी", ar: "العربية" };
 const TEXT = {
-  ja: { title: "手順探索", darkMode: "ダークモード", showMoveCounts: "手数を表示", netInput: "入力方式", language: "言語", shareUrl: "URL共有", saved: "保存済み", history: "履歴", favorite: "保存", clear: "削除", copied: "コピーしました", unsafeContinue: "上限なしで続ける", inputPlaceholder: "既存の手順を入力…", searchFromAlg: "手順から探索", searchFromNet: "展開図から探索", algMode: "手順", netMode: "展開図", casePresets: "状態プリセット", generator: "生成系", requiredParts: "必須パーツ", requiredPartsPlaceholder: "例: R U R' U'", depthLimit: "手数上限", resultLimit: "表示件数", copy: "コピー", simultaneous: "同時回し", symbolMoves: "記号手数", quarterTurns: "90度手数", thinkingTitle: "探索中…", thinkingBody: (n) => `見つかった手順から順に表示しています。現在 ${n} 件。`, noResults: "条件に一致する手順が見つかりませんでした。", searchFinished: (n) => `${n}件の結果が見つかりました。`, initialHelp: "条件を入力して、探索を開始してください。" },
+  ja: { title: "手順探索", darkMode: "ダークモード", showMoveCounts: "手数を表示", netInput: "入力方式", language: "言語", shareUrl: "URL共有", saved: "保存済み", history: "履歴", favorite: "保存", clear: "削除", copied: "コピーしました", unsafeContinue: "上限なしで続ける", searchFromAlg: "手順から探索", searchFromNet: "展開図から探索", algMode: "手順", netMode: "展開図", casePresets: "状態プリセット", generator: "生成系", requiredParts: "必須パーツ", requiredPartsPlaceholder: "例: R U R' U'", depthLimit: "手数上限", resultLimit: "表示件数", copy: "コピー", simultaneous: "同時回し", symbolMoves: "記号手数", quarterTurns: "90度手数", thinkingTitle: "探索中…", thinkingBody: (n) => `見つかった手順から順に表示しています。現在 ${n} 件。`, noResults: "条件に一致する手順が見つかりませんでした。", searchFinished: (n) => `${n}件の結果が見つかりました。`, initialHelp: "条件を入力して、探索を開始してください。" },
   en: { title: "Algorithm Search", darkMode: "Dark mode", showMoveCounts: "Show move counts", netInput: "Input mode", language: "Language", shareUrl: "Share URL", saved: "Saved", history: "History", favorite: "Save", clear: "Clear", copied: "Copied", unsafeContinue: "Continue without limit", inputPlaceholder: "Enter an existing solution…", searchFromAlg: "Search from algorithm", searchFromNet: "Search from net", algMode: "Algorithm", netMode: "Net", casePresets: "State presets", generator: "Generator", requiredParts: "Required parts", requiredPartsPlaceholder: "e.g. R U R' U'", depthLimit: "Move limit", resultLimit: "Results", copy: "Copy", simultaneous: "Simul moves", symbolMoves: "Move count", quarterTurns: "Quarter turns", thinkingTitle: "Searching…", thinkingBody: (n) => `Showing results as they are found. ${n} found so far.`, noResults: "No matching algorithms found.", searchFinished: (n) => `${n} result${n === 1 ? "" : "s"} found.`, initialHelp: "Enter conditions and start searching." },
   ur: { title: "طریقہ تلاش", darkMode: "ڈارک موڈ", showMoveCounts: "چالوں کی گنتی دکھائیں", netInput: "طریقۂ اندراج", language: "زبان", shareUrl: "URL شیئر کریں", saved: "محفوظ", history: "تاریخچہ", favorite: "محفوظ کریں", clear: "حذف", copied: "کاپی ہو گیا", unsafeContinue: "حد کے بغیر جاری رکھیں", inputPlaceholder: "موجودہ حل کا طریقہ درج کریں…", searchFromAlg: "طریقے سے تلاش", searchFromNet: "نیٹ سے تلاش", algMode: "طریقہ", netMode: "نیٹ", casePresets: "حالت presets", generator: "جنریٹر", requiredParts: "لازمی حصہ", requiredPartsPlaceholder: "مثال: R U R' U'", depthLimit: "چالوں کی حد", resultLimit: "نتائج", copy: "کاپی", simultaneous: "ساتھ چالیں", symbolMoves: "چالوں کی گنتی", quarterTurns: "کوارٹر ٹرنز", thinkingTitle: "تلاش جاری…", thinkingBody: (n) => `ملنے والے طریقے فوراً دکھائے جا رہے ہیں۔ اب تک ${n} ملے۔`, noResults: "شرائط سے ملتا ہوا کوئی طریقہ نہیں ملا۔", searchFinished: (n) => `${n} نتائج ملے۔`, initialHelp: "شرائط درج کریں اور تلاش شروع کریں۔" },
   ko: { title: "수순 탐색", darkMode: "다크 모드", showMoveCounts: "수순 수 표시", netInput: "입력 방식", language: "언어", shareUrl: "URL 공유", saved: "저장됨", history: "기록", favorite: "저장", clear: "삭제", copied: "복사했습니다", unsafeContinue: "제한 없이 계속", inputPlaceholder: "기존 해법을 입력…", searchFromAlg: "알고리즘으로 탐색", searchFromNet: "전개도에서 탐색", algMode: "알고리즘", netMode: "전개도", casePresets: "상태 프리셋", generator: "생성계", requiredParts: "필수 파트", requiredPartsPlaceholder: "예: R U R' U'", depthLimit: "수순 제한", resultLimit: "표시 개수", copy: "복사", simultaneous: "동시 회전", symbolMoves: "기호 수", quarterTurns: "90도 회전 수", thinkingTitle: "탐색 중…", thinkingBody: (n) => `찾은 수순을 순서대로 표시하고 있습니다. 현재 ${n}개.`, noResults: "조건에 맞는 수순을 찾지 못했습니다.", searchFinished: (n) => `${n}개 결과를 찾았습니다.`, initialHelp: "조건을 입력하고 탐색을 시작하세요." },
@@ -651,6 +652,8 @@ const RESULT_ANALYSIS_TEXT = {
     filters: "絞り込み",
     reset: "リセット",
     auf: "AUF",
+    aufStart: "先頭AUF",
+    aufEnd: "末尾AUF",
     aufOptions: { all: "すべて", none: "なし", any: "あり", start: "先頭のみ", end: "末尾のみ", both: "両端" },
     regrip: "リグリップ",
     regripOptions: { all: "すべて", 0: "0回", 1: "1回以下", 2: "2回以下", known: "解析可能" },
@@ -670,12 +673,14 @@ const RESULT_ANALYSIS_TEXT = {
     moveCountTitle: "手数の内訳",
     featureNames: { sune: "Sune", sledge: "Sledgehammer" },
     featureShortNames: { sune: "Sune", sledge: "Sledge" },
-    breakdown: { base: "BASE", htm: "HTM", patterns: "PATTERN", regrips: "REGRIP", wide: "WIDE", left: "L", slice: "SLICE", rotation: "ROTATION" },
+    breakdown: { base: "BASE", htm: "HTM", halfTurns: "180°", patterns: "PATTERN", regrips: "REGRIP", wide: "WIDE", left: "L", slice: "SLICE", rotation: "ROTATION" },
   },
   en: {
     filters: "Filters",
     reset: "Reset",
     auf: "AUF",
+    aufStart: "Start AUF",
+    aufEnd: "End AUF",
     aufOptions: { all: "All", none: "None", any: "Any", start: "Start only", end: "End only", both: "Both ends" },
     regrip: "Regrips",
     regripOptions: { all: "All", 0: "0", 1: "1 or less", 2: "2 or less", known: "Analyzed" },
@@ -695,7 +700,7 @@ const RESULT_ANALYSIS_TEXT = {
     moveCountTitle: "Move counts",
     featureNames: { sune: "Sune", sledge: "Sledgehammer" },
     featureShortNames: { sune: "Sune", sledge: "Sledge" },
-    breakdown: { base: "BASE", htm: "HTM", patterns: "PATTERN", regrips: "REGRIP", wide: "WIDE", left: "L", slice: "SLICE", rotation: "ROTATION" },
+    breakdown: { base: "BASE", htm: "HTM", halfTurns: "180°", patterns: "PATTERN", regrips: "REGRIP", wide: "WIDE", left: "L", slice: "SLICE", rotation: "ROTATION" },
   },
 };
 const WORKSPACE_TEXT = {
@@ -767,6 +772,19 @@ const COLL_FAMILY_META = [
   { id: "S", label: "Sune" },
   { id: "AS", label: "Anti Sune" },
 ];
+const COLL_SWAP_VARIANTS = {
+  H: ["no swap", "front swap", "right swap", "diagonal swap"],
+  L: ["no swap", "front swap", "left swap", "back swap", "right swap", "diagonal swap"],
+  default: ["no swap", "back swap", "right swap", "front swap", "left swap", "diagonal swap"],
+};
+
+function collCaseDisplayLabel(record) {
+  const caseNumber = Number(record.name.match(/\d+$/)?.[0]);
+  const variants = COLL_SWAP_VARIANTS[record.family] || COLL_SWAP_VARIANTS.default;
+  const variant = variants[caseNumber - 1];
+  const family = COLL_FAMILY_META.find((candidate) => candidate.id === record.family);
+  return variant ? `${family?.label || record.family} ${variant}` : record.name;
+}
 
 function patternFromPresetState(state) {
   return stateStringToPattern(state);
@@ -795,7 +813,8 @@ function collFamilyPreviewPattern(pattern) {
 const COLL_CASES = COLL_PRESET_DATA.map((record) => ({
   id: record.id,
   family: record.family,
-  label: record.name,
+  sourceLabel: record.name,
+  label: collCaseDisplayLabel(record),
   seedAlg: record.solution,
   pattern: patternFromPresetState(record.state),
   previewPattern: collPreviewPattern(patternFromPresetState(record.state)),
@@ -815,7 +834,7 @@ const ZBLL_GROUPS = COLL_GROUPS.map((family) => ({
   ...family,
   cases: family.cases.map((collCase) => {
     const zbllCases = ZBLL_PRESET_DATA
-      .filter((record) => record.coll === collCase.label)
+      .filter((record) => record.coll === collCase.sourceLabel)
       .map((record) => ({
         id: record.id,
         family: record.family,
@@ -1695,7 +1714,7 @@ function EaseDetail({ analysis, language, id }) {
   const labels = analysisText(language);
   const { formula } = analysis.ease;
   const adjustments = [
-    ["base", 100],
+    ["base", formula.baseScore],
     ...Object.entries(formula.adjustments).filter(([, value]) => value !== 0),
   ];
   return (
@@ -1711,6 +1730,18 @@ function EaseDetail({ analysis, language, id }) {
     </section>
   );
 }
+function AufSticker({ position, bottomColor, label }) {
+  return (
+    <span
+      data-testid="auf-sticker"
+      data-position={position}
+      className={`solution-auf-sticker is-${position}`}
+      style={{ background: displayColorStyle("U", bottomColor) }}
+      title={label}
+      aria-hidden="true"
+    />
+  );
+}
 function MoveCountDetail({ analysis, language, id }) {
   const labels = analysisText(language);
   return (
@@ -1723,7 +1754,7 @@ function MoveCountDetail({ analysis, language, id }) {
     </section>
   );
 }
-function SolutionCard({ solution, t, language, onCopy, highlightFeature }) {
+function SolutionCard({ solution, t, language, onCopy, highlightFeature, bottomColor }) {
   const displayMoves = cleanMoves(solution);
   const displaySegments = formatCleanMovesWithSimulUDSegments(displayMoves);
   const expandedDisplayAlg = displaySegments.map((segment) => segment.text).join(" ");
@@ -1746,6 +1777,7 @@ function SolutionCard({ solution, t, language, onCopy, highlightFeature }) {
           title={t.copy}
           onClick={() => onCopy(displayAlg)}
         >
+          {analysis.auf.hasStart ? <AufSticker position="start" bottomColor={bottomColor} label={labels.aufStart} /> : null}
           {displayChunks.length ? displayChunks.map((chunk, index) => {
             const featureType = chunk.feature?.type;
             return (
@@ -1764,6 +1796,7 @@ function SolutionCard({ solution, t, language, onCopy, highlightFeature }) {
               </Fragment>
             );
           }) : "(空)"}
+          {analysis.auf.hasEnd ? <AufSticker position="end" bottomColor={bottomColor} label={labels.aufEnd} /> : null}
         </button>
         <div className="solution-metrics">
           <SolutionMetric
@@ -1806,7 +1839,7 @@ function ThinkingCard({ foundCount, t }) { return <div className="search-status 
 function EmptyCard({ text }) { return <div className="search-status">{text}</div>; }
 function FilteredEmptyCard({ language, onReset }) { const labels = analysisText(language); return <div className="search-status filtered-empty"><span>{labels.filteredEmpty}</span><button type="button" onClick={onReset}>{labels.reset}</button></div>; }
 function NumberInput({ label, value, onChange, min = 1, max = 99 }) { function setClamped(nextValue) { const raw = String(nextValue); if (raw === "") { onChange(""); return; } const numeric = Number(raw); if (!Number.isFinite(numeric)) return; onChange(Math.min(max, Math.max(min, Math.trunc(numeric)))); } return <label className="field"><span>{label}</span><input type="number" inputMode="numeric" pattern="[0-9]*" min={min} max={max} step="1" value={value} onChange={(e) => setClamped(e.target.value)} onBlur={() => { if (value === "") onChange(min); }} /></label>; }
-function PresetTile({ label, pattern, previewMask, previewVariant, title, testId, selected = false, bottomColor, onClick }) {
+function PresetTile({ label, pattern, previewMask, previewVariant, title, testId, selected = false, longLabel = false, bottomColor, onClick }) {
   const isZblsPreview = previewVariant === "zbls";
   return (
     <button
@@ -1814,7 +1847,7 @@ function PresetTile({ label, pattern, previewMask, previewVariant, title, testId
       data-testid={testId}
       onClick={onClick}
       title={title || label}
-      className={`preset-tile${isZblsPreview ? " is-zbls" : ""}${selected ? " is-selected" : ""}`}
+      className={`preset-tile${isZblsPreview ? " is-zbls" : ""}${longLabel ? " has-long-label" : ""}${selected ? " is-selected" : ""}`}
     >
       <MiniPatternPreview pattern={pattern} previewMask={previewMask} variant={previewVariant} bottomColor={bottomColor} />
       <span>{label}</span>
@@ -1869,6 +1902,7 @@ function CollPresetPanel({ activeGroup, setActiveGroup, applyCasePreset, bottomC
               onClick={() => applyCasePreset(preset)}
               title={preset.label}
               label={preset.label}
+              longLabel
               pattern={preset.previewPattern}
               bottomColor={bottomColor}
             />
@@ -1910,6 +1944,7 @@ function ZbllPresetPanel({ activeFamily, setActiveFamily, activeColl, setActiveC
               onClick={() => setActiveColl((prev) => (prev === preset.id ? null : preset.id))}
               title={preset.label}
               label={preset.label}
+              longLabel
               pattern={preset.previewPattern}
               bottomColor={bottomColor}
             />
@@ -2400,9 +2435,10 @@ export default function App() {
             <div className="algorithm-target">
               <input
                 type="text"
+                data-testid="algorithm-target"
                 value={targetAlg}
                 onChange={(event) => setTargetAlg(event.target.value)}
-                placeholder={t.inputPlaceholder}
+                placeholder={ALGORITHM_PLACEHOLDER}
                 autoCapitalize="off"
                 autoComplete="off"
                 autoCorrect="off"
@@ -2486,7 +2522,7 @@ export default function App() {
                   value={forbiddenPatternsText}
                   onChange={(event) => setForbiddenPatternsText(event.target.value)}
                   className="algorithm"
-                  placeholder={form.patternPlaceholder}
+                  placeholder="f2"
                 />
               </label>
               <NumberInput label={form.depthLimit} value={maxSymbolDepth} onChange={setMaxSymbolDepth} min={1} max={30} />
@@ -2536,6 +2572,7 @@ export default function App() {
                 language={language}
                 onCopy={copyText}
                 highlightFeature={solutionFilters.feature}
+                bottomColor={bottomColor}
               />
             ))}
           </div>

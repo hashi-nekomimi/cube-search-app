@@ -25,8 +25,9 @@ test("search results show regrip counts and can be sorted by metrics", async ({ 
   await expect(page.locator(".results-panel")).toHaveCount(0);
   await expect(page.locator(".results-placeholder")).toHaveCount(0);
   await expect(page.getByText("探索対象", { exact: true })).toHaveCount(0);
+  await expect(page.getByTestId("algorithm-target")).toHaveAttribute("placeholder", "R U R' U'");
 
-  await page.getByPlaceholder("既存の手順を入力…").fill("R U R' U'");
+  await page.getByTestId("algorithm-target").fill("R U R' U'");
   await page.getByLabel("生成系").fill("R U");
   await page.getByLabel("HTM上限").fill("6");
   await page.getByRole("button", { name: "探索", exact: true }).click();
@@ -69,7 +70,7 @@ test("search results show regrip counts and can be sorted by metrics", async ({ 
   await page.getByTestId("metric-ease").first().click();
   const easeDetail = page.getByTestId("ease-detail").first();
   await expect(easeDetail).toBeVisible();
-  await expect(easeDetail.getByTestId("ease-adjustment-base")).toContainText("BASE100");
+  await expect(easeDetail.getByTestId("ease-adjustment-base")).toContainText("BASE120");
   await expect(easeDetail.getByTestId("ease-adjustment-htm")).toContainText("HTM-12");
   await expect(easeDetail.getByTestId("ease-adjustment-patterns")).toContainText("PATTERN+4");
   await expect(easeDetail.locator("p, code")).toHaveCount(0);
@@ -116,12 +117,30 @@ test("search results show regrip counts and can be sorted by metrics", async ({ 
 
 test("search treats double turns as one HTM move", async ({ page }) => {
   await page.goto("/");
-  await page.getByPlaceholder("既存の手順を入力…").fill("R2");
+  await page.getByTestId("algorithm-target").fill("R2");
   await fillSearchConditions(page, "R", 1);
   await page.getByRole("button", { name: "探索", exact: true }).click();
 
   await expect(page.getByTestId("solution-card").first()).toBeVisible({ timeout: 20000 });
   await expect(page.getByTestId("solution-alg").first()).toHaveText("R2");
+  await page.getByTestId("metric-ease").first().click();
+  await expect(page.getByTestId("ease-detail").first().getByTestId("ease-adjustment-halfTurns")).toContainText("180°-1");
+});
+
+test("AUF is marked with boundary stickers without changing the algorithm text", async ({ page }) => {
+  const target = "U R U R' U R U2 R' U";
+  await page.goto("/");
+  await page.getByTestId("algorithm-target").fill(target);
+  await fillSearchConditions(page, "R U", 9);
+  await page.getByLabel("必須パターン").fill(target);
+  await page.getByRole("button", { name: "探索", exact: true }).click();
+
+  const algorithm = page.getByTestId("solution-alg").first();
+  await expect(algorithm).toHaveAttribute("data-expanded-alg", target, { timeout: 20000 });
+  await expect(algorithm).toHaveText(target);
+  await expect(algorithm.getByTestId("auf-sticker")).toHaveCount(2);
+  await expect(algorithm.getByTestId("auf-sticker").nth(0)).toHaveAttribute("data-position", "start");
+  await expect(algorithm.getByTestId("auf-sticker").nth(1)).toHaveAttribute("data-position", "end");
 });
 
 test("conjugates use bracket notation while commutators stay expanded", async ({ page }) => {
@@ -129,7 +148,7 @@ test("conjugates use bracket notation while commutators stay expanded", async ({
   await page.goto("/");
 
   const expanded = "F R D R' D' F'";
-  await page.locator(".algorithm-target input").fill(expanded);
+  await page.getByTestId("algorithm-target").fill(expanded);
   await page.locator(".field input").nth(0).fill("F R D");
   await page.locator(".field input").nth(1).fill(expanded);
   await page.locator(".field input").nth(3).fill("6");
@@ -146,14 +165,14 @@ test("conjugates use bracket notation while commutators stay expanded", async ({
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("[F:R D R' D']");
 
   await expect(searchButton).toHaveText(idleLabel, { timeout: 20000 });
-  await page.locator(".algorithm-target input").fill("[F:[R,D]]");
+  await page.getByTestId("algorithm-target").fill("[F:[R,D]]");
   await searchButton.click();
   await expect(page.getByTestId("solution-alg").first()).toHaveAttribute("data-expanded-alg", expanded, { timeout: 20000 });
   await expect(page.getByRole("alert")).toHaveCount(0);
 
   await expect(searchButton).toHaveText(idleLabel, { timeout: 20000 });
   const conjugatedCommutator = "F R U R' U' F'";
-  await page.locator(".algorithm-target input").fill("[F:[R,U]]");
+  await page.getByTestId("algorithm-target").fill("[F:[R,U]]");
   await page.locator(".field input").nth(0).fill("F R U");
   await page.locator(".field input").nth(1).fill(conjugatedCommutator);
   await page.locator(".field input").nth(3).fill("6");
@@ -165,7 +184,7 @@ test("conjugates use bracket notation while commutators stay expanded", async ({
 
   await expect(searchButton).toHaveText(idleLabel, { timeout: 20000 });
   const commutator = "R D R' D'";
-  await page.locator(".algorithm-target input").fill("[R,D]");
+  await page.getByTestId("algorithm-target").fill("[R,D]");
   await page.locator(".field input").nth(0).fill("R D");
   await page.locator(".field input").nth(1).fill(commutator);
   await page.locator(".field input").nth(3).fill("4");
@@ -178,7 +197,7 @@ test("conjugates use bracket notation while commutators stay expanded", async ({
   await expect(searchButton).toHaveText(idleLabel, { timeout: 20000 });
   const sune = "R U R' U R U2 R'";
   const conjugatedSune = `F ${sune} F'`;
-  await page.locator(".algorithm-target input").fill(`[F:${sune}]`);
+  await page.getByTestId("algorithm-target").fill(`[F:${sune}]`);
   await page.locator(".field input").nth(0).fill("F R U");
   await page.locator(".field input").nth(1).fill(conjugatedSune);
   await page.locator(".field input").nth(3).fill("9");
@@ -193,7 +212,7 @@ test("conjugates use bracket notation while commutators stay expanded", async ({
 
 test("required and forbidden move patterns filter emitted solutions", async ({ page }) => {
   await page.goto("/");
-  await page.getByPlaceholder("既存の手順を入力…").fill("R U R' U'");
+  await page.getByTestId("algorithm-target").fill("R U R' U'");
   await fillSearchConditions(page, "R U", 4);
   await page.getByLabel("必須パターン").fill("R U R' U'");
   await page.getByRole("button", { name: "探索", exact: true }).click();
@@ -216,7 +235,7 @@ test("exact RUD search finishes at the constrained memory budget on desktop and 
   for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport);
     await page.goto("/");
-    await page.locator(".algorithm-target input").fill(target);
+    await page.getByTestId("algorithm-target").fill(target);
     await page.locator(".field input").nth(0).fill("R U D");
     await page.locator(".field input").nth(1).fill(target);
     await page.locator(".field input").nth(3).fill("15");
@@ -238,7 +257,7 @@ test("V perm algorithm search completes with the same eight RUD solutions", asyn
   const vPerm = "R' U R' U' R D' R' D R' U D' R2 U' R2 D R2";
   const expectedState = stateFromSolution(vPerm);
   await page.goto("/");
-  await page.locator(".algorithm-target input").fill(vPerm);
+  await page.getByTestId("algorithm-target").fill(vPerm);
   await page.locator(".field input").nth(0).fill("R U D");
   await page.locator(".field input").nth(3).fill("16");
   const searchButton = page.locator("button.search-primary");
@@ -298,7 +317,7 @@ test("four and five generator searches finish quickly with verified solutions", 
 
   for (const searchMovesText of ["R U D F", "R U D F L"]) {
     await page.goto("/");
-    await page.getByPlaceholder("既存の手順を入力…").fill(vPerm);
+    await page.getByTestId("algorithm-target").fill(vPerm);
     await fillSearchConditions(page, searchMovesText, 16);
     await expect(page.getByRole("textbox", { name: /生成系/ })).toHaveValue(searchMovesText);
     const searchButton = page.getByRole("button", { name: "探索", exact: true });
@@ -325,7 +344,7 @@ test("targets that use every selected face also take the fast path", async ({ pa
     const expectedState = stateFromSolution(searchCase.targetAlg);
 
     await page.goto("/");
-    await page.getByPlaceholder("既存の手順を入力…").fill(searchCase.targetAlg);
+    await page.getByTestId("algorithm-target").fill(searchCase.targetAlg);
     await fillSearchConditions(page, searchCase.searchMovesText, searchCase.maxSymbolDepth);
     const searchButton = page.getByRole("button", { name: "探索", exact: true });
     const startedAt = Date.now();

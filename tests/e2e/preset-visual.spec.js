@@ -117,7 +117,7 @@ test("mobile form controls stay above the iOS focus-zoom threshold", async ({ pa
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
 
-  const algorithmInputSize = await page.getByPlaceholder("既存の手順を入力…").evaluate((element) => parseFloat(getComputedStyle(element).fontSize));
+  const algorithmInputSize = await page.getByTestId("algorithm-target").evaluate((element) => parseFloat(getComputedStyle(element).fontSize));
   expect(algorithmInputSize).toBeGreaterThanOrEqual(16);
 
   await page.getByTestId("input-mode-pattern").click();
@@ -130,7 +130,7 @@ test("algorithm target stays a compact single-line input", async ({ page }) => {
   for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport);
     await page.goto("/");
-    const input = page.getByPlaceholder("既存の手順を入力…");
+    const input = page.getByTestId("algorithm-target");
     await expect(input).toHaveJSProperty("tagName", "INPUT");
     const box = await input.boundingBox();
     expect(box.height).toBeGreaterThanOrEqual(40);

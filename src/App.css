@@ -584,6 +584,10 @@ select:focus-visible {
   flex-basis: 88px;
 }
 
+.preset-tile.has-long-label {
+  height: 104px;
+}
+
 .preset-tile:hover {
   border-color: var(--border-strong);
   background: var(--surface-hover);
@@ -608,6 +612,16 @@ select:focus-visible {
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.preset-tile.has-long-label > span {
+  display: -webkit-box;
+  height: 24px;
+  line-height: 12px;
+  text-overflow: clip;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .pattern-editor {
@@ -784,6 +798,24 @@ select:focus-visible {
 .solution-alg:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+.solution-auf-sticker {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.16);
+  vertical-align: 1px;
+}
+
+.solution-auf-sticker.is-start {
+  margin-right: 7px;
+}
+
+.solution-auf-sticker.is-end {
+  margin-left: 7px;
 }
 
 .solution-feature-group {

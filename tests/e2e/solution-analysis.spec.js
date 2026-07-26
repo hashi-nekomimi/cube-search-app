@@ -8,18 +8,20 @@ function moves(algorithm) {
   return algorithm.trim() ? algorithm.trim().split(/\s+/) : [];
 }
 
-test("ease scoring rewards exact commutators", () => {
+test("ease scoring gives exact commutators a pattern bonus before clamping", () => {
   const commutator = analyzeSolutionMoves(moves("R U R' U'"));
   const plain = analyzeSolutionMoves(moves("R U R U"));
 
   expect(commutator.features.some((feature) => feature.type === "sexy")).toBe(false);
   expect(commutator.features.some((feature) => feature.type === "commutator")).toBe(true);
   expect(commutator.ease.formula).toMatchObject({
+    baseScore: 120,
     totalMoves: 4,
     triggerMoves: 4,
     namedTriggerMoves: 0,
     commutators: 1,
     regrips: 0,
+    halfTurns: 0,
     wideMoves: 0,
     leftMoves: 0,
     sliceMoves: 0,
@@ -27,6 +29,7 @@ test("ease scoring rewards exact commutators", () => {
   });
   expect(commutator.ease.formula.adjustments).toEqual({
     htm: -12,
+    halfTurns: -0,
     patterns: 4,
     regrips: -0,
     wide: -0,
@@ -34,8 +37,9 @@ test("ease scoring rewards exact commutators", () => {
     slice: -0,
     rotation: -0,
   });
-  expect(commutator.ease.score).toBe(92);
-  expect(plain.ease.score).toBe(88);
+  expect(plain.ease.formula.adjustments.patterns).toBe(0);
+  expect(commutator.ease.score).toBe(100);
+  expect(plain.ease.score).toBe(100);
 });
 
 test("inverse, mirror and side-rotated named triggers are all recognized", () => {
@@ -113,18 +117,20 @@ test("commutator boundaries and conjugate setup remain available to analysis", (
 });
 
 test("L, slice, and rotation moves lower EASE", () => {
-  const right = analyzeSolutionMoves(moves("R U R' U'"));
-  const left = analyzeSolutionMoves(moves("L' U' L U"));
+  const right = analyzeSolutionMoves(moves("R U R' U' R U R' U' R U R' U'"));
+  const left = analyzeSolutionMoves(moves("L' U' L U L' U' L U L' U' L U"));
   const slice = analyzeSolutionMoves(moves("M2 U M2 U2 M2 U M2"));
   const rotated = analyzeSolutionMoves(moves("x R U R' U' x'"));
 
-  expect(left.ease.formula.leftMoves).toBe(2);
-  expect(left.ease.formula.adjustments.left).toBe(-8);
-  expect(left.ease.score).toBe(84);
+  expect(left.ease.formula.leftMoves).toBe(6);
+  expect(left.ease.formula.adjustments.left).toBe(-24);
+  expect(left.ease.score).toBe(72);
   expect(left.ease.score).toBeLessThan(right.ease.score);
   expect(slice.ease.formula.sliceMoves).toBe(4);
   expect(slice.ease.formula.adjustments.slice).toBe(-16);
-  expect(slice.ease.score).toBe(63);
+  expect(slice.ease.formula.halfTurns).toBe(5);
+  expect(slice.ease.formula.adjustments.halfTurns).toBe(-5);
+  expect(slice.ease.score).toBe(78);
   expect(rotated.ease.formula.rotationMoves).toBe(2);
   expect(rotated.ease.formula.adjustments.rotation).toBe(-12);
   expect(rotated.ease.score).toBeLessThan(right.ease.score);

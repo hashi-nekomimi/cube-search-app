@@ -139,6 +139,34 @@ test("case preset hierarchy exposes all exact sets", async ({ page }) => {
   expect(await sumZblsCases(page)).toBe(302);
 });
 
+test("COLL and ZBLL subgroup labels name the actual corner swap", async ({ page }) => {
+  const expectedLabels = {
+    U: ["U no swap", "U back swap", "U right swap", "U front swap", "U left swap", "U diagonal swap"],
+    Pi: ["Pi no swap", "Pi back swap", "Pi right swap", "Pi front swap", "Pi left swap", "Pi diagonal swap"],
+    T: ["T no swap", "T back swap", "T right swap", "T front swap", "T left swap", "T diagonal swap"],
+    L: ["L no swap", "L front swap", "L left swap", "L back swap", "L right swap", "L diagonal swap"],
+    H: ["H no swap", "H front swap", "H right swap", "H diagonal swap"],
+    S: ["Sune no swap", "Sune back swap", "Sune right swap", "Sune front swap", "Sune left swap", "Sune diagonal swap"],
+    AS: ["Anti Sune no swap", "Anti Sune back swap", "Anti Sune right swap", "Anti Sune front swap", "Anti Sune left swap", "Anti Sune diagonal swap"],
+  };
+
+  await openPresetPanel(page, "COLL");
+  for (const [family, labels] of Object.entries(expectedLabels)) {
+    await page.getByTestId(`coll-group-${family}`).click();
+    const cases = COLL_PRESET_DATA.filter((record) => record.family === family);
+    for (const [index, record] of cases.entries()) {
+      await expect(page.getByTestId(`preset-case-${record.id}`)).toHaveText(labels[index]);
+    }
+  }
+
+  await openPresetPanel(page, "ZBLL");
+  await page.getByTestId("zbll-family-U").click();
+  const uCases = COLL_PRESET_DATA.filter((record) => record.family === "U");
+  for (const [index, record] of uCases.entries()) {
+    await expect(page.getByTestId(`zbll-coll-${record.id}`)).toHaveText(expectedLabels.U[index]);
+  }
+});
+
 test("nested preset icons and applied cube states use the generated color arrays", async ({ page }) => {
   const coll = COLL_PRESET_DATA[0];
   await openPresetPanel(page, "COLL");
@@ -192,6 +220,8 @@ test("dark-only pattern input supports camera orbit, bottom body rotation, and c
   await expect(page.getByRole("tab", { name: "Cube" })).toBeVisible();
   await expect(page.getByLabel("必須パターン")).toBeVisible();
   await expect(page.getByLabel("禁止パターン")).toBeVisible();
+  await expect(page.getByLabel("必須パターン")).toHaveAttribute("placeholder", "例: R U R' U'");
+  await expect(page.getByLabel("禁止パターン")).toHaveAttribute("placeholder", "f2");
   await expect(page.getByRole("button", { name: "探索", exact: true })).toBeVisible();
   await expect(page.getByTestId("cube-editor")).toBeVisible();
   await expect(page.getByTestId("sticker-hotbar")).toBeVisible();

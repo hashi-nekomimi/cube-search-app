@@ -15,8 +15,10 @@ const MOVE_AXIS = {
   F: "z", B: "z", S: "z", f: "z", b: "z",
 };
 const NAMED_TRIGGER_TYPES = new Set(["sune", "sledge"]);
+const EASE_BASE_SCORE = 120;
 const EASE_WEIGHT = {
   htm: 3,
+  halfTurn: 1,
   namedTriggerMove: 2,
   commutator: 4,
   regrip: 8,
@@ -512,12 +514,14 @@ function analyzeEase(moves, metrics, regrip, features) {
   const totalMoves = metrics.symbolMoves;
   const triggerMoves = coveredMoves.size;
   const regrips = regrip.count ?? 0;
+  const halfTurns = moves.filter((move) => move.endsWith("2")).length;
   const wideMoves = moves.filter((move) => "urfdlb".includes(move[0]) || /^[URFDLB]w/.test(move)).length;
   const leftMoves = moves.filter((move) => move[0] === "L" || move[0] === "l").length;
   const sliceMoves = moves.filter((move) => "MES".includes(move[0])).length;
   const rotationMoves = moves.filter((move) => "xyz".includes(move[0])).length;
   const adjustments = {
     htm: -EASE_WEIGHT.htm * totalMoves,
+    halfTurns: -EASE_WEIGHT.halfTurn * halfTurns,
     patterns: EASE_WEIGHT.namedTriggerMove * namedTriggerMoves.size + EASE_WEIGHT.commutator * scoredCommutators,
     regrips: -EASE_WEIGHT.regrip * regrips,
     wide: -EASE_WEIGHT.wide * wideMoves,
@@ -525,7 +529,7 @@ function analyzeEase(moves, metrics, regrip, features) {
     slice: -EASE_WEIGHT.slice * sliceMoves,
     rotation: -EASE_WEIGHT.rotation * rotationMoves,
   };
-  const rawScore = 100 + Object.values(adjustments).reduce((sum, value) => sum + value, 0);
+  const rawScore = EASE_BASE_SCORE + Object.values(adjustments).reduce((sum, value) => sum + value, 0);
   const score = Math.max(0, Math.min(100, rawScore));
   const band = score >= 90 ? "excellent" : score >= 78 ? "easy" : score >= 65 ? "average" : score >= 50 ? "difficult" : "hard";
 
@@ -534,11 +538,13 @@ function analyzeEase(moves, metrics, regrip, features) {
     band,
     featureTypes: [...featureTypes],
     formula: {
+      baseScore: EASE_BASE_SCORE,
       totalMoves,
       triggerMoves,
       namedTriggerMoves: namedTriggerMoves.size,
       commutators,
       regrips,
+      halfTurns,
       wideMoves,
       leftMoves,
       sliceMoves,
