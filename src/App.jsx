@@ -632,12 +632,12 @@ const TEXT = {
 };
 
 const SEARCH_FORM_TEXT = {
-  ja: { stateMode: "Cube", requiredPatterns: "必須パターン", forbiddenPatterns: "禁止パターン", patternPlaceholder: "例: R U R' U'", depthLimit: "HTM上限", search: "探索" },
-  en: { stateMode: "State", requiredPatterns: "Required patterns", forbiddenPatterns: "Forbidden patterns", patternPlaceholder: "e.g. R U R' U'", depthLimit: "HTM limit", search: "Search" },
-  ur: { stateMode: "حالت", requiredPatterns: "لازمی پیٹرن", forbiddenPatterns: "ممنوعہ پیٹرن", patternPlaceholder: "R U R' U'", depthLimit: "HTM حد", search: "تلاش" },
-  ko: { stateMode: "상태", requiredPatterns: "필수 패턴", forbiddenPatterns: "금지 패턴", patternPlaceholder: "예: R U R' U'", depthLimit: "HTM 제한", search: "탐색" },
-  hi: { stateMode: "स्थिति", requiredPatterns: "आवश्यक पैटर्न", forbiddenPatterns: "निषिद्ध पैटर्न", patternPlaceholder: "उदाहरण: R U R' U'", depthLimit: "HTM सीमा", search: "खोजें" },
-  ar: { stateMode: "الحالة", requiredPatterns: "نمط مطلوب", forbiddenPatterns: "نمط ممنوع", patternPlaceholder: "مثال: R U R' U'", depthLimit: "حد HTM", search: "بحث" },
+  ja: { stateMode: "Cube", requiredPatterns: "必須パターン", forbiddenPatterns: "禁止パターン", patternPlaceholder: "例: R U R' U'", forbiddenPatternPlaceholder: "例: f2", depthLimit: "HTM上限", search: "探索" },
+  en: { stateMode: "State", requiredPatterns: "Required patterns", forbiddenPatterns: "Forbidden patterns", patternPlaceholder: "e.g. R U R' U'", forbiddenPatternPlaceholder: "e.g. f2", depthLimit: "HTM limit", search: "Search" },
+  ur: { stateMode: "حالت", requiredPatterns: "لازمی پیٹرن", forbiddenPatterns: "ممنوعہ پیٹرن", patternPlaceholder: "R U R' U'", forbiddenPatternPlaceholder: "مثال: f2", depthLimit: "HTM حد", search: "تلاش" },
+  ko: { stateMode: "상태", requiredPatterns: "필수 패턴", forbiddenPatterns: "금지 패턴", patternPlaceholder: "예: R U R' U'", forbiddenPatternPlaceholder: "예: f2", depthLimit: "HTM 제한", search: "탐색" },
+  hi: { stateMode: "स्थिति", requiredPatterns: "आवश्यक पैटर्न", forbiddenPatterns: "निषिद्ध पैटर्न", patternPlaceholder: "उदाहरण: R U R' U'", forbiddenPatternPlaceholder: "उदाहरण: f2", depthLimit: "HTM सीमा", search: "खोजें" },
+  ar: { stateMode: "الحالة", requiredPatterns: "نمط مطلوب", forbiddenPatterns: "نمط ممنوع", patternPlaceholder: "مثال: R U R' U'", forbiddenPatternPlaceholder: "مثال: f2", depthLimit: "حد HTM", search: "بحث" },
 };
 
 const SORT_BY_LABEL = { ja: "Sort", en: "Sort", ur: "Sort", ko: "정렬", hi: "Sort", ar: "Sort" };
@@ -2522,7 +2522,7 @@ export default function App() {
                   value={forbiddenPatternsText}
                   onChange={(event) => setForbiddenPatternsText(event.target.value)}
                   className="algorithm"
-                  placeholder="f2"
+                  placeholder={form.forbiddenPatternPlaceholder}
                 />
               </label>
               <NumberInput label={form.depthLimit} value={maxSymbolDepth} onChange={setMaxSymbolDepth} min={1} max={30} />

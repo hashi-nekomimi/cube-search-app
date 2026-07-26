@@ -221,7 +221,7 @@ test("dark-only pattern input supports camera orbit, bottom body rotation, and c
   await expect(page.getByLabel("必須パターン")).toBeVisible();
   await expect(page.getByLabel("禁止パターン")).toBeVisible();
   await expect(page.getByLabel("必須パターン")).toHaveAttribute("placeholder", "例: R U R' U'");
-  await expect(page.getByLabel("禁止パターン")).toHaveAttribute("placeholder", "f2");
+  await expect(page.getByLabel("禁止パターン")).toHaveAttribute("placeholder", "例: f2");
   await expect(page.getByRole("button", { name: "探索", exact: true })).toBeVisible();
   await expect(page.getByTestId("cube-editor")).toBeVisible();
   await expect(page.getByTestId("sticker-hotbar")).toBeVisible();
