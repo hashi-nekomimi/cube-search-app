@@ -561,14 +561,12 @@ select:focus-visible {
 .preset-tile {
   display: flex;
   width: 76px;
-  height: 94px;
+  height: 76px;
   min-width: 0;
   padding: 6px;
   flex: 0 0 76px;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -580,12 +578,8 @@ select:focus-visible {
 
 .preset-tile.is-zbls {
   width: 88px;
-  height: 96px;
+  height: 88px;
   flex-basis: 88px;
-}
-
-.preset-tile.has-long-label {
-  height: 104px;
 }
 
 .preset-tile:hover {
@@ -600,28 +594,6 @@ select:focus-visible {
 .preset-tile.is-selected {
   border-color: var(--accent);
   box-shadow: inset 0 0 0 1px var(--accent);
-}
-
-.preset-tile > span {
-  width: 100%;
-  height: 14px;
-  overflow: hidden;
-  color: inherit;
-  font-size: 10px;
-  line-height: 14px;
-  text-align: center;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.preset-tile.has-long-label > span {
-  display: -webkit-box;
-  height: 24px;
-  line-height: 12px;
-  text-overflow: clip;
-  white-space: normal;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
 }
 
 .pattern-editor {
@@ -1232,12 +1204,15 @@ select:focus-visible {
 
   .preset-tile {
     width: 100%;
+    height: auto;
     max-width: none;
+    aspect-ratio: 1;
     flex-basis: auto;
   }
 
   .preset-tile.is-zbls {
     width: 100%;
+    height: auto;
     flex-basis: auto;
   }
 

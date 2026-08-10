@@ -1839,18 +1839,19 @@ function ThinkingCard({ foundCount, t }) { return <div className="search-status 
 function EmptyCard({ text }) { return <div className="search-status">{text}</div>; }
 function FilteredEmptyCard({ language, onReset }) { const labels = analysisText(language); return <div className="search-status filtered-empty"><span>{labels.filteredEmpty}</span><button type="button" onClick={onReset}>{labels.reset}</button></div>; }
 function NumberInput({ label, value, onChange, min = 1, max = 99 }) { function setClamped(nextValue) { const raw = String(nextValue); if (raw === "") { onChange(""); return; } const numeric = Number(raw); if (!Number.isFinite(numeric)) return; onChange(Math.min(max, Math.max(min, Math.trunc(numeric)))); } return <label className="field"><span>{label}</span><input type="number" inputMode="numeric" pattern="[0-9]*" min={min} max={max} step="1" value={value} onChange={(e) => setClamped(e.target.value)} onBlur={() => { if (value === "") onChange(min); }} /></label>; }
-function PresetTile({ label, pattern, previewMask, previewVariant, title, testId, selected = false, longLabel = false, bottomColor, onClick }) {
+function PresetTile({ label, pattern, previewMask, previewVariant, title, testId, selected = false, bottomColor, onClick }) {
   const isZblsPreview = previewVariant === "zbls";
+  const accessibleName = title || label;
   return (
     <button
       type="button"
       data-testid={testId}
       onClick={onClick}
-      title={title || label}
-      className={`preset-tile${isZblsPreview ? " is-zbls" : ""}${longLabel ? " has-long-label" : ""}${selected ? " is-selected" : ""}`}
+      title={accessibleName}
+      aria-label={accessibleName}
+      className={`preset-tile${isZblsPreview ? " is-zbls" : ""}${selected ? " is-selected" : ""}`}
     >
       <MiniPatternPreview pattern={pattern} previewMask={previewMask} variant={previewVariant} bottomColor={bottomColor} />
-      <span>{label}</span>
     </button>
   );
 }
@@ -1902,7 +1903,6 @@ function CollPresetPanel({ activeGroup, setActiveGroup, applyCasePreset, bottomC
               onClick={() => applyCasePreset(preset)}
               title={preset.label}
               label={preset.label}
-              longLabel
               pattern={preset.previewPattern}
               bottomColor={bottomColor}
             />
@@ -1944,7 +1944,6 @@ function ZbllPresetPanel({ activeFamily, setActiveFamily, activeColl, setActiveC
               onClick={() => setActiveColl((prev) => (prev === preset.id ? null : preset.id))}
               title={preset.label}
               label={preset.label}
-              longLabel
               pattern={preset.previewPattern}
               bottomColor={bottomColor}
             />

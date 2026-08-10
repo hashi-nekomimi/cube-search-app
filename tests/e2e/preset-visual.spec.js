@@ -62,18 +62,16 @@ async function expectMobilePresetLayout(page, width) {
     const panel = page.getByTestId("preset-panel");
     await expect(panel).toBeVisible();
     const tile = panel.locator(".preset-tile").first();
-    const label = tile.locator(":scope > span");
     await expect(tile).toBeVisible();
-    await expect(label).not.toHaveText("");
-    const [panelBox, tileBox, labelBox] = await Promise.all([panel.boundingBox(), tile.boundingBox(), label.boundingBox()]);
+    await expect(tile).toHaveAttribute("aria-label", /.+/);
+    await expect(tile.locator(":scope > span")).toHaveCount(0);
+    const [panelBox, tileBox] = await Promise.all([panel.boundingBox(), tile.boundingBox()]);
     expect(panelBox.x).toBeGreaterThanOrEqual(0);
     expect(panelBox.x + panelBox.width).toBeLessThanOrEqual(width);
     expect(tileBox.x).toBeGreaterThanOrEqual(panelBox.x);
     expect(tileBox.x + tileBox.width).toBeLessThanOrEqual(panelBox.x + panelBox.width);
     expect(tileBox.width).toBeGreaterThanOrEqual(60);
-    expect(labelBox.y).toBeGreaterThanOrEqual(tileBox.y);
-    expect(labelBox.y + labelBox.height).toBeLessThanOrEqual(tileBox.y + tileBox.height);
-    expect(await label.evaluate((element) => element.scrollHeight <= element.clientHeight)).toBe(true);
+    expect(Math.abs(tileBox.width - tileBox.height)).toBeLessThanOrEqual(1);
   }
 
   await page.getByTestId("zbls-f2l-f2l-1").click();

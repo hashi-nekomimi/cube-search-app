@@ -139,7 +139,7 @@ test("case preset hierarchy exposes all exact sets", async ({ page }) => {
   expect(await sumZblsCases(page)).toBe(302);
 });
 
-test("COLL and ZBLL subgroup labels name the actual corner swap", async ({ page }) => {
+test("COLL and ZBLL subgroup names remain accessible without visible captions", async ({ page }) => {
   const expectedLabels = {
     U: ["U no swap", "U back swap", "U right swap", "U front swap", "U left swap", "U diagonal swap"],
     Pi: ["Pi no swap", "Pi back swap", "Pi right swap", "Pi front swap", "Pi left swap", "Pi diagonal swap"],
@@ -155,7 +155,9 @@ test("COLL and ZBLL subgroup labels name the actual corner swap", async ({ page 
     await page.getByTestId(`coll-group-${family}`).click();
     const cases = COLL_PRESET_DATA.filter((record) => record.family === family);
     for (const [index, record] of cases.entries()) {
-      await expect(page.getByTestId(`preset-case-${record.id}`)).toHaveText(labels[index]);
+      const tile = page.getByTestId(`preset-case-${record.id}`);
+      await expect(tile).toHaveAccessibleName(labels[index]);
+      await expect(tile).toHaveText("");
     }
   }
 
@@ -163,7 +165,9 @@ test("COLL and ZBLL subgroup labels name the actual corner swap", async ({ page 
   await page.getByTestId("zbll-family-U").click();
   const uCases = COLL_PRESET_DATA.filter((record) => record.family === "U");
   for (const [index, record] of uCases.entries()) {
-    await expect(page.getByTestId(`zbll-coll-${record.id}`)).toHaveText(expectedLabels.U[index]);
+    const tile = page.getByTestId(`zbll-coll-${record.id}`);
+    await expect(tile).toHaveAccessibleName(expectedLabels.U[index]);
+    await expect(tile).toHaveText("");
   }
 });
 
