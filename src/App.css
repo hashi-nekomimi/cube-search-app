@@ -546,6 +546,26 @@ select:focus-visible {
   scrollbar-width: thin;
 }
 
+.preset-load-state {
+  display: grid;
+  min-height: 52px;
+  place-items: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.preset-load-state.is-error {
+  color: var(--danger);
+}
+
+.preset-load-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: thinking-pulse 900ms ease-in-out infinite;
+}
+
 .preset-tile-list {
   display: flex;
   flex-wrap: wrap;

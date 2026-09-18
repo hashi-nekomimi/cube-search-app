@@ -1,11 +1,4 @@
 import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import * as THREE from "three";
-import {
-  COLL_PRESET_DATA,
-  ZBLL_PRESET_DATA,
-  ZBLS_F2L_PRESET_DATA,
-  ZBLS_PRESET_DATA,
-} from "./presetData.generated.js";
 import { analyzeSolutionMoves, matchesSolutionFilters } from "./solutionAnalysis.js";
 import "./App.css";
 
@@ -424,8 +417,22 @@ const SOLUTION_FILTER_OPTIONS = {
   feature: ["all", "sune", "sledge"],
 };
 
+const MAX_SOLUTION_ANALYSIS_CACHE_SIZE = 512;
+const solutionAnalysisCache = new Map();
+
 function solutionAnalysis(solution) {
-  return analyzeSolutionMoves(cleanMoves(solution));
+  const cleaned = cleanMoves(solution);
+  const cacheKey = algToString(cleaned);
+  const cached = solutionAnalysisCache.get(cacheKey);
+  if (cached) return cached;
+
+  const analysis = analyzeSolutionMoves(cleaned);
+  if (solutionAnalysisCache.size >= MAX_SOLUTION_ANALYSIS_CACHE_SIZE) {
+    const oldestKey = solutionAnalysisCache.keys().next().value;
+    solutionAnalysisCache.delete(oldestKey);
+  }
+  solutionAnalysisCache.set(cacheKey, analysis);
+  return analysis;
 }
 
 function solutionMetricValue(solution, sortKey) {
@@ -632,12 +639,21 @@ const TEXT = {
 };
 
 const SEARCH_FORM_TEXT = {
-  ja: { stateMode: "Cube", requiredPatterns: "必須パターン", forbiddenPatterns: "禁止パターン", patternPlaceholder: "例: R U R' U'", forbiddenPatternPlaceholder: "例: f2", depthLimit: "HTM上限", search: "探索" },
-  en: { stateMode: "State", requiredPatterns: "Required patterns", forbiddenPatterns: "Forbidden patterns", patternPlaceholder: "e.g. R U R' U'", forbiddenPatternPlaceholder: "e.g. f2", depthLimit: "HTM limit", search: "Search" },
-  ur: { stateMode: "حالت", requiredPatterns: "لازمی پیٹرن", forbiddenPatterns: "ممنوعہ پیٹرن", patternPlaceholder: "R U R' U'", forbiddenPatternPlaceholder: "مثال: f2", depthLimit: "HTM حد", search: "تلاش" },
-  ko: { stateMode: "상태", requiredPatterns: "필수 패턴", forbiddenPatterns: "금지 패턴", patternPlaceholder: "예: R U R' U'", forbiddenPatternPlaceholder: "예: f2", depthLimit: "HTM 제한", search: "탐색" },
-  hi: { stateMode: "स्थिति", requiredPatterns: "आवश्यक पैटर्न", forbiddenPatterns: "निषिद्ध पैटर्न", patternPlaceholder: "उदाहरण: R U R' U'", forbiddenPatternPlaceholder: "उदाहरण: f2", depthLimit: "HTM सीमा", search: "खोजें" },
-  ar: { stateMode: "الحالة", requiredPatterns: "نمط مطلوب", forbiddenPatterns: "نمط ممنوع", patternPlaceholder: "مثال: R U R' U'", forbiddenPatternPlaceholder: "مثال: f2", depthLimit: "حد HTM", search: "بحث" },
+  ja: { stateMode: "Cube", requiredPatterns: "必須パターン", forbiddenPatterns: "禁止パターン", generatorPlaceholder: "例: R U D", patternPlaceholder: "例: R U R' U'", forbiddenPatternPlaceholder: "例: f2", depthLimit: "HTM上限", search: "探索", stop: "停止", memoryLimit: "メモリ上限で停止しました。", workerError: "探索処理でエラーが発生しました。" },
+  en: { stateMode: "State", requiredPatterns: "Required patterns", forbiddenPatterns: "Forbidden patterns", generatorPlaceholder: "e.g. R U D", patternPlaceholder: "e.g. R U R' U'", forbiddenPatternPlaceholder: "e.g. f2", depthLimit: "HTM limit", search: "Search", stop: "Stop", memoryLimit: "Search stopped at the memory limit.", workerError: "The search process failed." },
+  ur: { stateMode: "حالت", requiredPatterns: "لازمی پیٹرن", forbiddenPatterns: "ممنوعہ پیٹرن", generatorPlaceholder: "مثال: R U D", patternPlaceholder: "مثال: R U R' U'", forbiddenPatternPlaceholder: "مثال: f2", depthLimit: "HTM حد", search: "تلاش", stop: "روکیں", memoryLimit: "میموری کی حد پر تلاش روک دی گئی۔", workerError: "تلاش کے عمل میں خرابی پیش آئی۔" },
+  ko: { stateMode: "상태", requiredPatterns: "필수 패턴", forbiddenPatterns: "금지 패턴", generatorPlaceholder: "예: R U D", patternPlaceholder: "예: R U R' U'", forbiddenPatternPlaceholder: "예: f2", depthLimit: "HTM 제한", search: "탐색", stop: "중지", memoryLimit: "메모리 한도에 도달해 탐색을 중지했습니다.", workerError: "탐색 처리 중 오류가 발생했습니다." },
+  hi: { stateMode: "स्थिति", requiredPatterns: "आवश्यक पैटर्न", forbiddenPatterns: "निषिद्ध पैटर्न", generatorPlaceholder: "उदाहरण: R U D", patternPlaceholder: "उदाहरण: R U R' U'", forbiddenPatternPlaceholder: "उदाहरण: f2", depthLimit: "HTM सीमा", search: "खोजें", stop: "रोकें", memoryLimit: "मेमोरी सीमा पर खोज रोक दी गई।", workerError: "खोज प्रक्रिया में त्रुटि हुई।" },
+  ar: { stateMode: "الحالة", requiredPatterns: "نمط مطلوب", forbiddenPatterns: "نمط ممنوع", generatorPlaceholder: "مثال: R U D", patternPlaceholder: "مثال: R U R' U'", forbiddenPatternPlaceholder: "مثال: f2", depthLimit: "حد HTM", search: "بحث", stop: "إيقاف", memoryLimit: "توقف البحث عند حد الذاكرة.", workerError: "حدث خطأ أثناء البحث." },
+};
+
+const PRESET_LOAD_TEXT = {
+  ja: { loading: "プリセットを読み込み中", error: "プリセットを読み込めませんでした" },
+  en: { loading: "Loading presets", error: "Preset data unavailable" },
+  ur: { loading: "پری سیٹس لوڈ ہو رہے ہیں", error: "پری سیٹ ڈیٹا لوڈ نہیں ہو سکا" },
+  ko: { loading: "프리셋을 불러오는 중", error: "프리셋 데이터를 불러오지 못했습니다" },
+  hi: { loading: "प्रीसेट लोड हो रहे हैं", error: "प्रीसेट डेटा लोड नहीं हो सका" },
+  ar: { loading: "جارٍ تحميل الإعدادات", error: "تعذر تحميل بيانات الإعدادات" },
 };
 
 const SORT_BY_LABEL = { ja: "Sort", en: "Sort", ur: "Sort", ko: "정렬", hi: "Sort", ar: "Sort" };
@@ -810,72 +826,91 @@ function collFamilyPreviewPattern(pattern) {
   return preview;
 }
 
-const COLL_CASES = COLL_PRESET_DATA.map((record) => ({
-  id: record.id,
-  family: record.family,
-  sourceLabel: record.name,
-  label: collCaseDisplayLabel(record),
-  seedAlg: record.solution,
-  pattern: patternFromPresetState(record.state),
-  previewPattern: collPreviewPattern(patternFromPresetState(record.state)),
-}));
-
-const COLL_GROUPS = COLL_FAMILY_META.map((family) => {
-  const cases = COLL_CASES.filter((record) => record.family === family.id);
-  return {
-    ...family,
-    label: `${family.label} (${cases.length})`,
-    preview: collFamilyPreviewPattern(cases[0].pattern),
-    cases,
-  };
-});
-
-const ZBLL_GROUPS = COLL_GROUPS.map((family) => ({
-  ...family,
-  cases: family.cases.map((collCase) => {
-    const zbllCases = ZBLL_PRESET_DATA
-      .filter((record) => record.coll === collCase.sourceLabel)
-      .map((record) => ({
-        id: record.id,
-        family: record.family,
-        collId: collCase.id,
-        label: record.name.replace(/\s+/g, ""),
-        seedAlg: record.solution,
-        pattern: patternFromPresetState(record.state),
-      }));
-    return { ...collCase, zbllCases };
-  }),
-}));
-
-const ZBLL_CASES = ZBLL_GROUPS.flatMap((family) => (
-  family.cases.flatMap((collCase) => collCase.zbllCases)
-));
-
-const ZBLS_CASES = ZBLS_PRESET_DATA.map((record) => ({
-  id: record.id,
-  f2lId: record.f2l,
-  label: `EO${String(record.eo).padStart(2, "0")}`,
-  pattern: patternFromPresetState(record.state),
-}));
-
-const ZBLS_GROUPS = ZBLS_F2L_PRESET_DATA.map((record) => ({
-  id: record.id,
-  label: record.label,
-  title: record.solved ? `${record.title} (solved)` : record.title,
-  kind: record.kind,
-  solved: record.solved,
-  preview: patternFromPresetState(record.state),
-  cases: ZBLS_CASES.filter((preset) => preset.f2lId === record.id),
-}));
-
 const CASE_PRESETS = {
   OLL: OLL_CASES,
   PLL: PLL_CASES,
-  COLL: COLL_CASES,
-  ZBLL: ZBLL_CASES,
-  ZBLS: ZBLS_CASES,
 };
-const CASE_PRESET_CATEGORIES = Object.keys(CASE_PRESETS);
+const CASE_PRESET_CATEGORIES = ["OLL", "PLL", "COLL", "ZBLL", "ZBLS"];
+const GENERATED_PRESET_CATEGORIES = new Set(["COLL", "ZBLL", "ZBLS"]);
+let generatedPresetCatalogPromise;
+
+function buildGeneratedPresetCatalog({ COLL_PRESET_DATA, ZBLL_PRESET_DATA, ZBLS_F2L_PRESET_DATA, ZBLS_PRESET_DATA }) {
+  const collCases = COLL_PRESET_DATA.map((record) => {
+    const pattern = patternFromPresetState(record.state);
+    return {
+      id: record.id,
+      family: record.family,
+      sourceLabel: record.name,
+      label: collCaseDisplayLabel(record),
+      seedAlg: record.solution,
+      pattern,
+      previewPattern: collPreviewPattern(pattern),
+    };
+  });
+
+  const collGroups = COLL_FAMILY_META.map((family) => {
+    const cases = collCases.filter((record) => record.family === family.id);
+    return {
+      ...family,
+      label: `${family.label} (${cases.length})`,
+      preview: collFamilyPreviewPattern(cases[0].pattern),
+      cases,
+    };
+  });
+
+  const zbllGroups = collGroups.map((family) => ({
+    ...family,
+    cases: family.cases.map((collCase) => {
+      const zbllCases = ZBLL_PRESET_DATA
+        .filter((record) => record.coll === collCase.sourceLabel)
+        .map((record) => ({
+          id: record.id,
+          family: record.family,
+          collId: collCase.id,
+          label: record.name.replace(/\s+/g, ""),
+          seedAlg: record.solution,
+          pattern: patternFromPresetState(record.state),
+        }));
+      return { ...collCase, zbllCases };
+    }),
+  }));
+
+  const zblsCases = ZBLS_PRESET_DATA.map((record) => ({
+    id: record.id,
+    f2lId: record.f2l,
+    label: `EO${String(record.eo).padStart(2, "0")}`,
+    pattern: patternFromPresetState(record.state),
+  }));
+
+  const zblsGroups = ZBLS_F2L_PRESET_DATA.map((record) => ({
+    id: record.id,
+    label: record.label,
+    title: record.solved ? `${record.title} (solved)` : record.title,
+    kind: record.kind,
+    solved: record.solved,
+    preview: patternFromPresetState(record.state),
+    cases: zblsCases.filter((preset) => preset.f2lId === record.id),
+  }));
+
+  return { collGroups, zbllGroups, zblsGroups };
+}
+
+function loadGeneratedPresetCatalog() {
+  if (!generatedPresetCatalogPromise) {
+    generatedPresetCatalogPromise = import("./presetData.generated.js")
+      .then(buildGeneratedPresetCatalog)
+      .catch((error) => {
+        generatedPresetCatalogPromise = undefined;
+        throw error;
+      });
+  }
+  return generatedPresetCatalogPromise;
+}
+
+function preloadGeneratedPresetCatalog() {
+  loadGeneratedPresetCatalog().catch(() => {});
+}
+
 const STORAGE_KEYS = { history: "cube-search-history-v1" };
 function readStorageList(key) { try { const value = JSON.parse(localStorage.getItem(key) || "[]"); return Array.isArray(value) ? value : []; } catch { return []; } }
 function writeStorageList(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch { return false; } }
@@ -1171,6 +1206,23 @@ function MiniPatternPreview({ pattern, previewMask, variant = "last-layer", bott
   const mask = previewMask || fallbackPreviewMask(pattern);
   return <div className="grid grid-cols-5 gap-[2px]">{mask.split("").map((cell, idx) => <MiniSticker key={idx} corner={cell === "x" || idx === 0 || idx === 4 || idx === 20 || idx === 24} filled={cell === "1"} bottomColor={bottomColor} />)}</div>;
 }
+
+let threeModulePromise;
+
+function loadThreeModule() {
+  if (!threeModulePromise) {
+    threeModulePromise = import("./threeRuntime.js").catch((error) => {
+      threeModulePromise = undefined;
+      throw error;
+    });
+  }
+  return threeModulePromise;
+}
+
+function preloadThreeModule() {
+  loadThreeModule().catch(() => {});
+}
+
 function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor, displayBottomColor }) {
   const rootRef = useRef(null);
   const sceneRef = useRef(null);
@@ -1201,6 +1253,13 @@ function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor, disp
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return undefined;
+
+    let cancelled = false;
+    let disposeScene = () => {};
+
+    async function initializeScene() {
+      const THREE = await loadThreeModule();
+      if (cancelled) return;
 
     const scene = new THREE.Scene();
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
@@ -1513,7 +1572,7 @@ function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor, disp
     applyBodyOrientation(bodyOrientationForBottom(bottomColorRef.current));
     updateStickerColors();
 
-    return () => {
+    disposeScene = () => {
       stopAnimation();
       resizeObserver.disconnect();
       renderer.domElement.removeEventListener("pointerdown", onPointerDown);
@@ -1528,6 +1587,16 @@ function ThreeCubeEditor({ pattern, setPattern, selectedColor, bottomColor, disp
         if (object.material) object.material.dispose();
       });
       renderer.dispose();
+    };
+    }
+
+    initializeScene().catch(() => {
+      if (!cancelled) root.dataset.loadError = "true";
+    });
+
+    return () => {
+      cancelled = true;
+      disposeScene();
     };
   }, []);
 
@@ -1876,12 +1945,12 @@ function DirectPresetPanel({ category, applyCasePreset, bottomColor }) {
     </PresetTileList>
   );
 }
-function CollPresetPanel({ activeGroup, setActiveGroup, applyCasePreset, bottomColor }) {
-  const group = COLL_GROUPS.find((item) => item.id === activeGroup);
+function CollPresetPanel({ groups, activeGroup, setActiveGroup, applyCasePreset, bottomColor }) {
+  const group = groups.find((item) => item.id === activeGroup);
   return (
     <div className="grid gap-2">
       <PresetTileList>
-        {COLL_GROUPS.map((item) => (
+        {groups.map((item) => (
           <PresetTile
             key={item.id}
             testId={`coll-group-${item.id}`}
@@ -1912,13 +1981,13 @@ function CollPresetPanel({ activeGroup, setActiveGroup, applyCasePreset, bottomC
     </div>
   );
 }
-function ZbllPresetPanel({ activeFamily, setActiveFamily, activeColl, setActiveColl, applyCasePreset, bottomColor }) {
-  const family = ZBLL_GROUPS.find((item) => item.id === activeFamily);
+function ZbllPresetPanel({ groups, activeFamily, setActiveFamily, activeColl, setActiveColl, applyCasePreset, bottomColor }) {
+  const family = groups.find((item) => item.id === activeFamily);
   const collCase = family?.cases.find((item) => item.id === activeColl);
   return (
     <div className="grid gap-2">
       <PresetTileList>
-        {ZBLL_GROUPS.map((group) => (
+        {groups.map((group) => (
           <PresetTile
             key={group.id}
             testId={`zbll-family-${group.id}`}
@@ -1968,9 +2037,9 @@ function ZbllPresetPanel({ activeFamily, setActiveFamily, activeColl, setActiveC
     </div>
   );
 }
-function ZblsPresetPanel({ activeF2l, setActiveF2l, applyCasePreset, bottomColor }) {
-  const group = ZBLS_GROUPS.find((item) => item.id === activeF2l);
-  const visibleGroups = group ? [group] : ZBLS_GROUPS;
+function ZblsPresetPanel({ groups, activeF2l, setActiveF2l, applyCasePreset, bottomColor }) {
+  const group = groups.find((item) => item.id === activeF2l);
+  const visibleGroups = group ? [group] : groups;
   return (
     <div className="grid gap-2">
       <PresetTileList>
@@ -2007,15 +2076,27 @@ function ZblsPresetPanel({ activeF2l, setActiveF2l, applyCasePreset, bottomColor
     </div>
   );
 }
-function CasePresetPanel({ category, collGroupOpen, setCollGroupOpen, zbllFamilyOpen, setZbllFamilyOpen, zbllCollOpen, setZbllCollOpen, zblsF2lOpen, setZblsF2lOpen, applyCasePreset, bottomColor }) {
-  if (category === "COLL") return <CollPresetPanel activeGroup={collGroupOpen} setActiveGroup={setCollGroupOpen} applyCasePreset={applyCasePreset} bottomColor={bottomColor} />;
-  if (category === "ZBLL") return <ZbllPresetPanel activeFamily={zbllFamilyOpen} setActiveFamily={setZbllFamilyOpen} activeColl={zbllCollOpen} setActiveColl={setZbllCollOpen} applyCasePreset={applyCasePreset} bottomColor={bottomColor} />;
-  if (category === "ZBLS") return <ZblsPresetPanel activeF2l={zblsF2lOpen} setActiveF2l={setZblsF2lOpen} applyCasePreset={applyCasePreset} bottomColor={bottomColor} />;
+function CasePresetPanel({ category, catalog, catalogError, language, collGroupOpen, setCollGroupOpen, zbllFamilyOpen, setZbllFamilyOpen, zbllCollOpen, setZbllCollOpen, zblsF2lOpen, setZblsF2lOpen, applyCasePreset, bottomColor }) {
+  if (GENERATED_PRESET_CATEGORIES.has(category) && !catalog) {
+    const loadText = PRESET_LOAD_TEXT[language] || PRESET_LOAD_TEXT.en;
+    return (
+      <div
+        className={`preset-load-state${catalogError ? " is-error" : ""}`}
+        role={catalogError ? "alert" : "status"}
+        aria-label={catalogError ? undefined : loadText.loading}
+      >
+        {catalogError ? loadText.error : <span aria-hidden="true" className="preset-load-dot" />}
+      </div>
+    );
+  }
+  if (category === "COLL") return <CollPresetPanel groups={catalog.collGroups} activeGroup={collGroupOpen} setActiveGroup={setCollGroupOpen} applyCasePreset={applyCasePreset} bottomColor={bottomColor} />;
+  if (category === "ZBLL") return <ZbllPresetPanel groups={catalog.zbllGroups} activeFamily={zbllFamilyOpen} setActiveFamily={setZbllFamilyOpen} activeColl={zbllCollOpen} setActiveColl={setZbllCollOpen} applyCasePreset={applyCasePreset} bottomColor={bottomColor} />;
+  if (category === "ZBLS") return <ZblsPresetPanel groups={catalog.zblsGroups} activeF2l={zblsF2lOpen} setActiveF2l={setZblsF2lOpen} applyCasePreset={applyCasePreset} bottomColor={bottomColor} />;
   return <DirectPresetPanel category={category} applyCasePreset={applyCasePreset} bottomColor={bottomColor} />;
 }
 
 export default function App() {
-  const workerUrlRef = useRef(new WeakMap());
+  const workerUrlRef = useRef("");
   const [showNetInput, setShowNetInput] = useState(false);
   const [bottomColor, setBottomColor] = useState("U");
   const [patternBottomColor, setPatternBottomColor] = useState("U");
@@ -2042,6 +2123,8 @@ export default function App() {
   const [zbllFamilyOpen, setZbllFamilyOpen] = useState(null);
   const [zbllCollOpen, setZbllCollOpen] = useState(null);
   const [zblsF2lOpen, setZblsF2lOpen] = useState(null);
+  const [presetCatalog, setPresetCatalog] = useState(null);
+  const [presetCatalogError, setPresetCatalogError] = useState(false);
   const [searchMovesText, setSearchMovesText] = useState("");
   const [requiredPatternsText, setRequiredPatternsText] = useState("");
   const [forbiddenPatternsText, setForbiddenPatternsText] = useState("");
@@ -2054,24 +2137,40 @@ export default function App() {
   const [hasSearched, setHasSearched] = useState(false);
   const searchSessionRef = useRef(0);
   const workerRef = useRef(null);
+  useEffect(() => {
+    if (!GENERATED_PRESET_CATEGORIES.has(casePresetOpen) || presetCatalog) return undefined;
+    let active = true;
+    loadGeneratedPresetCatalog()
+      .then((catalog) => {
+        if (active) setPresetCatalog(catalog);
+      })
+      .catch(() => {
+        if (active) setPresetCatalogError(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [casePresetOpen, presetCatalog]);
+
   function createSearchWorker() {
-    const source = `(${workerMain.toString()})();`;
-    const blob = new Blob([source], { type: "text/javascript" });
-    const url = URL.createObjectURL(blob);
-    const worker = new Worker(url);
-    workerUrlRef.current.set(worker, url);
-    return worker;
+    if (!workerUrlRef.current) {
+      const source = `(${workerMain.toString()})();`;
+      const blob = new Blob([source], { type: "text/javascript" });
+      workerUrlRef.current = URL.createObjectURL(blob);
+    }
+    return new Worker(workerUrlRef.current);
   }
   function terminateSearchWorker(worker) {
     if (!worker) return;
     worker.terminate();
-    const url = workerUrlRef.current.get(worker);
-    if (url) URL.revokeObjectURL(url);
-    workerUrlRef.current.delete(worker);
   }
   useEffect(
     () => () => {
       if (workerRef.current) terminateSearchWorker(workerRef.current);
+      if (workerUrlRef.current) {
+        URL.revokeObjectURL(workerUrlRef.current);
+        workerUrlRef.current = "";
+      }
       if (messageTimerRef.current)
         clearTimeout(messageTimerRef.current);
     },
@@ -2229,7 +2328,7 @@ export default function App() {
         return;
       }
       if (data.type === "paused") {
-        setError(data.message);
+        setError(form.memoryLimit);
         setIsSearching(false);
         terminateSearchWorker(worker);
         if (workerRef.current === worker) workerRef.current = null;
@@ -2251,7 +2350,7 @@ export default function App() {
     };
     worker.onerror = (event) => {
       if (searchSessionRef.current !== currentSession) return;
-      setError(event.message || "Worker error");
+      setError(event.message || form.workerError);
       setIsSearching(false);
       terminateSearchWorker(worker);
       if (workerRef.current === worker) workerRef.current = null;
@@ -2423,6 +2522,9 @@ export default function App() {
                 data-testid="input-mode-pattern"
                 aria-selected={showNetInput}
                 className={showNetInput ? "is-active" : ""}
+                onPointerEnter={preloadThreeModule}
+                onPointerDown={preloadThreeModule}
+                onFocus={preloadThreeModule}
                 onClick={() => selectInputMode("pattern")}
               >
                 {form.stateMode}
@@ -2456,7 +2558,11 @@ export default function App() {
                       data-testid={"preset-category-" + category}
                       aria-selected={casePresetOpen === category}
                       className={casePresetOpen === category ? "is-active" : ""}
+                      onPointerEnter={GENERATED_PRESET_CATEGORIES.has(category) ? preloadGeneratedPresetCatalog : undefined}
+                      onPointerDown={GENERATED_PRESET_CATEGORIES.has(category) ? preloadGeneratedPresetCatalog : undefined}
+                      onFocus={GENERATED_PRESET_CATEGORIES.has(category) ? preloadGeneratedPresetCatalog : undefined}
                       onClick={() => {
+                        if (GENERATED_PRESET_CATEGORIES.has(category)) setPresetCatalogError(false);
                         setCasePresetOpen((previous) => previous === category ? null : category);
                       }}
                     >
@@ -2468,6 +2574,9 @@ export default function App() {
                   <div data-testid="preset-panel" className="preset-panel">
                     <CasePresetPanel
                       category={casePresetOpen}
+                      catalog={presetCatalog}
+                      catalogError={presetCatalogError}
+                      language={language}
                       collGroupOpen={collGroupOpen}
                       setCollGroupOpen={setCollGroupOpen}
                       zbllFamilyOpen={zbllFamilyOpen}
@@ -2503,7 +2612,7 @@ export default function App() {
                   value={searchMovesText}
                   onChange={(event) => setSearchMovesText(event.target.value)}
                   className="algorithm"
-                  placeholder="例: R U D"
+                  placeholder={form.generatorPlaceholder}
                 />
               </label>
               <label className="field">
@@ -2533,7 +2642,7 @@ export default function App() {
             className={"search-primary" + (isSearching ? " is-stop" : "")}
             onClick={() => isSearching ? stopSearch() : runSearch(showNetInput ? "pattern" : "alg")}
           >
-            {isSearching ? "停止" : form.search}
+            {isSearching ? form.stop : form.search}
           </button>
         </section>
 
