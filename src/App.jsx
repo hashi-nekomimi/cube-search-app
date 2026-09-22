@@ -2041,7 +2041,8 @@ function CasePresetPanel({ category, catalog, catalogError, language, collGroupO
 
 export default function App() {
   const workerUrlRef = useRef("");
-  const [showNetInput, setShowNetInput] = useState(false);
+  const [linkedZbll] = useState(() => new URLSearchParams(window.location.search).get("zbll"));
+  const [showNetInput, setShowNetInput] = useState(() => Boolean(linkedZbll));
   const [bottomColor, setBottomColor] = useState("U");
   const [patternBottomColor, setPatternBottomColor] = useState("U");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -2081,6 +2082,26 @@ export default function App() {
   const [hasSearched, setHasSearched] = useState(false);
   const searchSessionRef = useRef(0);
   const workerRef = useRef(null);
+  useEffect(() => {
+    if (!linkedZbll) return undefined;
+    let active = true;
+    loadGeneratedPresetCatalog().then((catalog) => {
+      if (!active) return;
+      const preset = catalog.zbllGroups.flatMap((family) => family.cases)
+        .flatMap((coll) => coll.zbllCases).find((candidate) => candidate.id === linkedZbll);
+      if (!preset) {
+        setError("The linked ZBLL pattern was not found.");
+        return;
+      }
+      setTargetPattern(clonePattern(preset.pattern));
+      setPatternSeedAlg(preset.seedAlg || "");
+      setSelectedColor(DONT_CARE);
+      setPresetCatalog(catalog);
+    }).catch(() => {
+      if (active) setError("The linked ZBLL pattern could not be loaded. Please reload to retry.");
+    });
+    return () => { active = false; };
+  }, [linkedZbll]);
   useEffect(() => {
     if (!GENERATED_PRESET_CATEGORIES.has(casePresetOpen) || presetCatalog) return undefined;
     let active = true;

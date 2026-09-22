@@ -1,5 +1,12 @@
 # React + Vite
 
+## ZBLL Deep Links
+
+`/?zbll=<preset-id>` opens a ZBLL preset directly in net input mode. IDs match
+`ZBLL_PRESET_DATA` (for example `zbll-zbll-u-13`). The existing preset state and
+seed algorithm are used; no search is started automatically. Unknown IDs show
+an error without changing saved history.
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:
