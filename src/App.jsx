@@ -414,6 +414,7 @@ function readabilityPenalty(moves) {
 const SOLUTION_SORT_KEYS = ["symbol", "ease", "regrip"];
 const DEFAULT_SOLUTION_FILTERS = { auf: "all", regrip: "all", ease: "all", feature: "all" };
 const SOLUTION_FILTER_OPTIONS = {
+  auf: ["all", "any", "none"],
   feature: ["all", "sune", "sledge"],
 };
 
@@ -486,10 +487,6 @@ function formatCleanMovesWithSimulUDSegments(cleaned) {
   return segments;
 }
 
-function formatMoveRange(moves, start, end) {
-  return formatCleanMovesWithSimulUDSegments(moves.slice(start, end)).map((segment) => segment.text).join(" ");
-}
-
 const ANNOTATED_FEATURE_TYPES = new Set(["sune", "sledge"]);
 
 function appendDisplayChunk(chunks, text, feature = null) {
@@ -499,65 +496,26 @@ function appendDisplayChunk(chunks, text, feature = null) {
   else chunks.push({ text, feature });
 }
 
-function appendDisplayChunks(target, source) {
-  for (const chunk of source) appendDisplayChunk(target, chunk.text, chunk.feature);
-}
+function makeFeatureDisplayChunks(moves, features, selectedFeature) {
+  const featureAt = Array(moves.length).fill(null);
+  for (const feature of features) {
+    if (!ANNOTATED_FEATURE_TYPES.has(feature.type)) continue;
+    if (selectedFeature !== "all" && feature.type !== selectedFeature) continue;
+    if (featureAt.slice(feature.start, feature.end).some(Boolean)) continue;
+    for (let index = feature.start; index < feature.end; index += 1) {
+      featureAt[index] = feature;
+    }
+  }
 
-function joinDisplayChunkGroups(groups, separator = " ") {
   const chunks = [];
-  for (const group of groups.filter((candidate) => candidate.length)) {
-    if (chunks.length) appendDisplayChunk(chunks, separator);
-    appendDisplayChunks(chunks, group);
+  for (const segment of formatCleanMovesWithSimulUDSegments(moves)) {
+    const feature = segment.moveIndex === null ? null : featureAt[segment.moveIndex];
+    if (chunks.length) {
+      appendDisplayChunk(chunks, " ", chunks[chunks.length - 1].feature === feature ? feature : null);
+    }
+    appendDisplayChunk(chunks, segment.text, feature);
   }
   return chunks;
-}
-
-function makeNotationRangeChunks(moves, features, rangeStart, rangeEnd, selectedFeature) {
-  const featureAt = Array(rangeEnd - rangeStart).fill(null);
-  for (const feature of features) {
-    if (feature.start < rangeStart || feature.end > rangeEnd) continue;
-    for (let index = feature.start; index < feature.end; index += 1) {
-      const localIndex = index - rangeStart;
-      if (!featureAt[localIndex]) featureAt[localIndex] = feature;
-    }
-  }
-
-  const groups = [];
-  for (let start = rangeStart; start < rangeEnd;) {
-    const feature = featureAt[start - rangeStart];
-    let end = start + 1;
-    while (end < rangeEnd && featureAt[end - rangeStart] === feature) end += 1;
-    if (feature && start === feature.start && end === feature.end) {
-      groups.push(makeNotationFeatureChunks(moves, features, feature, selectedFeature));
-    } else {
-      groups.push([{ text: formatMoveRange(moves, start, end), feature: null }]);
-    }
-    start = end;
-  }
-  return joinDisplayChunkGroups(groups);
-}
-
-function makeNotationFeatureChunks(moves, features, feature, selectedFeature) {
-  if (feature.type === "conjugate") {
-    const setupStart = feature.start;
-    const setupEnd = setupStart + feature.setupLength;
-    const coreEnd = setupEnd + feature.coreLength;
-    const chunks = [];
-    appendDisplayChunk(chunks, "[");
-    appendDisplayChunks(chunks, makeNotationRangeChunks(moves, features, setupStart, setupEnd, selectedFeature));
-    appendDisplayChunk(chunks, ":");
-    appendDisplayChunks(chunks, makeNotationRangeChunks(moves, features, setupEnd, coreEnd, selectedFeature));
-    appendDisplayChunk(chunks, "]");
-    return chunks;
-  }
-  const highlighted = ANNOTATED_FEATURE_TYPES.has(feature.type)
-    && (selectedFeature === "all" || feature.type === selectedFeature);
-  return [{ text: formatMoveRange(moves, feature.start, feature.end), feature: highlighted ? feature : null }];
-}
-
-function makeFeatureDisplayChunks(moves, features, selectedFeature) {
-  const displayFeatures = features.filter((feature) => feature.type !== "commutator");
-  return makeNotationRangeChunks(moves, displayFeatures, 0, moves.length, selectedFeature);
 }
 
 function applyPermToString(state, perm) {
@@ -668,9 +626,7 @@ const RESULT_ANALYSIS_TEXT = {
     filters: "絞り込み",
     reset: "リセット",
     auf: "AUF",
-    aufStart: "先頭AUF",
-    aufEnd: "末尾AUF",
-    aufOptions: { all: "すべて", none: "なし", any: "あり", start: "先頭のみ", end: "末尾のみ", both: "両端" },
+    aufOptions: { all: "すべて", none: "なし", any: "あり" },
     regrip: "リグリップ",
     regripOptions: { all: "すべて", 0: "0回", 1: "1回以下", 2: "2回以下", known: "解析可能" },
     ease: "回しやすさ",
@@ -695,9 +651,7 @@ const RESULT_ANALYSIS_TEXT = {
     filters: "Filters",
     reset: "Reset",
     auf: "AUF",
-    aufStart: "Start AUF",
-    aufEnd: "End AUF",
-    aufOptions: { all: "All", none: "None", any: "Any", start: "Start only", end: "End only", both: "Both ends" },
+    aufOptions: { all: "All", none: "None", any: "With AUF" },
     regrip: "Regrips",
     regripOptions: { all: "All", 0: "0", 1: "1 or less", 2: "2 or less", known: "Analyzed" },
     ease: "Ease",
@@ -1692,20 +1646,24 @@ function analysisText(language) {
 function SolutionFilterControls({ filters, setFilters, language }) {
   const labels = analysisText(language);
   return (
-    <label data-testid="solution-filters" className="solution-pattern-filter">
-      <span>{labels.feature}</span>
-      <select
-        data-testid="filter-feature"
-        aria-label={labels.feature}
-        className={filters.feature !== DEFAULT_SOLUTION_FILTERS.feature ? "is-active" : ""}
-        value={filters.feature}
-        onChange={(event) => setFilters((previous) => ({ ...previous, feature: event.target.value }))}
-      >
-        {SOLUTION_FILTER_OPTIONS.feature.map((value) => (
-          <option key={value} value={value}>{labels.featureOptions[value]}</option>
-        ))}
-      </select>
-    </label>
+    <div data-testid="solution-filters" className="solution-filters">
+      {Object.entries(SOLUTION_FILTER_OPTIONS).map(([key, options]) => (
+        <label key={key} className={`solution-filter solution-filter-${key}`}>
+          <span>{labels[key]}</span>
+          <select
+            data-testid={`filter-${key}`}
+            aria-label={labels[key]}
+            className={filters[key] !== DEFAULT_SOLUTION_FILTERS[key] ? "is-active" : ""}
+            value={filters[key]}
+            onChange={(event) => setFilters((previous) => ({ ...previous, [key]: event.target.value }))}
+          >
+            {options.map((value) => (
+              <option key={value} value={value}>{labels[`${key}Options`][value]}</option>
+            ))}
+          </select>
+        </label>
+      ))}
+    </div>
   );
 }
 function SolutionMetric({ testId, label, value, onClick, expanded = false, controls, title, className = "" }) {
@@ -1799,18 +1757,6 @@ function EaseDetail({ analysis, language, id }) {
     </section>
   );
 }
-function AufSticker({ position, bottomColor, label }) {
-  return (
-    <span
-      data-testid="auf-sticker"
-      data-position={position}
-      className={`solution-auf-sticker is-${position}`}
-      style={{ background: displayColorStyle("U", bottomColor) }}
-      title={label}
-      aria-hidden="true"
-    />
-  );
-}
 function MoveCountDetail({ analysis, language, id }) {
   const labels = analysisText(language);
   return (
@@ -1823,7 +1769,7 @@ function MoveCountDetail({ analysis, language, id }) {
     </section>
   );
 }
-function SolutionCard({ solution, t, language, onCopy, highlightFeature, bottomColor }) {
+function SolutionCard({ solution, t, language, onCopy, highlightFeature }) {
   const displayMoves = cleanMoves(solution);
   const displaySegments = formatCleanMovesWithSimulUDSegments(displayMoves);
   const expandedDisplayAlg = displaySegments.map((segment) => segment.text).join(" ");
@@ -1846,7 +1792,6 @@ function SolutionCard({ solution, t, language, onCopy, highlightFeature, bottomC
           title={t.copy}
           onClick={() => onCopy(displayAlg)}
         >
-          {analysis.auf.hasStart ? <AufSticker position="start" bottomColor={bottomColor} label={labels.aufStart} /> : null}
           {displayChunks.length ? displayChunks.map((chunk, index) => {
             const featureType = chunk.feature?.type;
             return (
@@ -1865,7 +1810,6 @@ function SolutionCard({ solution, t, language, onCopy, highlightFeature, bottomC
               </Fragment>
             );
           }) : "(空)"}
-          {analysis.auf.hasEnd ? <AufSticker position="end" bottomColor={bottomColor} label={labels.aufEnd} /> : null}
         </button>
         <div className="solution-metrics">
           <SolutionMetric
@@ -2680,7 +2624,6 @@ export default function App() {
                 language={language}
                 onCopy={copyText}
                 highlightFeature={solutionFilters.feature}
-                bottomColor={bottomColor}
               />
             ))}
           </div>

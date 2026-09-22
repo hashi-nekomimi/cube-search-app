@@ -192,3 +192,21 @@ test("AUF filters ignore a U move that belongs to a recognized trigger", () => {
   expect(matchesSolutionFilters(leadingAuf, { auf: "any", regrip: "all", ease: "all", feature: "all" })).toBe(true);
   expect(matchesSolutionFilters(triggerOnly, { auf: "any", regrip: "all", ease: "all", feature: "all" })).toBe(false);
 });
+
+test("AUF filters recognize leading, trailing and inverse boundary turns", () => {
+  const sune = "R U R' U R U2 R'";
+  for (const [algorithm, position] of [
+    [sune, "none"],
+    [`U2 ${sune}`, "start"],
+    [`${sune} U'`, "end"],
+    [`U ${sune} U`, "both"],
+    [`U ${sune} U'`, "both"],
+  ]) {
+    const analysis = analyzeSolutionMoves(moves(algorithm));
+    const filters = { auf: "all", regrip: "all", ease: "all", feature: "all" };
+    expect(analysis.auf.position, algorithm).toBe(position);
+    expect(matchesSolutionFilters(analysis, filters)).toBe(true);
+    expect(matchesSolutionFilters(analysis, { ...filters, auf: "any" })).toBe(position !== "none");
+    expect(matchesSolutionFilters(analysis, { ...filters, auf: "none" })).toBe(position === "none");
+  }
+});

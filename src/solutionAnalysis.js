@@ -479,6 +479,7 @@ function calculateMetrics(moves) {
 function detectAuf(moves, features) {
   const covered = new Set();
   for (const feature of features) {
+    if (feature.type === "conjugate") continue;
     for (let index = feature.start; index < feature.end; index += 1) covered.add(index);
   }
   const hasStart = moves[0]?.[0] === "U" && !covered.has(0);

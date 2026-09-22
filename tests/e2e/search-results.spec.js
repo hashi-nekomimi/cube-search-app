@@ -76,7 +76,8 @@ test("search results show regrip counts and can be sorted by metrics", async ({ 
   await expect(easeDetail.locator("p, code")).toHaveCount(0);
   await page.getByTestId("metric-ease").first().click();
 
-  await expect(page.getByTestId("filter-auf")).toHaveCount(0);
+  await expect(page.getByTestId("filter-auf")).toHaveValue("all");
+  await expect(page.getByTestId("filter-auf").locator("option")).toHaveText(["すべて", "あり", "なし"]);
   await expect(page.getByTestId("filter-regrip")).toHaveCount(0);
   await expect(page.getByTestId("filter-ease")).toHaveCount(0);
   await expect(page.getByText("絞り込み", { exact: true })).toHaveCount(0);
@@ -87,12 +88,13 @@ test("search results show regrip counts and can be sorted by metrics", async ({ 
   await expect(page.getByTestId("solution-card").first().getByTestId("feature-highlight")).toHaveCount(0);
 
   await page.setViewportSize({ width: 320, height: 844 });
-  const controlBoxes = await page.locator(".solution-sort, .solution-pattern-filter").evaluateAll((controls) => controls.map((control) => {
+  const controlBoxes = await page.locator(".solution-sort, .solution-filter").evaluateAll((controls) => controls.map((control) => {
     const rect = control.getBoundingClientRect();
     return { top: rect.top, left: rect.left, right: rect.right };
   }));
-  expect(controlBoxes).toHaveLength(2);
+  expect(controlBoxes).toHaveLength(3);
   expect(Math.abs(controlBoxes[0].top - controlBoxes[1].top)).toBeLessThan(2);
+  expect(controlBoxes[2].top).toBeGreaterThan(controlBoxes[0].top);
   expect(Math.min(...controlBoxes.map((box) => box.left))).toBeGreaterThanOrEqual(0);
   expect(Math.max(...controlBoxes.map((box) => box.right))).toBeLessThanOrEqual(320);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
@@ -127,8 +129,8 @@ test("search treats double turns as one HTM move", async ({ page }) => {
   await expect(page.getByTestId("ease-detail").first().getByTestId("ease-adjustment-halfTurns")).toContainText("180°-1");
 });
 
-test("AUF is marked with boundary stickers without changing the algorithm text", async ({ page }) => {
-  const target = "U R U R' U R U2 R' U";
+test("AUF filters combine with named patterns without marking algorithm text", async ({ page }) => {
+  const target = "U R U R' U R U2 R' U'";
   await page.goto("/");
   await page.getByTestId("algorithm-target").fill(target);
   await fillSearchConditions(page, "R U", 9);
@@ -138,12 +140,35 @@ test("AUF is marked with boundary stickers without changing the algorithm text",
   const algorithm = page.getByTestId("solution-alg").first();
   await expect(algorithm).toHaveAttribute("data-expanded-alg", target, { timeout: 20000 });
   await expect(algorithm).toHaveText(target);
-  await expect(algorithm.getByTestId("auf-sticker")).toHaveCount(2);
-  await expect(algorithm.getByTestId("auf-sticker").nth(0)).toHaveAttribute("data-position", "start");
-  await expect(algorithm.getByTestId("auf-sticker").nth(1)).toHaveAttribute("data-position", "end");
+  await expect(algorithm.getByTestId("auf-sticker")).toHaveCount(0);
+  await expect(algorithm.locator("mark")).toHaveAttribute("data-feature", "sune");
+  await expect(page.getByRole("button", { name: "探索", exact: true })).toBeVisible();
+
+  await page.getByTestId("filter-auf").selectOption("any");
+  await expect(algorithm).toHaveText(target);
+  await page.getByTestId("filter-feature").selectOption("sune");
+  await expect(algorithm).toHaveText(target);
+  await page.getByTestId("filter-auf").selectOption("none");
+  await expect(page.getByTestId("solution-card")).toHaveCount(0);
+  await expect(page.locator(".result-count")).toHaveText("0 / 1");
+  await page.getByRole("button", { name: "リセット", exact: true }).click();
+  await expect(page.getByTestId("filter-auf")).toHaveValue("all");
+  await expect(page.getByTestId("filter-feature")).toHaveValue("all");
+  await expect(algorithm).toHaveText(target);
+
+  const noAuf = "R U R' U R U2 R'";
+  await page.getByTestId("algorithm-target").fill(noAuf);
+  await page.getByLabel("必須パターン").fill(noAuf);
+  await page.getByLabel("HTM上限").fill("7");
+  await page.getByRole("button", { name: "探索", exact: true }).click();
+  await expect(algorithm).toHaveText(noAuf);
+  await page.getByTestId("filter-auf").selectOption("none");
+  await expect(algorithm).toHaveText(noAuf);
+  await page.getByTestId("filter-auf").selectOption("any");
+  await expect(page.getByTestId("solution-card")).toHaveCount(0);
 });
 
-test("conjugates use bracket notation while commutators stay expanded", async ({ page }) => {
+test("commutators and conjugates display and copy expanded moves", async ({ page }) => {
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto("/");
 
@@ -157,12 +182,12 @@ test("conjugates use bracket notation while commutators stay expanded", async ({
   await searchButton.click();
 
   const algorithm = page.getByTestId("solution-alg").first();
-  await expect(algorithm).toHaveText("[F:R D R' D']", { timeout: 20000 });
-  await expect(algorithm).toHaveAttribute("data-alg", "[F:R D R' D']");
+  await expect(algorithm).toHaveText(expanded, { timeout: 20000 });
+  await expect(algorithm).toHaveAttribute("data-alg", expanded);
   await expect(algorithm).toHaveAttribute("data-expanded-alg", expanded);
   await expect(page.getByTestId("solution-card").first().getByTestId("feature-highlight")).toHaveCount(0);
   await algorithm.click();
-  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("[F:R D R' D']");
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(expanded);
 
   await expect(searchButton).toHaveText(idleLabel, { timeout: 20000 });
   await page.getByTestId("algorithm-target").fill("[F:[R,D]]");
@@ -178,7 +203,7 @@ test("conjugates use bracket notation while commutators stay expanded", async ({
   await page.locator(".field input").nth(3).fill("6");
   await searchButton.click();
   const commutatorResult = page.getByTestId("solution-card").first();
-  await expect(commutatorResult.getByTestId("solution-alg")).toHaveText("[F:R U R' U']", { timeout: 20000 });
+  await expect(commutatorResult.getByTestId("solution-alg")).toHaveText(conjugatedCommutator, { timeout: 20000 });
   await expect(commutatorResult.getByTestId("solution-alg")).toHaveAttribute("data-expanded-alg", conjugatedCommutator);
   await expect(commutatorResult.getByTestId("feature-highlight")).toHaveCount(0);
 
@@ -203,7 +228,7 @@ test("conjugates use bracket notation while commutators stay expanded", async ({
   await page.locator(".field input").nth(3).fill("9");
   await searchButton.click();
   const suneResult = page.getByTestId("solution-card").first();
-  await expect(suneResult.getByTestId("solution-alg")).toHaveText(`[F:${sune}]`, { timeout: 20000 });
+  await expect(suneResult.getByTestId("solution-alg")).toHaveText(conjugatedSune, { timeout: 20000 });
   const suneHighlight = suneResult.getByTestId("feature-highlight");
   await expect(suneHighlight).toHaveText(sune);
   await expect(suneHighlight).toHaveAttribute("data-feature-label", "Sune");
