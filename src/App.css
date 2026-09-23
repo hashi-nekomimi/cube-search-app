@@ -697,7 +697,7 @@ select:focus-visible {
 
 .solution-controls {
   display: grid;
-  grid-template-columns: 112px 96px minmax(0, 150px);
+  grid-template-columns: 112px minmax(0, 150px);
   padding: 12px 0;
   align-items: flex-end;
   justify-content: flex-end;
@@ -760,6 +760,33 @@ select:focus-visible {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
+}
+
+.solution-alg-group {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 16px;
+}
+
+.solution-preserved-cube {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: repeat(5, 10px);
+  grid-template-rows: repeat(5, 10px);
+  gap: 2px;
+  align-content: center;
+  width: 58px;
+  height: 58px;
+}
+
+.solution-preserved-cube span:not(.is-empty) {
+  border: 1px solid var(--border);
+  border-radius: 1px;
+}
+
+.solution-preserved-cube [data-preserved="false"] {
+  opacity: 0.32;
 }
 
 .solution-alg {
@@ -1161,10 +1188,6 @@ select:focus-visible {
 
   .solution-controls {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .solution-filter-feature {
-    grid-column: 1 / -1;
   }
 
 }

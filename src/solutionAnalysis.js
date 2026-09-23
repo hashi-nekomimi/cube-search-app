@@ -575,10 +575,6 @@ export function analyzeSolutionMoves(moves) {
 }
 
 export function matchesSolutionFilters(analysis, filters) {
-  if (filters.auf !== "all") {
-    if (filters.auf === "any" && analysis.auf.position === "none") return false;
-    if (!["any", analysis.auf.position].includes(filters.auf)) return false;
-  }
   if (filters.regrip !== "all") {
     if (analysis.regrip.count === null) return false;
     if (filters.regrip === "known") {

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
-import { patternMatchesState, stateFromSolution } from "../../scripts/cube-state.mjs";
-import { ZBLS_PRESET_DATA } from "../../src/presetData.generated.js";
+import { applyAlg, isSolvedUpToAuf, patternMatchesState, stateFromSolution } from "../../scripts/cube-state.mjs";
+import { ZBLL_PRESET_DATA, ZBLS_PRESET_DATA } from "../../src/presetData.generated.js";
 
 async function openPatternInput(page) {
   await page.goto("/");
@@ -76,8 +76,7 @@ test("search results show regrip counts and can be sorted by metrics", async ({ 
   await expect(easeDetail.locator("p, code")).toHaveCount(0);
   await page.getByTestId("metric-ease").first().click();
 
-  await expect(page.getByTestId("filter-auf")).toHaveValue("all");
-  await expect(page.getByTestId("filter-auf").locator("option")).toHaveText(["すべて", "あり", "なし"]);
+  await expect(page.getByTestId("filter-auf")).toHaveCount(0);
   await expect(page.getByTestId("filter-regrip")).toHaveCount(0);
   await expect(page.getByTestId("filter-ease")).toHaveCount(0);
   await expect(page.getByText("絞り込み", { exact: true })).toHaveCount(0);
@@ -92,9 +91,8 @@ test("search results show regrip counts and can be sorted by metrics", async ({ 
     const rect = control.getBoundingClientRect();
     return { top: rect.top, left: rect.left, right: rect.right };
   }));
-  expect(controlBoxes).toHaveLength(3);
+  expect(controlBoxes).toHaveLength(2);
   expect(Math.abs(controlBoxes[0].top - controlBoxes[1].top)).toBeLessThan(2);
-  expect(controlBoxes[2].top).toBeGreaterThan(controlBoxes[0].top);
   expect(Math.min(...controlBoxes.map((box) => box.left))).toBeGreaterThanOrEqual(0);
   expect(Math.max(...controlBoxes.map((box) => box.right))).toBeLessThanOrEqual(320);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
@@ -129,7 +127,30 @@ test("search treats double turns as one HTM move", async ({ page }) => {
   await expect(page.getByTestId("ease-detail").first().getByTestId("ease-adjustment-halfTurns")).toContainText("180°-1");
 });
 
-test("AUF filters combine with named patterns without marking algorithm text", async ({ page }) => {
+test("a ZBLL preset excludes post-AUF from the HTM limit and shows its prepared cube", async ({ page }) => {
+  await page.goto("/?zbll=zbll-zbll-pi-23");
+  await expect(page.getByTestId("cube-editor")).toBeVisible();
+  await fillSearchConditions(page, "r U R B", 13);
+  await page.getByRole("button", { name: "探索", exact: true }).click();
+
+  const result = page.getByTestId("solution-card").first();
+  await expect(result).toBeVisible({ timeout: 30000 });
+  await expect(result.getByTestId("metric-symbol")).toContainText("13");
+  const core = await result.getByTestId("solution-alg").getAttribute("data-expanded-alg");
+  const preset = ZBLL_PRESET_DATA.find((entry) => entry.id === "zbll-zbll-pi-23");
+  const preAuf = ["", "U", "U2", "U'"].find((turn) => isSolvedUpToAuf(applyAlg(preset.state, `${turn} ${core}`)));
+  expect(preAuf).toBeDefined();
+  const preview = result.getByTestId("solution-preserved-cube");
+  await expect(preview).toBeVisible();
+  const prepared = applyAlg(preset.state, preAuf);
+  await expect(preview.locator("span").nth(1)).toHaveAttribute("data-display-color", prepared[47]);
+  await expect(preview.locator('[data-preserved="true"]')).not.toHaveCount(0);
+  await expect(preview.locator('[data-preserved="false"]')).not.toHaveCount(0);
+  await expect(page.getByTestId("filter-auf")).toHaveCount(0);
+  await page.getByRole("button", { name: "停止", exact: true }).click();
+});
+
+test("named pattern filters do not mark AUF as part of an algorithm", async ({ page }) => {
   const target = "U R U R' U R U2 R' U'";
   await page.goto("/");
   await page.getByTestId("algorithm-target").fill(target);
@@ -144,15 +165,9 @@ test("AUF filters combine with named patterns without marking algorithm text", a
   await expect(algorithm.locator("mark")).toHaveAttribute("data-feature", "sune");
   await expect(page.getByRole("button", { name: "探索", exact: true })).toBeVisible();
 
-  await page.getByTestId("filter-auf").selectOption("any");
-  await expect(algorithm).toHaveText(target);
   await page.getByTestId("filter-feature").selectOption("sune");
   await expect(algorithm).toHaveText(target);
-  await page.getByTestId("filter-auf").selectOption("none");
-  await expect(page.getByTestId("solution-card")).toHaveCount(0);
-  await expect(page.locator(".result-count")).toHaveText("0 / 1");
-  await page.getByRole("button", { name: "リセット", exact: true }).click();
-  await expect(page.getByTestId("filter-auf")).toHaveValue("all");
+  await page.getByTestId("filter-feature").selectOption("all");
   await expect(page.getByTestId("filter-feature")).toHaveValue("all");
   await expect(algorithm).toHaveText(target);
 
@@ -162,10 +177,7 @@ test("AUF filters combine with named patterns without marking algorithm text", a
   await page.getByLabel("HTM上限").fill("7");
   await page.getByRole("button", { name: "探索", exact: true }).click();
   await expect(algorithm).toHaveText(noAuf);
-  await page.getByTestId("filter-auf").selectOption("none");
   await expect(algorithm).toHaveText(noAuf);
-  await page.getByTestId("filter-auf").selectOption("any");
-  await expect(page.getByTestId("solution-card")).toHaveCount(0);
 });
 
 test("commutators and conjugates display and copy expanded moves", async ({ page }) => {

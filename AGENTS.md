@@ -18,7 +18,7 @@
 
 ## Testing Guidelines
 
-現時点ではテストランナーは設定されていません。変更前後の確認として、少なくとも `npm run lint` と `npm run build` を実行してください。テストを追加する場合は `src/App.test.jsx` または `src/__tests__/` のような配置を推奨します。パーサー、キューブ変換、ユーザーから見える検索フローを優先して検証し、同じ変更で `package.json` にテストコマンドを追加してください。
+`npm run lint`、`npm run build`、`npm run test:e2e` を実行してください。Playwright のテストは `tests/e2e/` にあり、検索・プリセット・結果表示を確認します。ZBLL の AUF 処理を変更するときは `tests/e2e/search-results.spec.js` の HTM 上限、解の検証、preAUF 後のプレビューも確認してください。
 
 ## Commit & Pull Request Guidelines
 

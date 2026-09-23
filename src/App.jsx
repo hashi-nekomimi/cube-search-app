@@ -412,9 +412,8 @@ function readabilityPenalty(moves) {
 }
 
 const SOLUTION_SORT_KEYS = ["symbol", "ease", "regrip"];
-const DEFAULT_SOLUTION_FILTERS = { auf: "all", regrip: "all", ease: "all", feature: "all" };
+const DEFAULT_SOLUTION_FILTERS = { regrip: "all", ease: "all", feature: "all" };
 const SOLUTION_FILTER_OPTIONS = {
-  auf: ["all", "any", "none"],
   feature: ["all", "sune", "sledge"],
 };
 
@@ -566,6 +565,26 @@ function applyAlgToString(state, alg) {
   let current = state;
   for (const move of parseAlg(alg)) current = applyPermToString(current, moveToPerm(move));
   return current;
+}
+
+const AUF_MOVES = ["", "U", "U2", "U'"];
+const STICKER_SIGNATURE = Array.from({ length: 54 }, (_, index) => String.fromCharCode(256 + index)).join("");
+
+function preparedZbllResult(pattern, solution) {
+  if (!pattern) return null;
+  const state = FACE_ORDER.map((face) => pattern[face].join("")).join("");
+  const core = algToString(solution);
+  const movedSignature = applyAlgToString(STICKER_SIGNATURE, core);
+  const preserved = new Set(Array.from({ length: 54 }, (_, index) => index)
+    .filter((index) => movedSignature[index] === STICKER_SIGNATURE[index]));
+  for (const preAuf of AUF_MOVES) {
+    const preparedState = applyAlgToString(state, preAuf);
+    const afterCore = applyAlgToString(preparedState, core);
+    if (AUF_MOVES.some((postAuf) => applyAlgToString(afterCore, postAuf) === SOLVED_STRING)) {
+      return { preparedState, preserved };
+    }
+  }
+  return null;
 }
 
 function patternFromAlg(alg) {
@@ -823,6 +842,7 @@ function buildGeneratedPresetCatalog({ COLL_PRESET_DATA, ZBLL_PRESET_DATA, ZBLS_
           collId: collCase.id,
           label: record.name.replace(/\s+/g, ""),
           seedAlg: record.solution,
+          state: record.state,
           pattern: patternFromPresetState(record.state),
         }));
       return { ...collCase, zbllCases };
@@ -942,7 +962,22 @@ function workerMain() {
   function trimRedundantFinalAuf(job, solution) { let current = cleanMoves(solution); if (!job.matcher) return current; while (current.length && current[current.length - 1][0] === "U") { const shorter = cleanMoves(current.slice(0, -1)); if (!job.matcher.matches(stateFromSolution(shorter))) break; current = shorter; } return current; }
   function solutionMatchesJobTarget(job, solution) { if (!job.targetState && !job.matcher) return true; const state = stateFromSolution(solution); if (job.targetState && state !== job.targetState) return false; return !job.matcher || job.matcher.matches(state); }
   function flushSolutions(job) { if (!job.pendingSolutions || !job.pendingSolutions.length) return; self.postMessage({ type: "solutions", solutions: job.pendingSolutions }); job.pendingSolutions = []; }
-  function emitSolution(job, solution) { const normalized = trimRedundantFinalAuf(job, solution); if (symbolMoveCount(normalized) > job.maxSymbolDepth) return false; if (!solutionMatchesMovePatterns(normalized, job.requiredPatterns, job.forbiddenPatterns)) return false; if (!solutionMatchesJobTarget(job, normalized)) return false; const key = algToString(normalized); if (job.foundKeys.has(key)) return false; job.foundKeys.add(key); job.foundCount += 1; if (job.captureSolution) job.captureSolution(normalized); else { if (!job.pendingSolutions) job.pendingSolutions = []; job.pendingSolutions.push(normalized); if (job.foundCount === 1 || job.pendingSolutions.length >= SOLUTION_BATCH_SIZE) flushSolutions(job); } return true; }
+  function zbllCore(job, fullSolution) {
+    if (!job.zbllPreset) return fullSolution;
+    const core = fullSolution.slice();
+    while (core[0]?.[0] === "U") core.shift();
+    while (core.at(-1)?.[0] === "U") core.pop();
+    if (symbolMoveCount(core) > job.coreSymbolDepth) return null;
+    for (const pre of ["", "U", "U2", "U'"]) {
+      const prepared = pre ? applyAlg(job.targetState, pre) : job.targetState;
+      const afterCore = applyAlg(prepared, algToString(core));
+      for (const post of ["", "U", "U2", "U'"]) {
+        if ((post ? applyAlg(afterCore, post) : afterCore) === SOLVED) return core;
+      }
+    }
+    return null;
+  }
+  function emitSolution(job, solution) { const full = trimRedundantFinalAuf(job, solution); if (symbolMoveCount(full) > job.maxSymbolDepth || !solutionMatchesJobTarget(job, full)) return false; const normalized = zbllCore(job, full); if (!normalized || !solutionMatchesMovePatterns(normalized, job.requiredPatterns, job.forbiddenPatterns)) return false; const key = algToString(normalized); if (job.foundKeys.has(key)) return false; job.foundKeys.add(key); job.foundCount += 1; if (job.captureSolution) job.captureSolution(normalized); else { if (!job.pendingSolutions) job.pendingSolutions = []; job.pendingSolutions.push(normalized); if (job.foundCount === 1 || job.pendingSolutions.length >= SOLUTION_BATCH_SIZE) flushSolutions(job); } return true; }
   function pauseJob(job) { flushSolutions(job); self.postMessage({ type: "paused", message: "メモリ上限で停止しました。" }); }
   function totalStored(job) { return (job.storeA ? job.storeA.states.length : 0) + (job.storeB ? job.storeB.states.length : 0) + (job.forwardStore ? job.forwardStore.states.length : 0) + (job.secondNodes ? job.secondNodes.length : 0); }
   function shouldPause(job) { return totalStored(job) >= job.maxStoredStates; }
@@ -1039,7 +1074,7 @@ function workerMain() {
     self.postMessage({ type: "done", completed: true });
     return true;
   }
-  function startExactStateJob(data, start, matcher = null) { const moves = makeSearchMoves(data.searchMovesText); const maxSymbolDepth = Number(data.maxSymbolDepth) || 1; const maxStoredStates = Math.max(100000, Number(data.maxStoredStates) || DEFAULT_MAX_STORED_STATES); const job = { kind: "alg", maxStoredStates, requiredPatterns: parseMovePatterns(data.requiredPatternsText || data.requiredPartsText || ""), forbiddenPatterns: parseMovePatterns(data.forbiddenPatternsText || ""), foundCount: 0, foundKeys: new Set(), stopByLimit: false, moves, maxSymbolDepth, sideSymbolLimitA: Math.ceil(maxSymbolDepth / 2), sideSymbolLimitB: Math.floor(maxSymbolDepth / 2), movePerms: buildMovePerms(moves), matcher, targetState: start, storeA: makeStore(packState(start)), storeB: makeStore(PACKED_SOLVED), frontA: [0], frontB: [0] }; const seed = parseFastSeed(job, data.seedAlg || ""); if (seed) emitSolution(job, seed); if (runSeededFastJob(job, data.seedAlg || "")) return; if (start === SOLVED) emitSolution(job, []); processAlgJob(job); }
+  function startExactStateJob(data, start, matcher = null) { const moves = makeSearchMoves(data.searchMovesText); const coreSymbolDepth = Number(data.maxSymbolDepth) || 1; const maxSymbolDepth = coreSymbolDepth + (data.zbllPreset ? 2 : 0); const maxStoredStates = Math.max(100000, Number(data.maxStoredStates) || DEFAULT_MAX_STORED_STATES); const job = { kind: "alg", maxStoredStates, requiredPatterns: parseMovePatterns(data.requiredPatternsText || data.requiredPartsText || ""), forbiddenPatterns: parseMovePatterns(data.forbiddenPatternsText || ""), foundCount: 0, foundKeys: new Set(), stopByLimit: false, moves, maxSymbolDepth, coreSymbolDepth, zbllPreset: Boolean(data.zbllPreset), sideSymbolLimitA: Math.ceil(maxSymbolDepth / 2), sideSymbolLimitB: Math.floor(maxSymbolDepth / 2), movePerms: buildMovePerms(moves), matcher, targetState: start, storeA: makeStore(packState(start)), storeB: makeStore(PACKED_SOLVED), frontA: [0], frontB: [0] }; const seed = parseFastSeed(job, data.seedAlg || ""); if (seed) emitSolution(job, seed); if (runSeededFastJob(job, data.seedAlg || "")) return; if (start === SOLVED) emitSolution(job, []); processAlgJob(job); }
   function startAlgJob(data) { const start = applyAlg(SOLVED, algToString(inverseAlgList(parseAlg(data.targetAlg)))); startExactStateJob(data, start); }
 
   function permKey(perm) { let key = ""; for (let i = 0; i < 54; i += 1) key += String.fromCharCode(perm[i] + 35); return key; }
@@ -1093,6 +1128,32 @@ function MiniColorSticker({ color, bottomColor, corner = false }) {
   if (corner) return <div className="h-2.5 w-2.5" />;
   const displayColor = displayColorSymbol(color, bottomColor);
   return <div data-color={color} data-display-color={displayColor} className="h-2.5 w-2.5 rounded-[2px] border border-slate-500/70" style={{ background: displayColorStyle(color, bottomColor) }} />;
+}
+function PreservedZbllPreview({ pattern, solution, bottomColor, language }) {
+  const result = preparedZbllResult(pattern, solution);
+  if (!result) return null;
+  const faceIndex = (face, index) => FACE_ORDER.indexOf(face) * 9 + index;
+  const sticker = (face, index) => ({
+    color: result.preparedState[faceIndex(face, index)],
+    preserved: result.preserved.has(faceIndex(face, index)),
+  });
+  const cells = [
+    null, sticker("B", 2), sticker("B", 1), sticker("B", 0), null,
+    sticker("L", 0), ...[0, 1, 2].map((index) => sticker("U", index)), sticker("R", 2),
+    sticker("L", 1), ...[3, 4, 5].map((index) => sticker("U", index)), sticker("R", 1),
+    sticker("L", 2), ...[6, 7, 8].map((index) => sticker("U", index)), sticker("R", 0),
+    null, sticker("F", 0), sticker("F", 1), sticker("F", 2), null,
+  ];
+  return (
+    <div data-testid="solution-preserved-cube" role="img"
+      aria-label={language === "ja" ? "preAUF後のキューブ。保持されるステッカーを強調" : "Cube after pre-AUF with preserved stickers highlighted"}
+      className="solution-preserved-cube">
+      {cells.map((cell, index) => cell ? (
+        <span key={index} data-preserved={cell.preserved} data-display-color={displayColorSymbol(cell.color, bottomColor)}
+          style={{ backgroundColor: displayColorStyle(cell.color, bottomColor) }} />
+      ) : <span key={index} className="is-empty" />)}
+    </div>
+  );
 }
 function fallbackPreviewMask(pattern) { const u = pattern.U; const bit = (idx) => (u[idx] === "U" ? "1" : "0"); return [`x${bit(0)}${bit(1)}${bit(2)}x`, `0${bit(0)}${bit(1)}${bit(2)}0`, `0${bit(3)}${bit(4)}${bit(5)}0`, `0${bit(6)}${bit(7)}${bit(8)}0`, `x${bit(6)}${bit(7)}${bit(8)}x`].join(""); }
 function pllPreviewCells(pattern) {
@@ -1769,7 +1830,7 @@ function MoveCountDetail({ analysis, language, id }) {
     </section>
   );
 }
-function SolutionCard({ solution, t, language, onCopy, highlightFeature }) {
+function SolutionCard({ solution, t, language, onCopy, highlightFeature, zbllPattern, bottomColor }) {
   const displayMoves = cleanMoves(solution);
   const displaySegments = formatCleanMovesWithSimulUDSegments(displayMoves);
   const expandedDisplayAlg = displaySegments.map((segment) => segment.text).join(" ");
@@ -1782,6 +1843,8 @@ function SolutionCard({ solution, t, language, onCopy, highlightFeature }) {
   return (
     <article data-testid="solution-card" className="solution-card">
       <div className="solution-card-top">
+        <div className="solution-alg-group">
+          {zbllPattern ? <PreservedZbllPreview pattern={zbllPattern} solution={solution} bottomColor={bottomColor} language={language} /> : null}
         <button
           type="button"
           data-testid="solution-alg"
@@ -1811,6 +1874,7 @@ function SolutionCard({ solution, t, language, onCopy, highlightFeature }) {
             );
           }) : "(空)"}
         </button>
+        </div>
         <div className="solution-metrics">
           <SolutionMetric
             testId="metric-ease"
@@ -2062,6 +2126,8 @@ export default function App() {
   const [targetAlg, setTargetAlg] = useState("");
   const [targetPattern, setTargetPattern] = useState(() => solvedPattern());
   const [patternSeedAlg, setPatternSeedAlg] = useState("");
+  const [selectedZbllState, setSelectedZbllState] = useState(null);
+  const [resultZbllPattern, setResultZbllPattern] = useState(null);
   const [selectedColor, setSelectedColor] = useState("F");
   const [casePresetOpen, setCasePresetOpen] = useState(null);
   const [collGroupOpen, setCollGroupOpen] = useState(null);
@@ -2095,6 +2161,7 @@ export default function App() {
       }
       setTargetPattern(clonePattern(preset.pattern));
       setPatternSeedAlg(preset.seedAlg || "");
+      setSelectedZbllState(preset.state);
       setSelectedColor(DONT_CARE);
       setPresetCatalog(catalog);
     }).catch(() => {
@@ -2160,6 +2227,7 @@ export default function App() {
       targetAlg,
       targetPattern,
       patternSeedAlg,
+      selectedZbllState,
       bottomColor,
       patternBottomColor,
       searchMovesText,
@@ -2172,6 +2240,7 @@ export default function App() {
       targetAlg,
       targetPattern,
       patternSeedAlg,
+      selectedZbllState,
       bottomColor,
       patternBottomColor,
       searchMovesText,
@@ -2188,6 +2257,7 @@ export default function App() {
             targetAlg: x.targetAlg,
             targetPattern: x.targetPattern,
             patternSeedAlg: x.patternSeedAlg || "",
+            selectedZbllState: x.selectedZbllState || null,
             bottomColor: x.bottomColor || "U",
             patternBottomColor: x.patternBottomColor || x.bottomColor || "U",
             searchMovesText: x.searchMovesText,
@@ -2207,6 +2277,7 @@ export default function App() {
     setBottomColor(item.bottomColor || restoredPatternBottom);
     setPatternBottomColor(restoredPatternBottom);
     setPatternSeedAlg(item.patternSeedAlg || "");
+    setSelectedZbllState(item.selectedZbllState || null);
     if (item.searchMovesText !== undefined)
       setSearchMovesText(item.searchMovesText);
     setRequiredPatternsText(item.requiredPatternsText || item.requiredPartsText || "");
@@ -2241,11 +2312,13 @@ export default function App() {
     setPatternBottomColor(bottomColor);
     setTargetPattern(clonePattern(preset.pattern));
     setPatternSeedAlg(preset.seedAlg || preset.alg || "");
+    setSelectedZbllState(preset.state || null);
     setSelectedColor(DONT_CARE);
     setCasePresetOpen(null);
   }
   function editTargetPattern(nextPattern) {
     setPatternSeedAlg("");
+    setSelectedZbllState(null);
     setTargetPattern(nextPattern);
   }
   function stopSearch() {
@@ -2278,6 +2351,7 @@ export default function App() {
     setHasSearched(true);
     setIsSearching(true);
     setSolutions([]);
+    setResultZbllPattern(mode === "pattern" && selectedZbllState ? clonePattern(targetPattern) : null);
     saveHistoryItem(mode);
     const worker = createSearchWorker();
     workerRef.current = worker;
@@ -2329,6 +2403,7 @@ export default function App() {
       requiredPatternsText,
       forbiddenPatternsText,
       maxSymbolDepth: Number(maxSymbolDepth),
+      zbllPreset: mode === "pattern" && Boolean(selectedZbllState),
       maxStoredStates: searchStateBudget(),
     });
   }
@@ -2645,6 +2720,8 @@ export default function App() {
                 language={language}
                 onCopy={copyText}
                 highlightFeature={solutionFilters.feature}
+                zbllPattern={resultZbllPattern}
+                bottomColor={bottomColor}
               />
             ))}
           </div>
